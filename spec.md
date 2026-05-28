@@ -66,6 +66,10 @@ Formato obrigatório: `<tipo>: <descrição curta>`
 
 Commits vagos (`fix stuff`, `update`, `changes`) são proibidos.
 
+Exemplos reais de uso : 
+- `"fix (consultor_sti) : Correção do bug de autenticação"`
+- `"feat (consultor_sti) : Implementada nova funcionalidade de automação em lote"`
+
 ### 4.4 Frequência
 
 Um commit deve representar **uma única mudança lógica**. Pequenos, frequentes e coerentes.
