@@ -20,6 +20,25 @@ REPORT_COLUMN_USER = "usuário"
 REPORT_COLUMN_FULL_NAME = "Nome Completo"
 REPORT_COLUMN_STATUS = "Relatório"
 
+SEARCH_INPUT_PLACEHOLDER = (
+    "Informe o e-mail institucional, o CPF, ou o nome do usuário"
+)
+SEARCH_BUTTON_TEXT = "Pesquisar"
+SEARCH_BUTTON_LOADING_TEXT = "Pesquisando..."
+SEARCH_BUTTON_SELECTOR = 'button[type="submit"][ng-disabled="pesquisando"]'
+
+NO_USER_FOUND_MESSAGE = "Nenhum usuário encontrado"
+NO_USER_FOUND_TEXT = f"{NO_USER_FOUND_MESSAGE}."
+NO_USER_FOUND_SELECTOR = 'div[ng-show*="usuarios.length == 0"] .well b'
+
+SEARCH_RESULT_ROW_SELECTOR = (
+    'table.table-striped tbody tr[ng-repeat*="usuario in usuarios"]'
+)
+
+SEARCH_RESPONSE_TIMEOUT_MS = 5000
+SEARCH_LOADING_APPEAR_TIMEOUT_MS = 1500
+SEARCH_LOADING_FINISH_TIMEOUT_MS = 10000
+
 # Filtros Excel
 XLSX_HEADER_ROW = 1
 XLSX_FREEZE_PANES_CELL = "A2"
@@ -51,6 +70,7 @@ def normalize_column_name(value: Any) -> str:
     )
     return text.lower()
 
+
 # Identifica coluna alvo da pesquisa.  
 def identify_search_column(headers: Sequence[str], search_type: str) -> str:  
     normalized_search_type = normalize_search_type(search_type)
@@ -70,6 +90,7 @@ def identify_search_column(headers: Sequence[str], search_type: str) -> str:
         f"A planilha deve conter uma destas colunas: {expected_columns}."
     )
 
+
 # Valida extensão da planilha.
 def validate_spreadsheet_extension(spreadsheet_path: str) -> str:  
     extension = Path(spreadsheet_path).suffix.lower()
@@ -82,6 +103,7 @@ def validate_spreadsheet_extension(spreadsheet_path: str) -> str:
         )
 
     return extension
+
 
 # Gera nome do relatório.
 def generate_report_filename(
@@ -97,6 +119,7 @@ def generate_report_filename(
 
     timestamp = reference_date.strftime("%d_%m_%y_%Hh%Mm%S")
     return f"Resultado_{timestamp}{clean_extension}"
+
 
 # Obtém caminho disponível.
 def get_available_report_path(report_path: Path) -> Path:
@@ -116,6 +139,7 @@ def get_available_report_path(report_path: Path) -> Path:
             return candidate
 
         counter += 1
+
 
 # Constrói caminho do relatório.
 def build_report_path(
@@ -180,7 +204,6 @@ def read_xlsx(source_path: Path) -> Tuple[List[str], List[Row]]:
         rows.append(build_row(headers, raw_row))
 
     return headers, rows
-
 
 
 # Garante cabeçalhos únicos.  
@@ -257,6 +280,7 @@ def build_report_row(search_type: str, result: SearchResult) -> Row:
 
     return report_row
 
+
 # Salva relatório em arquivo.
 def write_report(
     source_spreadsheet_path: str,
@@ -268,6 +292,7 @@ def write_report(
     report_headers = get_report_headers(search_type)
 
     write_xlsx_report(report_path, report_headers, rows)
+
 
 # Salva relatório em Excel.
 def write_xlsx_report(
@@ -286,8 +311,10 @@ def write_xlsx_report(
             row.get(header, "")
             for header in headers
         ])
+
     apply_xlsx_report_layout(worksheet)
     workbook.save(report_path)
+
 
 # Aplica filtros, congelamento e largura automática no XLSX.
 def apply_xlsx_report_layout(worksheet) -> None:
@@ -298,10 +325,12 @@ def apply_xlsx_report_layout(worksheet) -> None:
     worksheet.auto_filter.ref = build_xlsx_filter_range(worksheet)
     autofit_xlsx_columns(worksheet)
 
+
 # Monta intervalo de filtros do relatório.
 def build_xlsx_filter_range(worksheet) -> str:
     last_column = get_column_letter(worksheet.max_column)
     return f"A{XLSX_HEADER_ROW}:{last_column}{worksheet.max_row}"
+
 
 # Ajusta largura das colunas conforme o maior conteúdo.
 def autofit_xlsx_columns(worksheet) -> None:
@@ -317,6 +346,7 @@ def autofit_xlsx_columns(worksheet) -> None:
             XLSX_MAX_COLUMN_WIDTH,
         )
 
+
 # Calcula tamanho visível de uma célula.
 def get_xlsx_cell_text_length(value: Any) -> int:
     if value is None:
@@ -324,8 +354,6 @@ def get_xlsx_cell_text_length(value: Any) -> int:
 
     lines = str(value).splitlines() or [""]
     return max(len(line) for line in lines)
-
-
 
 
 # -----------------------------
@@ -346,6 +374,7 @@ def normalize_search_type(search_type: str) -> str:
     raise ValueError(
         "Tipo de pesquisa inválido. Use CPF ou Nome Completo."
     )
+
 
 # Prepara valor da pesquisa.
 def prepare_search_value(search_type: str, search_value: Any) -> str:
@@ -371,6 +400,67 @@ def prepare_search_value(search_type: str, search_value: Any) -> str:
 
     return " ".join(value.split())
 
+
+# Obtém locator do campo de pesquisa.
+def get_search_input_locator(page):
+    return page.get_by_placeholder(SEARCH_INPUT_PLACEHOLDER)
+
+
+# Obtém locator do botão de pesquisa.
+def get_search_button_locator(page):
+    return page.locator(SEARCH_BUTTON_SELECTOR).filter(
+        has_text=SEARCH_BUTTON_TEXT,
+    )
+
+
+# Obtém locator do botão em estado de carregamento.
+def get_search_loading_button_locator(page):
+    return page.locator(SEARCH_BUTTON_SELECTOR).filter(
+        has_text=SEARCH_BUTTON_LOADING_TEXT,
+    )
+
+
+# Obtém locator da mensagem explícita de ausência de resultado.
+def get_no_user_found_locator(page):
+    return page.locator(NO_USER_FOUND_SELECTOR).filter(
+        has_text=NO_USER_FOUND_TEXT,
+    )
+
+
+# Obtém locator das linhas válidas de usuário.
+def get_search_result_rows_locator(page):
+    return page.locator(SEARCH_RESULT_ROW_SELECTOR)
+
+
+# Aguarda o ciclo de carregamento da pesquisa.
+def wait_for_search_loading_cycle(page) -> None:
+    loading_button = get_search_loading_button_locator(page)
+
+    try:
+        loading_button.wait_for(
+            state="visible",
+            timeout=SEARCH_LOADING_APPEAR_TIMEOUT_MS,
+        )
+    except PlaywrightTimeoutError:
+        return
+
+    loading_button.wait_for(
+        state="hidden",
+        timeout=SEARCH_LOADING_FINISH_TIMEOUT_MS,
+    )
+
+
+# Aguarda a resposta da pesquisa: linha de resultado ou mensagem de ausência.
+def wait_for_search_response(page) -> None:
+    result_row = get_search_result_rows_locator(page).first
+    no_user_found = get_no_user_found_locator(page).first
+
+    result_row.or_(no_user_found).first.wait_for(
+        state="visible",
+        timeout=SEARCH_RESPONSE_TIMEOUT_MS,
+    )
+
+
 # Realiza login no sistema.
 def login_to_system(page, login: str, password: str) -> None:
     
@@ -380,11 +470,13 @@ def login_to_system(page, login: str, password: str) -> None:
     page.get_by_role("button", name="Entrar").click()
     page.wait_for_timeout(3000)
 
+
 # Abre tela de pesquisa.
 def open_search_users_page(page) -> None:
 
     page.goto(SEARCH_USERS_URL, wait_until="networkidle")
-    page.locator('input[ng-model="parametro"]').wait_for(state="visible")
+    get_search_input_locator(page).wait_for(state="visible")
+
 
 # Extrai resultado da tabela.
 def extract_single_result(row, search_type: str) -> SearchResult:
@@ -406,32 +498,39 @@ def extract_single_result(row, search_type: str) -> SearchResult:
         user_login=user_login,
     )
 
+
 # Pesquisa o usuário.
 def search_user(page, search_type: str, search_value: Any) -> SearchResult:
     
     clean_value = prepare_search_value(search_type, search_value)
 
-    input_campo = page.locator('input[ng-model="parametro"]')
+    input_campo = get_search_input_locator(page)
     input_campo.wait_for(state="visible")
     input_campo.fill("")
     input_campo.fill(clean_value)
 
-    page.get_by_role("button", name="Pesquisar").click()
+    get_search_button_locator(page).click()
 
     try:
-        page.locator("tbody tr").first.wait_for(timeout=5000)
-        rows = page.locator("tbody tr")
+        wait_for_search_loading_cycle(page)
+        wait_for_search_response(page)
+
+        if get_no_user_found_locator(page).first.is_visible():
+            return SearchResult(message=NO_USER_FOUND_MESSAGE)
+
+        rows = get_search_result_rows_locator(page)
         count = rows.count()
 
         if count == 0:
-            return SearchResult(message="Nenhum usuário encontrado")
+            return SearchResult(message=NO_USER_FOUND_MESSAGE)
 
         if count > 1:
             return SearchResult(message="Mais de um usuário encontrado")
 
         return extract_single_result(rows.first, search_type)
     except PlaywrightTimeoutError:
-        return SearchResult(message="Nenhum usuário encontrado")
+        return SearchResult(message=NO_USER_FOUND_MESSAGE)
+
 
 # Formata resultado da pesquisa.
 def format_single_result(result: SearchResult, search_type: str) -> str:
@@ -477,6 +576,7 @@ def run_automation(
         finally:
             context.close()
             browser.close()
+
 
 # Executa automação em lote.
 def run_batch_automation(
