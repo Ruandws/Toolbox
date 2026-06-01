@@ -1,10 +1,7 @@
 import threading
 from tkinter import filedialog
-
 import customtkinter as ctk
-
 from consultor_sti import run_automation, run_batch_automation
-
 
 class ExtratorApp(ctk.CTk):
     # -----------------------------
@@ -153,8 +150,14 @@ class ExtratorApp(ctk.CTk):
     def create_batch_fields(self):
         self.label_batch_title = ctk.CTkLabel(
             self.frame_inputs,
-            text="Execução em lote via planilha",
-            font=ctk.CTkFont(weight="bold"),
+            text=(
+            "Para lote, selecione a planilha e a pasta de relatório. "
+            "O tipo CPF/Nome Completo acima será usado para todas as linhas. "
+            "A coluna de entrada será identificada automaticamente. "
+            "Relatórios XLSX recebem filtros, cabeçalho congelado e largura automática."
+            ),
+            text_color="gray",
+            wraplength=620,
         )
         self.label_batch_title.grid(
             row=5,
@@ -173,7 +176,7 @@ class ExtratorApp(ctk.CTk):
 
         self.entry_spreadsheet = ctk.CTkEntry(
             self.frame_inputs,
-            placeholder_text="Caminho do arquivo .xlsx ou .csv",
+            placeholder_text="Caminho do arquivo .xlsx",
         )
         self.entry_spreadsheet.grid(
             row=6,
@@ -282,9 +285,8 @@ class ExtratorApp(ctk.CTk):
         file_path = filedialog.askopenfilename(
             title="Selecione a planilha",
             filetypes=(
-                ("Planilhas", "*.xlsx *.csv"),
+                ("Planilhas", "*.xlsx"),
                 ("Excel", "*.xlsx"),
-                ("CSV", "*.csv"),
             ),
         )
 
@@ -386,7 +388,6 @@ class ExtratorApp(ctk.CTk):
     # Atualiza mensagem de status.
     def show_status(self, message, color):
         self.label_status.configure(text=message, text_color=color)
-
 
 if __name__ == "__main__":
     ctk.set_appearance_mode("System")

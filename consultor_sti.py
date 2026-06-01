@@ -1,4 +1,3 @@
-import csv
 import unicodedata
 from dataclasses import dataclass
 from datetime import datetime
@@ -6,6 +5,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from openpyxl import Workbook, load_workbook
+from openpyxl.utils import get_column_letter
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import sync_playwright
 
@@ -13,12 +13,19 @@ from playwright.sync_api import sync_playwright
 LOGIN_URL = "https://servicosti.ebserh.gov.br/#/login"
 SEARCH_USERS_URL = "https://servicosti.ebserh.gov.br/#/pesquisa-usuarios"
 
-SUPPORTED_EXTENSIONS = (".xlsx", ".csv")
+SUPPORTED_EXTENSIONS = (".xlsx",)
 SEARCH_TYPE_CPF = "CPF"
 SEARCH_TYPE_FULL_NAME = "Nome Completo"
 REPORT_COLUMN_USER = "usuário"
 REPORT_COLUMN_FULL_NAME = "Nome Completo"
 REPORT_COLUMN_STATUS = "Relatório"
+
+# Filtros Excel
+XLSX_HEADER_ROW = 1
+XLSX_FREEZE_PANES_CELL = "A2"
+XLSX_MIN_COLUMN_WIDTH = 12
+XLSX_MAX_COLUMN_WIDTH = 60
+XLSX_COLUMN_PADDING = 2
 
 Row = Dict[str, Any]
 
@@ -88,7 +95,7 @@ def generate_report_filename(
     if not clean_extension.startswith("."):
         clean_extension = f".{clean_extension}"
 
-    timestamp = reference_date.strftime("%d_%m_%y_%Hh%M")
+    timestamp = reference_date.strftime("%d_%m_%y_%Hh%Mm%S")
     return f"Resultado_{timestamp}{clean_extension}"
 
 # Obtém caminho disponível.
@@ -144,12 +151,8 @@ def read_spreadsheet(spreadsheet_path: str) -> Tuple[List[str], List[Row]]:
     if not source_path.exists():
         raise FileNotFoundError(f"Planilha não encontrada: {source_path}")
 
-    extension = validate_spreadsheet_extension(str(source_path))
-
-    if extension == ".xlsx":
-        return read_xlsx(source_path)
-
-    return read_csv(source_path)
+    validate_spreadsheet_extension(str(source_path))
+    return read_xlsx(source_path)
 
 
 # Lê arquivo Excel.
@@ -178,56 +181,6 @@ def read_xlsx(source_path: Path) -> Tuple[List[str], List[Row]]:
 
     return headers, rows
 
-
-# Lê arquivo CSV.    
-def read_csv(source_path: Path) -> Tuple[List[str], List[Row]]:
-    
-    encoding = detect_csv_encoding(source_path)
-
-    with source_path.open("r", encoding=encoding, newline="") as file:
-        sample = file.read(4096)
-        file.seek(0)
-        dialect = detect_csv_dialect(sample)
-        reader = csv.reader(file, dialect)
-
-        try:
-            raw_headers = next(reader)
-        except StopIteration as exc:
-            raise ValueError("A planilha CSV está vazia.") from exc
-
-        headers = make_unique_headers(raw_headers)
-        rows: List[Row] = []
-
-        for raw_row in reader:
-            if is_empty_row(raw_row):
-                continue
-
-            rows.append(build_row(headers, raw_row))
-
-    return headers, rows
-
-
-# Detecta encoding do CSV.
-def detect_csv_encoding(source_path: Path) -> str:
-    
-    try:
-        with source_path.open("r", encoding="utf-8-sig") as file:
-            file.read()
-        return "utf-8-sig"
-    except UnicodeDecodeError:
-        return "latin-1"
-
-
-# Detecta dialeto do CSV.
-def detect_csv_dialect(sample: str) -> csv.Dialect:
-    
-    try:
-        return csv.Sniffer().sniff(sample, delimiters=",;")
-    except csv.Error:
-        class DefaultDialect(csv.excel):
-            delimiter = ";" if sample.count(";") > sample.count(",") else ","
-
-        return DefaultDialect
 
 
 # Garante cabeçalhos únicos.  
@@ -304,22 +257,17 @@ def build_report_row(search_type: str, result: SearchResult) -> Row:
 
     return report_row
 
-
+# Salva relatório em arquivo.
 def write_report(
     source_spreadsheet_path: str,
     report_path: Path,
     search_type: str,
     rows: Sequence[Row],
 ) -> None:
-    # Salva relatório em arquivo.
-    extension = validate_spreadsheet_extension(source_spreadsheet_path)
+    validate_spreadsheet_extension(source_spreadsheet_path)
     report_headers = get_report_headers(search_type)
 
-    if extension == ".xlsx":
-        write_xlsx_report(report_path, report_headers, rows)
-        return
-
-    write_csv_report(report_path, report_headers, rows)
+    write_xlsx_report(report_path, report_headers, rows)
 
 # Salva relatório em Excel.
 def write_xlsx_report(
@@ -338,25 +286,46 @@ def write_xlsx_report(
             row.get(header, "")
             for header in headers
         ])
-
+    apply_xlsx_report_layout(worksheet)
     workbook.save(report_path)
 
-# Salva relatório em CSV.
-def write_csv_report(
-    report_path: Path,
-    headers: Sequence[str],
-    rows: Sequence[Row],
-) -> None:
-    
-    with report_path.open("w", encoding="utf-8-sig", newline="") as file:
-        writer = csv.writer(file, delimiter=";")
-        writer.writerow(headers)
+# Aplica filtros, congelamento e largura automática no XLSX.
+def apply_xlsx_report_layout(worksheet) -> None:
+    if worksheet.max_row < XLSX_HEADER_ROW or worksheet.max_column < 1:
+        return
 
-        for row in rows:
-            writer.writerow([
-                row.get(header, "")
-                for header in headers
-            ])
+    worksheet.freeze_panes = XLSX_FREEZE_PANES_CELL
+    worksheet.auto_filter.ref = build_xlsx_filter_range(worksheet)
+    autofit_xlsx_columns(worksheet)
+
+# Monta intervalo de filtros do relatório.
+def build_xlsx_filter_range(worksheet) -> str:
+    last_column = get_column_letter(worksheet.max_column)
+    return f"A{XLSX_HEADER_ROW}:{last_column}{worksheet.max_row}"
+
+# Ajusta largura das colunas conforme o maior conteúdo.
+def autofit_xlsx_columns(worksheet) -> None:
+    for column_cells in worksheet.columns:
+        column_letter = get_column_letter(column_cells[0].column)
+        max_length = max(
+            get_xlsx_cell_text_length(cell.value)
+            for cell in column_cells
+        )
+        width = max_length + XLSX_COLUMN_PADDING
+        worksheet.column_dimensions[column_letter].width = min(
+            max(width, XLSX_MIN_COLUMN_WIDTH),
+            XLSX_MAX_COLUMN_WIDTH,
+        )
+
+# Calcula tamanho visível de uma célula.
+def get_xlsx_cell_text_length(value: Any) -> int:
+    if value is None:
+        return 0
+
+    lines = str(value).splitlines() or [""]
+    return max(len(line) for line in lines)
+
+
 
 
 # -----------------------------
