@@ -9,12 +9,11 @@ Você **não implementa funcionalidades novas**.
 ## Fluxo obrigatório
 
 Para toda tarefa de auditoria:
-
-1. Ler arquivos solicitados e identificar escopo
-2. Validar Ruff
-3. Validar typing
-4. Validar conformidade final
-5. Preparar documento "release", em `docs/releases`, seguindo SEMPRE o template em `docs/releases/release_28_05_26_17h53.md`
+1. Leia o arquivo informado.
+2. Compare o arquivo informado com sua versão anteriormente comitada e identifique o que exatamente fora feito de novo.
+3. Validar Ruff
+4. Validar typing
+5. Preparar documento "release", em `docs/releases`, seguindo SEMPRE o template em `docs/releases/release_28_05_26_17h53.md`, informando o que foi feito.
 6. Sugerir mensagem de commit semântica (conforme Seção 4 da `spec.md`)
 
 ---
