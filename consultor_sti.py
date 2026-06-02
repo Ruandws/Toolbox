@@ -1,3 +1,5 @@
+import re
+import time
 import unicodedata
 from dataclasses import dataclass
 from datetime import datetime
@@ -42,7 +44,30 @@ SEARCH_LOADING_FINISH_TIMEOUT_MS = 10000
 LOGIN_BUTTON_TEXT = "Entrar"
 LOGIN_PASSWORD_SELECTOR = 'input[type="password"]'
 PAGE_READY_TIMEOUT_MS = 15000
-LOGIN_COMPLETION_TIMEOUT_MS = 15000
+LOGIN_COMPLETION_TIMEOUT_MS = 6000
+LOGIN_COMPLETION_POLL_INTERVAL_MS = 150
+LOGIN_FAILED_WARNING_SELECTOR = (
+    "[role='alert'], "
+    ".alert, "
+    ".alert-danger, "
+    ".alert-warning, "
+    ".toast, "
+    ".toast-error, "
+    ".toast-message, "
+    ".swal2-popup"
+)
+LOGIN_FAILED_WARNING_PATTERN = re.compile(
+    r"("
+    r"login|entrar|autentic|credenc|usuario|usuário|senha"
+    r").{0,80}("
+    r"falh|inval|invál|incorret|negad|bloquead|expirad"
+    r")|("
+    r"falh|inval|invál|incorret|negad|bloquead|expirad"
+    r").{0,80}("
+    r"login|entrar|autentic|credenc|usuario|usuário|senha"
+    r")",
+    re.IGNORECASE,
+)
 
 # Filtros Excel
 XLSX_HEADER_ROW = 1
@@ -430,20 +455,48 @@ def wait_for_login_page_ready(page) -> None:
         timeout=PAGE_READY_TIMEOUT_MS,
     )
 
+# Obtém locator do aviso de falha no login.
+def get_login_failed_warning_locator(page):
+    return page.locator(LOGIN_FAILED_WARNING_SELECTOR).filter(
+        has_text=LOGIN_FAILED_WARNING_PATTERN,
+    )
+
+
+# Extrai texto visível do aviso de falha no login.
+def get_visible_login_failed_warning_text(page) -> Optional[str]:
+    warnings = get_login_failed_warning_locator(page)
+
+    for index in range(warnings.count()):
+        warning = warnings.nth(index)
+
+        if warning.is_visible():
+            return " ".join(warning.inner_text(timeout=500).split())
+
+    return None
+    
 # Aguarda o login concluir sem usar espera fixa.
 def wait_for_login_completion(page) -> None:
-    try:
-        get_login_password_locator(page).wait_for(
-            state="hidden",
-            timeout=LOGIN_COMPLETION_TIMEOUT_MS,
-        )
-    except PlaywrightTimeoutError as exc:
-        raise RuntimeError(
-            "Login não concluído no tempo esperado. "
-            "Verifique as credenciais, a disponibilidade do sistema "
-            "ou mudança no fluxo de autenticação."
-        ) from exc
+    deadline = time.monotonic() + (LOGIN_COMPLETION_TIMEOUT_MS / 1000)
 
+    while time.monotonic() < deadline:
+        failed_warning_text = get_visible_login_failed_warning_text(page)
+
+        if failed_warning_text:
+            raise RuntimeError(
+                "Login falhou: aviso de falha detectado. "
+                f"Mensagem do sistema: {failed_warning_text}"
+            )
+
+        if not get_login_password_locator(page).is_visible():
+            return
+
+        page.wait_for_timeout(LOGIN_COMPLETION_POLL_INTERVAL_MS)
+
+    raise RuntimeError(
+        "Login não concluído no tempo esperado. "
+        "Verifique as credenciais, a disponibilidade do sistema "
+        "ou mudança no fluxo de autenticação."
+    )
 
 # Realiza login no sistema.
 def login_to_system(page, login: str, password: str) -> None:
