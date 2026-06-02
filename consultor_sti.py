@@ -41,6 +41,7 @@ SEARCH_LOADING_FINISH_TIMEOUT_MS = 10000
 
 LOGIN_BUTTON_TEXT = "Entrar"
 LOGIN_PASSWORD_SELECTOR = 'input[type="password"]'
+PAGE_READY_TIMEOUT_MS = 15000
 LOGIN_COMPLETION_TIMEOUT_MS = 15000
 
 # Filtros Excel
@@ -405,6 +406,74 @@ def prepare_search_value(search_type: str, search_value: Any) -> str:
     return " ".join(value.split())
 
 
+# -----------------------------
+# Autenticação e Navegação
+# -----------------------------
+
+# Obtém locator do campo de login.
+def get_login_textbox_locator(page):
+    return page.get_by_role("textbox").first
+
+# Obtém locator do campo de senha do login.
+def get_login_password_locator(page):
+    return page.locator(LOGIN_PASSWORD_SELECTOR)
+
+
+# Aguarda a tela de login carregar após DOMContentLoaded.
+def wait_for_login_page_ready(page) -> None:
+    get_login_textbox_locator(page).wait_for(
+        state="visible",
+        timeout=PAGE_READY_TIMEOUT_MS,
+    )
+    get_login_password_locator(page).wait_for(
+        state="visible",
+        timeout=PAGE_READY_TIMEOUT_MS,
+    )
+
+# Aguarda o login concluir sem usar espera fixa.
+def wait_for_login_completion(page) -> None:
+    try:
+        get_login_password_locator(page).wait_for(
+            state="hidden",
+            timeout=LOGIN_COMPLETION_TIMEOUT_MS,
+        )
+    except PlaywrightTimeoutError as exc:
+        raise RuntimeError(
+            "Login não concluído no tempo esperado. "
+            "Verifique as credenciais, a disponibilidade do sistema "
+            "ou mudança no fluxo de autenticação."
+        ) from exc
+
+
+# Realiza login no sistema.
+def login_to_system(page, login: str, password: str) -> None:
+    
+    page.goto(LOGIN_URL, wait_until="domcontentloaded")
+    wait_for_login_page_ready(page)
+    get_login_textbox_locator(page).fill(login)
+    get_login_password_locator(page).fill(password)
+    page.get_by_role("button", name=LOGIN_BUTTON_TEXT).click()
+    wait_for_login_completion(page)
+
+
+# Abre tela de pesquisa.
+def open_search_users_page(page) -> None:
+
+    page.goto(SEARCH_USERS_URL, wait_until="domcontentloaded")
+    wait_for_search_users_page_ready(page)
+
+
+# -----------------------------
+# Locators e Esperas de Pesquisa
+# -----------------------------
+
+# Aguarda a tela de pesquisa ficar pronta.
+def wait_for_search_users_page_ready(page) -> None:
+    get_search_input_locator(page).wait_for(
+        state="visible",
+        timeout=PAGE_READY_TIMEOUT_MS,
+    )
+
 # Obtém locator do campo de pesquisa.
 def get_search_input_locator(page):
     return page.get_by_placeholder(SEARCH_INPUT_PLACEHOLDER)
@@ -463,38 +532,6 @@ def wait_for_search_response(page) -> None:
         state="visible",
         timeout=SEARCH_RESPONSE_TIMEOUT_MS,
     )
-
-# Obtém locator do campo de senha do login.
-def get_login_password_locator(page):
-    return page.locator(LOGIN_PASSWORD_SELECTOR)
-
-# Aguarda o login concluir sem usar espera fixa.
-def wait_for_login_completion(page) -> None:
-    try:
-        get_login_password_locator(page).wait_for(
-            state="hidden",
-            timeout=LOGIN_COMPLETION_TIMEOUT_MS,
-        )
-    except PlaywrightTimeoutError as exc:
-        raise RuntimeError(
-            "Login não concluído no tempo esperado. "
-            "Verifique as credenciais, a disponibilidade do sistema "
-            "ou mudança no fluxo de autenticação."
-        ) from exc
-
-# Realiza login no sistema.
-def login_to_system(page, login: str, password: str) -> None:
-    page.goto(LOGIN_URL, wait_until="networkidle")
-    page.get_by_role("textbox").first.fill(login)
-    get_login_password_locator(page).fill(password)
-    page.get_by_role("button", name=LOGIN_BUTTON_TEXT).click()
-    wait_for_login_completion(page)
-
-# Abre tela de pesquisa.
-def open_search_users_page(page) -> None:
-
-    page.goto(SEARCH_USERS_URL, wait_until="networkidle")
-    get_search_input_locator(page).wait_for(state="visible")
 
 # Extrai resultado da tabela.
 def extract_single_result(row, search_type: str) -> SearchResult:
