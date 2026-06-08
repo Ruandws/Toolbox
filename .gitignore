@@ -1,0 +1,7 @@
+# Python
+__pycache__/
+
+.ruff_cache/
+
+seletores.txt
+tdstructure.txt
