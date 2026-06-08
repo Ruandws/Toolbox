@@ -782,7 +782,12 @@ def run_automation(
     search_type: str,
     search_value: str,
 ) -> str:
-    
+    normalized_search_type = normalize_search_type(search_type)
+    clean_search_value = prepare_search_value(
+        normalized_search_type,
+        search_value,
+    )
+
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=False)
         context = browser.new_context()
@@ -791,8 +796,12 @@ def run_automation(
             page = context.new_page()
             login_to_system(page, login, password)
             open_search_users_page(page)
-            result = search_user(page, search_type, search_value)
-            return format_single_result(result, search_type)
+            result = search_user(
+                page,
+                normalized_search_type,
+                clean_search_value,
+            )
+            return format_single_result(result, normalized_search_type)
         finally:
             context.close()
             browser.close()
@@ -824,8 +833,7 @@ def run_batch_automation(
                 search_value = source_row.get(search_column, "")
 
                 try:
-                    result = search_user(
-                        page,
+                    clean_search_value = prepare_search_value(
                         normalized_search_type,
                         search_value,
                         allow_cpf_left_padding=(
@@ -834,6 +842,17 @@ def run_batch_automation(
                     )
                 except ValueError as exc:
                     result = SearchResult(message=f"Erro: {str(exc)}")
+                    report_rows.append(
+                        build_report_row(normalized_search_type, result)
+                    )
+                    continue
+
+                try:
+                    result = search_user(
+                        page,
+                        normalized_search_type,
+                        clean_search_value,
+                    )
                 except Exception as exc:
                     result = SearchResult(message=f"Erro: {str(exc)}")
 

@@ -1,7 +1,7 @@
 import threading
 from tkinter import filedialog
 import customtkinter as ctk
-from consultor_sti import run_automation, run_batch_automation
+from consultor_sti import prepare_search_value, run_automation, run_batch_automation
 
 
 class ExtratorApp(ctk.CTk):
@@ -315,6 +315,7 @@ class ExtratorApp(ctk.CTk):
                 report_directory,
             )
             status_text = "Iniciando automação em lote..."
+        
         else:
             if not search_value:
                 self.show_status(
@@ -323,12 +324,21 @@ class ExtratorApp(ctk.CTk):
                 )
                 return
 
+            try:
+                clean_search_value = prepare_search_value(
+                    search_type,
+                    search_value,
+                )
+            except ValueError as exc:
+                self.show_status(f"Erro: {str(exc)}", "red")
+                return
+
             args = (
                 "single",
                 login,
                 password,
                 search_type,
-                search_value,
+                clean_search_value,
             )
             status_text = "Iniciando automação individual..."
 
