@@ -507,7 +507,7 @@ def format_cpf(digits: str) -> str:
         f"{clean_digits[9:]}"
     )
 
-# Prepara valor da pesquisa.
+# Prepara valor da pesquisa para execução individual.
 def prepare_search_value(
     search_type: str,
     search_value: Any,
@@ -533,6 +533,14 @@ def prepare_search_value(
 
     return " ".join(value.split())
 
+# Prepara valor de pesquisa para execução em lote.
+def prepare_batch_search_value(search_type: str, search_value: Any) -> str:
+    normalized_search_type = normalize_search_type(search_type)
+
+    if normalized_search_type == SEARCH_TYPE_CPF:
+        return normalize_cpf(search_value, allow_left_padding=True)
+
+    return prepare_search_value(normalized_search_type, search_value)
 
 # -----------------------------
 # Autenticação e Navegação
@@ -710,19 +718,33 @@ def extract_single_result(row, search_type: str) -> SearchResult:
     )
 
 
-# Pesquisa o usuário.
+# Pesquisa o usuário validando/preparando o valor internamente.
 def search_user(
     page,
     search_type: str,
     search_value: Any,
-    *,
-    allow_cpf_left_padding: bool = False,
 ) -> SearchResult:
-    clean_value = prepare_search_value(
+    clean_value = prepare_search_value(search_type, search_value)
+
+    return search_user_prepared_value(
+        page,
         search_type,
-        search_value,
-        allow_cpf_left_padding=allow_cpf_left_padding,
+        clean_value,
     )
+
+# Pesquisa o usuário usando valor já validado/normalizado.
+def search_user_prepared_value(
+    page,
+    search_type: str,
+    prepared_search_value: str,
+) -> SearchResult:
+    normalized_search_type = normalize_search_type(search_type)
+    clean_value = "" if prepared_search_value is None else str(
+        prepared_search_value,
+    ).strip()
+
+    if not clean_value:
+        raise ValueError("Valor da pesquisa preparado não informado.")
 
     input_campo = get_search_input_locator(page)
     input_campo.wait_for(state="visible")
@@ -747,10 +769,9 @@ def search_user(
         if count > 1:
             return SearchResult(message="Mais de um usuário encontrado")
 
-        return extract_single_result(rows.first, search_type)
+        return extract_single_result(rows.first, normalized_search_type)
     except PlaywrightTimeoutError:
         return SearchResult(message=NO_USER_FOUND_MESSAGE)
-
 
 # Formata resultado da pesquisa.
 def format_single_result(result: SearchResult, search_type: str) -> str:
@@ -796,7 +817,7 @@ def run_automation(
             page = context.new_page()
             login_to_system(page, login, password)
             open_search_users_page(page)
-            result = search_user(
+            result = search_user_prepared_value(
                 page,
                 normalized_search_type,
                 clean_search_value,
@@ -833,12 +854,9 @@ def run_batch_automation(
                 search_value = source_row.get(search_column, "")
 
                 try:
-                    clean_search_value = prepare_search_value(
+                    clean_search_value = prepare_batch_search_value(
                         normalized_search_type,
                         search_value,
-                        allow_cpf_left_padding=(
-                            normalized_search_type == SEARCH_TYPE_CPF
-                        ),
                     )
                 except ValueError as exc:
                     result = SearchResult(message=f"Erro: {str(exc)}")
@@ -848,7 +866,7 @@ def run_batch_automation(
                     continue
 
                 try:
-                    result = search_user(
+                    result = search_user_prepared_value(
                         page,
                         normalized_search_type,
                         clean_search_value,

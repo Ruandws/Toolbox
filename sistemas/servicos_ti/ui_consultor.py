@@ -154,9 +154,13 @@ class ExtratorApp(ctk.CTk):
                 "Para lote, selecione a planilha e a pasta de relatório. "
                 "O tipo CPF/Nome Completo acima será usado para todas as linhas. "
                 "A coluna de entrada será identificada automaticamente. "
-                "Para CPF, cabeçalhos aceitos: cpf, c.p.f, cpf usuário, "
-                "cpf do usuário, documento. "
-                "Relatórios XLSX recebem filtros, cabeçalho congelado e largura automática."
+                "Para CPF em lote, valores com menos de 11 dígitos serão "
+                "completados com zeros à esquerda somente se os dígitos "
+                "verificadores conferirem. Na execução individual, o CPF deve "
+                "ser informado completo. "
+                "Cabeçalhos aceitos: cpf, c.p.f, cpf usuário, cpf do usuário, "
+                "documento. Relatórios XLSX recebem filtros, cabeçalho "
+                "congelado e largura automática."
             ),
             text_color="gray",
             wraplength=620,
@@ -227,7 +231,8 @@ class ExtratorApp(ctk.CTk):
             text=(
                 "Para lote, selecione a planilha e a pasta de relatório. "
                 "O tipo CPF/Nome Completo acima será usado para todas as linhas. "
-                "A coluna de entrada será identificada automaticamente."
+                "A coluna de entrada será identificada automaticamente. "
+                "Zeros à esquerda em CPF são completados apenas no lote."
             ),
             text_color="gray",
             wraplength=620,
