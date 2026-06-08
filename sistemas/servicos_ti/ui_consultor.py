@@ -3,6 +3,7 @@ from tkinter import filedialog
 import customtkinter as ctk
 from consultor_sti import run_automation, run_batch_automation
 
+
 class ExtratorApp(ctk.CTk):
     # -----------------------------
     # Interface - Inicialização
@@ -134,7 +135,7 @@ class ExtratorApp(ctk.CTk):
 
         self.entry_search = ctk.CTkEntry(
             self.frame_inputs,
-            placeholder_text="Digite apenas números para CPF",
+            placeholder_text="Digite CPF com ou sem pontuação",
         )
         self.entry_search.grid(
             row=4,
@@ -144,17 +145,18 @@ class ExtratorApp(ctk.CTk):
             pady=10,
             sticky="ew",
         )
-        self.entry_search.bind("<KeyRelease>", self.sanitize_search_entry)
 
     # Cria campos para lote.
     def create_batch_fields(self):
         self.label_batch_title = ctk.CTkLabel(
             self.frame_inputs,
             text=(
-            "Para lote, selecione a planilha e a pasta de relatório. "
-            "O tipo CPF/Nome Completo acima será usado para todas as linhas. "
-            "A coluna de entrada será identificada automaticamente. "
-            "Relatórios XLSX recebem filtros, cabeçalho congelado e largura automática."
+                "Para lote, selecione a planilha e a pasta de relatório. "
+                "O tipo CPF/Nome Completo acima será usado para todas as linhas. "
+                "A coluna de entrada será identificada automaticamente. "
+                "Para CPF, cabeçalhos aceitos: cpf, c.p.f, cpf usuário, "
+                "cpf do usuário, documento. "
+                "Relatórios XLSX recebem filtros, cabeçalho congelado e largura automática."
             ),
             text_color="gray",
             wraplength=620,
@@ -247,37 +249,11 @@ class ExtratorApp(ctk.CTk):
     def on_search_type_change(self, selected_type):
         if selected_type == "CPF":
             self.entry_search.configure(
-                placeholder_text="Digite apenas números para CPF",
+                placeholder_text="Digite CPF com ou sem pontuação",
             )
         else:
             self.entry_search.configure(
                 placeholder_text="Digite o nome completo sem números",
-            )
-
-        self.sanitize_search_entry()
-
-    # Sanitiza entrada de pesquisa.
-    def sanitize_search_entry(self, event=None):
-        search_type = self.combo_search_type.get()
-        current_value = self.entry_search.get()
-
-        if search_type == "CPF":
-            sanitized_value = "".join(
-                char for char in current_value
-                if char.isdigit()
-            )
-        else:
-            sanitized_value = "".join(
-                char for char in current_value
-                if not char.isdigit()
-            )
-
-        if sanitized_value != current_value:
-            cursor_position = self.entry_search.index("insert")
-            self.entry_search.delete(0, "end")
-            self.entry_search.insert(0, sanitized_value)
-            self.entry_search.icursor(
-                min(cursor_position, len(sanitized_value))
             )
 
     # Seleciona arquivo de planilha.
@@ -394,6 +370,7 @@ class ExtratorApp(ctk.CTk):
     # Atualiza mensagem de status.
     def show_status(self, message, color):
         self.label_status.configure(text=message, text_color=color)
+
 
 if __name__ == "__main__":
     ctk.set_appearance_mode("System")

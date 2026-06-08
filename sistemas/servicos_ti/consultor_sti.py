@@ -16,11 +16,28 @@ LOGIN_URL = "https://servicosti.ebserh.gov.br/#/login"
 SEARCH_USERS_URL = "https://servicosti.ebserh.gov.br/#/pesquisa-usuarios"
 
 SUPPORTED_EXTENSIONS = (".xlsx",)
-SEARCH_TYPE_CPF = "CPF"
-SEARCH_TYPE_FULL_NAME = "Nome Completo"
-REPORT_COLUMN_USER = "usuário"
+
+SEARCH_TYPE_CPF = "cpf"
+SEARCH_TYPE_FULL_NAME = "nome completo"
+
+CPF_DIGITS_LENGTH = 11
+
 REPORT_COLUMN_FULL_NAME = "Nome Completo"
+REPORT_COLUMN_USER = "usuário"
 REPORT_COLUMN_STATUS = "Relatório"
+
+CPF_SEARCH_COLUMN_ALIASES = (
+    "cpf",
+    "c.p.f",
+    "cpf usuário",
+    "cpf do usuário",
+    "documento",
+)
+
+FULL_NAME_SEARCH_COLUMN_ALIASES = (
+    "nome",
+    "nome completo",
+)
 
 SEARCH_INPUT_PLACEHOLDER = (
     "Informe o e-mail institucional, o CPF, ou o nome do usuário"
@@ -78,7 +95,6 @@ XLSX_COLUMN_PADDING = 2
 
 Row = Dict[str, Any]
 
-
 @dataclass
 class SearchResult:
     message: str
@@ -102,19 +118,25 @@ def normalize_column_name(value: Any) -> str:
 
 
 # Identifica coluna alvo da pesquisa.  
+# Identifica coluna alvo da pesquisa.  
 def identify_search_column(headers: Sequence[str], search_type: str) -> str:  
     normalized_search_type = normalize_search_type(search_type)
-    
+
     if normalized_search_type == SEARCH_TYPE_CPF:
-        candidates = {"cpf"}
+        aliases = CPF_SEARCH_COLUMN_ALIASES
     else:
-        candidates = {"nome", "nome completo"}
+        aliases = FULL_NAME_SEARCH_COLUMN_ALIASES
+
+    candidates = {
+        normalize_column_name(alias)
+        for alias in aliases
+    }
 
     for header in headers:
         if normalize_column_name(header) in candidates:
             return header
 
-    expected_columns = ", ".join(sorted(candidates))
+    expected_columns = ", ".join(aliases)
     raise ValueError(
         "Coluna de pesquisa não encontrada. "
         f"A planilha deve conter uma destas colunas: {expected_columns}."
@@ -405,10 +427,93 @@ def normalize_search_type(search_type: str) -> str:
         "Tipo de pesquisa inválido. Use CPF ou Nome Completo."
     )
 
+# Extrai apenas os dígitos de um CPF.
+def extract_cpf_digits(value: Any) -> str:
+    if value is None:
+        return ""
+
+    if isinstance(value, bool):
+        text = str(value)
+    elif isinstance(value, int):
+        text = str(value)
+    elif isinstance(value, float) and value.is_integer():
+        text = str(int(value))
+    else:
+        text = str(value).strip()
+
+    return "".join(char for char in text if char.isdigit())
+
+# Valida dígitos de CPF, incluindo tamanho, repetição e dígitos verificadores.
+def is_valid_cpf_digits(digits: str) -> bool:
+    if not isinstance(digits, str):
+        return False
+
+    if len(digits) != CPF_DIGITS_LENGTH:
+        return False
+
+    if not digits.isdigit():
+        return False
+
+    if digits == digits[0] * CPF_DIGITS_LENGTH:
+        return False
+
+    numbers = [int(char) for char in digits]
+
+    first_sum = sum(
+        numbers[index] * (10 - index)
+        for index in range(9)
+    )
+    first_remainder = first_sum % 11
+    first_check_digit = 0 if first_remainder < 2 else 11 - first_remainder
+
+    if numbers[9] != first_check_digit:
+        return False
+
+    second_sum = sum(
+        numbers[index] * (11 - index)
+        for index in range(10)
+    )
+    second_remainder = second_sum % 11
+    second_check_digit = 0 if second_remainder < 2 else 11 - second_remainder
+
+    return numbers[10] == second_check_digit
+
+# Normaliza CPF para 11 dígitos válidos.
+def normalize_cpf(value: Any, *, allow_left_padding: bool = False) -> str:
+    digits = extract_cpf_digits(value)
+
+    if not digits:
+        raise ValueError("Para pesquisa por CPF, informe um CPF válido.")
+
+    if allow_left_padding and len(digits) < CPF_DIGITS_LENGTH:
+        digits = digits.zfill(CPF_DIGITS_LENGTH)
+
+    if len(digits) != CPF_DIGITS_LENGTH:
+        raise ValueError("CPF inválido: informe 11 dígitos.")
+
+    if not is_valid_cpf_digits(digits):
+        raise ValueError("CPF inválido: dígitos verificadores não conferem.")
+
+    return digits
+
+# Formata CPF válido como 000.000.000-00.
+def format_cpf(digits: str) -> str:
+    clean_digits = normalize_cpf(digits)
+
+    return (
+        f"{clean_digits[:3]}."
+        f"{clean_digits[3:6]}."
+        f"{clean_digits[6:9]}-"
+        f"{clean_digits[9:]}"
+    )
 
 # Prepara valor da pesquisa.
-def prepare_search_value(search_type: str, search_value: Any) -> str:
-    
+def prepare_search_value(
+    search_type: str,
+    search_value: Any,
+    *,
+    allow_cpf_left_padding: bool = False,
+) -> str:
     normalized_search_type = normalize_search_type(search_type)
     value = "" if search_value is None else str(search_value).strip()
 
@@ -416,12 +521,10 @@ def prepare_search_value(search_type: str, search_value: Any) -> str:
         raise ValueError("Valor da pesquisa não informado.")
 
     if normalized_search_type == SEARCH_TYPE_CPF:
-        value_digits = "".join(char for char in value if char.isdigit())
-        if not value_digits:
-            raise ValueError(
-                "Para pesquisa por CPF, informe um CPF válido."
-            )
-        return value_digits
+        return normalize_cpf(
+            search_value,
+            allow_left_padding=allow_cpf_left_padding,
+        )
 
     if any(char.isdigit() for char in value):
         raise ValueError(
@@ -608,9 +711,18 @@ def extract_single_result(row, search_type: str) -> SearchResult:
 
 
 # Pesquisa o usuário.
-def search_user(page, search_type: str, search_value: Any) -> SearchResult:
-    
-    clean_value = prepare_search_value(search_type, search_value)
+def search_user(
+    page,
+    search_type: str,
+    search_value: Any,
+    *,
+    allow_cpf_left_padding: bool = False,
+) -> SearchResult:
+    clean_value = prepare_search_value(
+        search_type,
+        search_value,
+        allow_cpf_left_padding=allow_cpf_left_padding,
+    )
 
     input_campo = get_search_input_locator(page)
     input_campo.wait_for(state="visible")
@@ -685,7 +797,6 @@ def run_automation(
             context.close()
             browser.close()
 
-
 # Executa automação em lote.
 def run_batch_automation(
     login: str,
@@ -694,7 +805,6 @@ def run_batch_automation(
     spreadsheet_path: str,
     report_directory: str,
 ) -> str:
-    
     normalized_search_type = normalize_search_type(search_type)
     headers, source_rows = read_spreadsheet(spreadsheet_path)
     search_column = identify_search_column(headers, normalized_search_type)
@@ -718,6 +828,9 @@ def run_batch_automation(
                         page,
                         normalized_search_type,
                         search_value,
+                        allow_cpf_left_padding=(
+                            normalized_search_type == SEARCH_TYPE_CPF
+                        ),
                     )
                 except ValueError as exc:
                     result = SearchResult(message=f"Erro: {str(exc)}")
