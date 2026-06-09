@@ -5,3 +5,8 @@ __pycache__/
 
 seletores.txt
 tdstructure.txt
+
+# Logs - de automações
+Habilitar_impressora_em_computador/logs/
+logs/
+*.log
