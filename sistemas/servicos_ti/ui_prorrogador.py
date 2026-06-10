@@ -364,13 +364,13 @@ class ExtratorApp(ctk.CTk):
     # Inicia processo de automação.
     def start_automation(self):
         login = self.entry_login.get().strip()
-        password = self.entry_password.get().strip()
+        password = self.entry_password.get()
         search_value = self.entry_search.get().strip()
         expiration_date = self.entry_date.get().strip()
         spreadsheet_path = self.entry_spreadsheet.get().strip()
         report_directory = self.entry_report_dir.get().strip()
 
-        if not login or not password or not expiration_date:
+        if not login or not password.strip() or not expiration_date:
             self.show_status(
                 "Erro: Preencha login, senha e nova data.",
                 "red"
