@@ -1,6 +1,6 @@
 import re
 import unicodedata
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 from urllib.parse import quote
@@ -9,25 +9,28 @@ from openpyxl import Workbook, load_workbook
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import sync_playwright
 
-
+#Constantes globais de acesso
 LOGIN_URL = "https://servicosti.ebserh.gov.br/#/login"
 USER_URL_TEMPLATE = "https://servicosti.ebserh.gov.br/#/usuarios/{search_value}"
 
+#Constantes globais de data
 DATE_INPUT_NAME = "__/__/____"
+EXPIRATION_DATE_FORMAT = "%d/%m/%Y"
+EXPIRATION_DATE_PATTERN = re.compile(r"^\d{2}/\d{2}/\d{4}$")
 
+#Constantes globais de relatórios
 REPORT_COLUMN_USER = "usuário"
 REPORT_COLUMN_NAME = "relatório"
 REPORT_HEADERS = (REPORT_COLUMN_USER,REPORT_COLUMN_NAME,)
 USER_COLUMN_CANDIDATES = ("usuário","usuario","login","rede","REDE",)
 
-
-SUPPORTED_EXTENSIONS = (".xlsx",)
-
+#Constantes globais de usuários
 USER_LOGIN_ALLOWED_PATTERN = re.compile(r"^[A-Za-z0-9._@'-]+$")
 USER_URL_SAFE_CHARS = "._@-'"
 BATCH_ENTRY_PREPARED_USER = "_prepared_user"
 
-
+#Constantes globais de planilha
+SUPPORTED_EXTENSIONS = (".xlsx",)
 Row = Dict[str, Any]
 
 
@@ -329,6 +332,56 @@ def build_user_url(prepared_user_value: str) -> str:
     )
 
 # -----------------------------
+# Data / validação
+# -----------------------------
+
+# Normaliza e valida a nova data de expiração.
+def normalize_expiration_date(value: Any) -> str:
+    if value is None:
+        raise ValueError("Nova data não informada.")
+
+    if isinstance(value, bool):
+        raise ValueError("Nova data inválida: valor booleano não é aceito.")
+
+    if isinstance(value, datetime):
+        return value.strftime(EXPIRATION_DATE_FORMAT)
+
+    if isinstance(value, date):
+        return value.strftime(EXPIRATION_DATE_FORMAT)
+
+    text = str(value).strip()
+
+    text = str(value).strip()
+
+    if not text:
+        raise ValueError("Nova data não informada.")
+
+    digits = "".join(
+        char for char in text
+        if char.isdigit()
+    )
+
+    if text.isdigit() and len(text) == 8:
+        text = f"{digits[:2]}/{digits[2:4]}/{digits[4:]}"
+
+    if not EXPIRATION_DATE_PATTERN.fullmatch(text):
+        raise ValueError(
+            "Nova data inválida: use o formato dd/mm/aaaa."
+        )
+
+    try:
+        parsed_date = datetime.strptime(
+            text,
+            EXPIRATION_DATE_FORMAT
+        )
+    except ValueError as exc:
+        raise ValueError(
+            "Nova data inválida: informe uma data real no formato dd/mm/aaaa."
+        ) from exc
+
+    return parsed_date.strftime(EXPIRATION_DATE_FORMAT)   
+
+# -----------------------------
 # Automação Web
 # -----------------------------
 
@@ -360,11 +413,12 @@ def process_user(
     expiration_date: str
 ) -> str:
     prepared_user = prepare_user_value(search_value)
+    normalized_expiration_date = normalize_expiration_date(expiration_date)
 
     return process_user_prepared_value(
         page,
         prepared_user,
-        expiration_date
+        normalized_expiration_date
     )
 
 
@@ -381,6 +435,7 @@ def process_user_prepared_value(
     if not user:
         raise ValueError("Usuário preparado não informado.")
 
+    normalized_expiration_date = normalize_expiration_date(expiration_date)
     user_url = build_user_url(user)
 
     page.goto(
@@ -416,13 +471,12 @@ def process_user_prepared_value(
     page.keyboard.press("Escape")
     date_input.press("ControlOrMeta+A")
     date_input.fill("")
-    date_input.type(expiration_date)
+    date_input.type(normalized_expiration_date)
 
     update_button.click()
     page.wait_for_timeout(1000)
 
-    return f"Data prorrogada para {expiration_date}"
-
+    return f"Data prorrogada para {normalized_expiration_date}"
 
 # -----------------------------
 # Entry points
@@ -436,6 +490,7 @@ def run_automation(
     expiration_date: str
 ) -> str:
     prepared_user = prepare_user_value(search_value)
+    normalized_expiration_date = normalize_expiration_date(expiration_date)
 
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(
@@ -450,7 +505,7 @@ def run_automation(
             return process_user_prepared_value(
                 page,
                 prepared_user,
-                expiration_date
+                normalized_expiration_date
             )
         finally:
             context.close()
@@ -465,6 +520,8 @@ def run_batch_automation(
     report_directory: str,
     expiration_date: str
 ) -> str:
+    normalized_expiration_date = normalize_expiration_date(expiration_date)
+
     headers, source_rows = read_spreadsheet(spreadsheet_path)
     user_column = identify_user_column(headers)
     report_path = build_report_path(
@@ -520,10 +577,10 @@ def run_batch_automation(
 
                     try:
                         report_message = process_user_prepared_value(
-                            page,
-                            prepared_user,
-                            expiration_date
-                        )
+                        page,
+                        prepared_user,
+                        normalized_expiration_date
+                    )
                     except Exception as exc:
                         report_message = f"Erro: {str(exc)}"
 

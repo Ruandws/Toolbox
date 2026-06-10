@@ -2,6 +2,7 @@ import threading
 from tkinter import filedialog
 import customtkinter as ctk  # type: ignore[import-untyped]
 from prorrogador_sti import (
+    normalize_expiration_date,
     prepare_user_value, 
     run_automation, 
     run_batch_automation
@@ -146,6 +147,10 @@ class ExtratorApp(ctk.CTk):
             self.frame_inputs,
             placeholder_text="dd/mm/aaaa"
         )
+        self.entry_date.bind(
+            "<KeyRelease>",
+            self.format_expiration_date_input
+        )
         self.entry_date.grid(
             row=2,
             column=1,
@@ -154,6 +159,28 @@ class ExtratorApp(ctk.CTk):
             pady=10,
             sticky="ew"
         )
+    
+    #Máscara no campo "Nova data". Insere automaticamente "/" conforme digitação.
+    def format_expiration_date_input(self, event=None):
+        raw_value = self.entry_date.get()
+        digits = "".join(
+            char for char in raw_value
+            if char.isdigit()
+        )[:8]
+
+        if len(digits) <= 2:
+            formatted_value = digits
+        elif len(digits) <= 4:
+            formatted_value = f"{digits[:2]}/{digits[2:]}"
+        else:
+            formatted_value = f"{digits[:2]}/{digits[2:4]}/{digits[4:]}"
+
+        if raw_value == formatted_value:
+            return
+
+        self.entry_date.delete(0, "end")
+        self.entry_date.insert(0, formatted_value)
+        self.entry_date.icursor("end")
 
     # Cria campos de usuário único.
     def create_single_user_fields(self):
@@ -350,6 +377,17 @@ class ExtratorApp(ctk.CTk):
             )
             return
 
+        try:
+            normalized_expiration_date = normalize_expiration_date(
+                expiration_date
+            )
+        except ValueError as exc:
+            self.show_status(
+                f"Erro: {str(exc)}",
+                "red"
+            )
+            return
+
         is_batch = bool(spreadsheet_path or report_directory)
 
         if is_batch:
@@ -366,7 +404,7 @@ class ExtratorApp(ctk.CTk):
                 password,
                 spreadsheet_path,
                 report_directory,
-                expiration_date
+                normalized_expiration_date
             )
             status_text = "Iniciando automação em lote..."
         else:
@@ -391,7 +429,7 @@ class ExtratorApp(ctk.CTk):
                 login,
                 password,
                 prepared_search_value,
-                expiration_date
+                normalized_expiration_date
             )
             status_text = "Iniciando automação individual..."
 
