@@ -289,7 +289,8 @@ class ExtratorApp(ctk.CTk):
             self.frame_inputs,
             text=(
                 "Para lote, informe planilha e pasta de relatório. "
-                "A coluna de usuários será identificada automaticamente."
+                "A coluna de usuários será identificada automaticamente. "
+                "O XLSX gerado conterá apenas as colunas usuário e relatório."
             ),
             text_color="gray",
             wraplength=620

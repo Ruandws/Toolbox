@@ -10,15 +10,15 @@ from playwright.sync_api import sync_playwright
 
 LOGIN_URL = "https://servicosti.ebserh.gov.br/#/login"
 USER_URL_TEMPLATE = "https://servicosti.ebserh.gov.br/#/usuarios/{search_value}"
+
 DATE_INPUT_NAME = "__/__/____"
+
+REPORT_COLUMN_USER = "usuário"
 REPORT_COLUMN_NAME = "relatório"
-USER_COLUMN_CANDIDATES = (
-    "usuário",
-    "usuario",
-    "login",
-    "rede",
-    "REDE",
-)
+REPORT_HEADERS = (REPORT_COLUMN_USER,REPORT_COLUMN_NAME,)
+USER_COLUMN_CANDIDATES = ("usuário","usuario","login","rede","REDE",)
+
+
 SUPPORTED_EXTENSIONS = (".xlsx")
 
 
@@ -214,22 +214,26 @@ def is_empty_row(raw_row: Sequence[Any]) -> bool:
 def write_report(
     source_spreadsheet_path: str,
     report_path: Path,
-    headers: Sequence[str],
     rows: Sequence[Row]
 ) -> None:
     validate_spreadsheet_extension(source_spreadsheet_path)
-    report_headers = get_report_headers(headers)
+    report_headers = get_report_headers()
 
     write_xlsx_report(report_path, report_headers, rows)
 
 # Obtém cabeçalhos do relatório.
-def get_report_headers(headers: Sequence[str]) -> List[str]:
-    report_headers = list(headers)
+def get_report_headers() -> List[str]:
+    return list(REPORT_HEADERS)
 
-    if REPORT_COLUMN_NAME not in report_headers:
-        report_headers.append(REPORT_COLUMN_NAME)
+# Constrói linha limpa do relatório.
+def build_report_row(user: Any, report: Any) -> Row:
+    clean_user = "" if user is None else str(user).strip()
+    clean_report = "" if report is None else str(report).strip()
 
-    return report_headers
+    return {
+        REPORT_COLUMN_USER: clean_user,
+        REPORT_COLUMN_NAME: clean_report,
+    }
 
 
 # Salva relatório em Excel.
@@ -363,6 +367,7 @@ def run_automation(
 
 
 # Executa automação em lote.
+# Executa automação em lote.
 def run_batch_automation(
     login: str,
     password: str,
@@ -370,12 +375,13 @@ def run_batch_automation(
     report_directory: str,
     expiration_date: str
 ) -> str:
-    headers, rows = read_spreadsheet(spreadsheet_path)
+    headers, source_rows = read_spreadsheet(spreadsheet_path)
     user_column = identify_user_column(headers)
     report_path = build_report_path(
         report_directory,
         spreadsheet_path
     )
+    report_rows: List[Row] = []
 
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(
@@ -387,18 +393,25 @@ def run_batch_automation(
             page = context.new_page()
             login_to_system(page, login, password)
 
-            for row in rows:
-                user_value = row.get(user_column, "")
+            for source_row in source_rows:
+                user_value = source_row.get(user_column, "")
                 user = "" if user_value is None else str(user_value).strip()
 
                 try:
-                    row[REPORT_COLUMN_NAME] = process_user(
+                    report_message = process_user(
                         page,
                         user,
                         expiration_date
                     )
                 except Exception as exc:
-                    row[REPORT_COLUMN_NAME] = f"Erro: {str(exc)}"
+                    report_message = f"Erro: {str(exc)}"
+
+                report_rows.append(
+                    build_report_row(
+                        user,
+                        report_message
+                    )
+                )
         finally:
             context.close()
             browser.close()
@@ -406,11 +419,10 @@ def run_batch_automation(
     write_report(
         spreadsheet_path,
         report_path,
-        headers,
-        rows
+        report_rows
     )
 
     return (
-        f"Lote finalizado. {len(rows)} usuário(s) processado(s). "
+        f"Lote finalizado. {len(report_rows)} usuário(s) processado(s). "
         f"Relatório: {report_path}"
     )
