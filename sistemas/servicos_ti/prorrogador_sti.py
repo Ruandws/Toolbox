@@ -1,4 +1,3 @@
-import csv
 import unicodedata
 from datetime import datetime
 from pathlib import Path
@@ -20,7 +19,7 @@ USER_COLUMN_CANDIDATES = (
     "rede",
     "REDE",
 )
-SUPPORTED_EXTENSIONS = (".xlsx", ".csv")
+SUPPORTED_EXTENSIONS = (".xlsx")
 
 
 Row = Dict[str, Any]
@@ -142,12 +141,9 @@ def read_spreadsheet(spreadsheet_path: str) -> Tuple[List[str], List[Row]]:
             f"Planilha não encontrada: {source_path}"
         )
 
-    extension = validate_spreadsheet_extension(str(source_path))
+    validate_spreadsheet_extension(str(source_path))
 
-    if extension == ".xlsx":
-        return read_xlsx(source_path)
-
-    return read_csv(source_path)
+    return read_xlsx(source_path)
 
 
 # Lê arquivo Excel.
@@ -170,56 +166,6 @@ def read_xlsx(source_path: Path) -> Tuple[List[str], List[Row]]:
         rows.append(row)
 
     return headers, rows
-
-
-# Lê arquivo CSV.
-def read_csv(source_path: Path) -> Tuple[List[str], List[Row]]:
-    encoding = detect_csv_encoding(source_path)
-
-    with source_path.open("r", encoding=encoding, newline="") as file:
-        sample = file.read(4096)
-        file.seek(0)
-        dialect = detect_csv_dialect(sample)
-        reader = csv.reader(file, dialect)
-
-        try:
-            raw_headers = next(reader)
-        except StopIteration as exc:
-            raise ValueError("A planilha CSV está vazia.") from exc
-
-        headers = make_unique_headers(raw_headers)
-        rows: List[Row] = []
-
-        for raw_row in reader:
-            if is_empty_row(raw_row):
-                continue
-
-            row = build_row(headers, raw_row)
-            rows.append(row)
-
-    return headers, rows
-
-
-# Detecta encoding do CSV.
-def detect_csv_encoding(source_path: Path) -> str:
-    try:
-        with source_path.open("r", encoding="utf-8-sig") as file:
-            file.read()
-        return "utf-8-sig"
-    except UnicodeDecodeError:
-        return "latin-1"
-
-
-# Detecta dialeto do CSV.
-def detect_csv_dialect(sample: str) -> csv.Dialect:
-    try:
-        return csv.Sniffer().sniff(sample, delimiters=",;")
-    except csv.Error:
-        class DefaultDialect(csv.excel):
-            delimiter = ";" if sample.count(";") > sample.count(",") else ","
-
-        return DefaultDialect
-
 
 # Garante cabeçalhos únicos.
 def make_unique_headers(raw_headers: Sequence[Any]) -> List[str]:
@@ -271,15 +217,10 @@ def write_report(
     headers: Sequence[str],
     rows: Sequence[Row]
 ) -> None:
-    extension = validate_spreadsheet_extension(source_spreadsheet_path)
+    validate_spreadsheet_extension(source_spreadsheet_path)
     report_headers = get_report_headers(headers)
 
-    if extension == ".xlsx":
-        write_xlsx_report(report_path, report_headers, rows)
-        return
-
-    write_csv_report(report_path, report_headers, rows)
-
+    write_xlsx_report(report_path, report_headers, rows)
 
 # Obtém cabeçalhos do relatório.
 def get_report_headers(headers: Sequence[str]) -> List[str]:
@@ -310,24 +251,6 @@ def write_xlsx_report(
         ])
 
     workbook.save(report_path)
-
-
-# Salva relatório em CSV.
-def write_csv_report(
-    report_path: Path,
-    headers: Sequence[str],
-    rows: Sequence[Row]
-) -> None:
-    with report_path.open("w", encoding="utf-8-sig", newline="") as file:
-        writer = csv.writer(file, delimiter=";")
-        writer.writerow(headers)
-
-        for row in rows:
-            writer.writerow([
-                row.get(header, "")
-                for header in headers
-            ])
-
 
 # -----------------------------
 # Automação Web

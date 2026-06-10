@@ -225,7 +225,7 @@ class ExtratorApp(ctk.CTk):
 
         self.entry_spreadsheet = ctk.CTkEntry(
             self.frame_inputs,
-            placeholder_text="Caminho do arquivo .xlsx ou .csv"
+            placeholder_text="Caminho do arquivo .xlsx"
         )
         self.entry_spreadsheet.grid(
             row=6,
@@ -312,9 +312,7 @@ class ExtratorApp(ctk.CTk):
         file_path = filedialog.askopenfilename(
             title="Selecione a planilha",
             filetypes=(
-                ("Planilhas", "*.xlsx *.csv"),
-                ("Excel", "*.xlsx"),
-                ("CSV", "*.csv"),
+                ("Planilhas", "*.xlsx"),
             )
         )
 
