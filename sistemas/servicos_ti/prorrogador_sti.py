@@ -1,7 +1,9 @@
+import re
 import unicodedata
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
+from urllib.parse import quote
 
 from openpyxl import Workbook, load_workbook
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
@@ -19,7 +21,11 @@ REPORT_HEADERS = (REPORT_COLUMN_USER,REPORT_COLUMN_NAME,)
 USER_COLUMN_CANDIDATES = ("usuário","usuario","login","rede","REDE",)
 
 
-SUPPORTED_EXTENSIONS = (".xlsx")
+SUPPORTED_EXTENSIONS = (".xlsx",)
+
+USER_LOGIN_ALLOWED_PATTERN = re.compile(r"^[A-Za-z0-9._@'-]+$")
+USER_URL_SAFE_CHARS = "._@-'"
+BATCH_ENTRY_PREPARED_USER = "_prepared_user"
 
 
 Row = Dict[str, Any]
@@ -151,6 +157,9 @@ def read_xlsx(source_path: Path) -> Tuple[List[str], List[Row]]:
     workbook = load_workbook(source_path, data_only=True)
     worksheet = workbook.active
 
+    if worksheet is None:
+        raise ValueError("A planilha não possui aba ativa.")
+
     raw_headers = [
         cell.value
         for cell in next(worksheet.iter_rows(min_row=1, max_row=1))
@@ -244,6 +253,9 @@ def write_xlsx_report(
 ) -> None:
     workbook = Workbook()
     worksheet = workbook.active
+
+    if worksheet is None:
+        raise ValueError("A planilha não possui aba ativa.")
     worksheet.title = "Relatório"
 
     worksheet.append(list(headers))
@@ -255,6 +267,66 @@ def write_xlsx_report(
         ])
 
     workbook.save(report_path)
+
+# -----------------------------
+# Usuário / validação
+# -----------------------------
+
+# Normaliza valor de usuário vindo da UI ou planilha.
+def normalize_user_value(value: Any) -> str:
+    if value is None:
+        return ""
+
+    if isinstance(value, int) and not isinstance(value, bool):
+        return str(value)
+
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+
+    return str(value).strip()
+
+
+# Prepara usuário para execução individual.
+def prepare_user_value(user_value: Any) -> str:
+    if isinstance(user_value, bool):
+        raise ValueError(
+            "Usuário inválido: valor booleano não é aceito."
+        )
+
+    user = normalize_user_value(user_value)
+
+    if not user:
+        raise ValueError("Usuário não informado.")
+
+    if any(char.isspace() for char in user):
+        raise ValueError(
+            "Usuário inválido: não use espaços."
+        )
+
+    if not USER_LOGIN_ALLOWED_PATTERN.fullmatch(user):
+        raise ValueError(
+            "Usuário inválido: use apenas letras, números, ponto, "
+            "hífen, sublinhado, @ ou apóstrofo."
+        )
+
+    return user
+
+
+# Prepara usuário para execução em lote.
+def prepare_batch_user_value(user_value: Any) -> str:
+    return prepare_user_value(user_value)
+
+
+# Monta URL segura para usuário já validado/preparado.
+def build_user_url(prepared_user_value: str) -> str:
+    encoded_user = quote(
+        prepared_user_value,
+        safe=USER_URL_SAFE_CHARS
+    )
+
+    return USER_URL_TEMPLATE.format(
+        search_value=encoded_user
+    )
 
 # -----------------------------
 # Automação Web
@@ -281,18 +353,35 @@ def login_to_system(page, login: str, password: str) -> None:
     page.wait_for_timeout(3000)
 
 
-# Prorroga data do usuário.
+# Prorroga data do usuário validando/preparando o valor internamente.
 def process_user(
     page,
     search_value: str,
     expiration_date: str
 ) -> str:
-    user = str(search_value).strip()
+    prepared_user = prepare_user_value(search_value)
+
+    return process_user_prepared_value(
+        page,
+        prepared_user,
+        expiration_date
+    )
+
+
+# Prorroga data usando usuário já validado/preparado.
+def process_user_prepared_value(
+    page,
+    prepared_user_value: str,
+    expiration_date: str
+) -> str:
+    user = "" if prepared_user_value is None else str(
+        prepared_user_value
+    ).strip()
 
     if not user:
-        return "Usuário não informado"
+        raise ValueError("Usuário preparado não informado.")
 
-    user_url = USER_URL_TEMPLATE.format(search_value=user)
+    user_url = build_user_url(user)
 
     page.goto(
         user_url,
@@ -346,6 +435,8 @@ def run_automation(
     search_value: str,
     expiration_date: str
 ) -> str:
+    prepared_user = prepare_user_value(search_value)
+
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(
             headless=False
@@ -356,9 +447,9 @@ def run_automation(
             page = context.new_page()
             login_to_system(page, login, password)
 
-            return process_user(
+            return process_user_prepared_value(
                 page,
-                search_value,
+                prepared_user,
                 expiration_date
             )
         finally:
@@ -366,7 +457,6 @@ def run_automation(
             browser.close()
 
 
-# Executa automação em lote.
 # Executa automação em lote.
 def run_batch_automation(
     login: str,
@@ -381,40 +471,74 @@ def run_batch_automation(
         report_directory,
         spreadsheet_path
     )
-    report_rows: List[Row] = []
 
-    with sync_playwright() as playwright:
-        browser = playwright.chromium.launch(
-            headless=False
-        )
-        context = browser.new_context()
+    batch_rows: List[Row] = []
+
+    for source_row in source_rows:
+        user_value = source_row.get(user_column, "")
+        report_user = normalize_user_value(user_value)
+
+        batch_row: Row = {
+            REPORT_COLUMN_USER: report_user,
+            REPORT_COLUMN_NAME: "",
+            BATCH_ENTRY_PREPARED_USER: "",
+        }
 
         try:
-            page = context.new_page()
-            login_to_system(page, login, password)
+            prepared_user = prepare_batch_user_value(user_value)
+            batch_row[REPORT_COLUMN_USER] = prepared_user
+            batch_row[BATCH_ENTRY_PREPARED_USER] = prepared_user
+        except ValueError as exc:
+            batch_row[REPORT_COLUMN_NAME] = f"Erro: {str(exc)}"
 
-            for source_row in source_rows:
-                user_value = source_row.get(user_column, "")
-                user = "" if user_value is None else str(user_value).strip()
+        batch_rows.append(batch_row)
 
-                try:
-                    report_message = process_user(
-                        page,
-                        user,
-                        expiration_date
+    has_prepared_rows = any(
+        row.get(BATCH_ENTRY_PREPARED_USER)
+        for row in batch_rows
+    )
+
+    if has_prepared_rows:
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(
+                headless=False
+            )
+            context = browser.new_context()
+
+            try:
+                page = context.new_page()
+                login_to_system(page, login, password)
+
+                for batch_row in batch_rows:
+                    prepared_user = batch_row.get(
+                        BATCH_ENTRY_PREPARED_USER,
+                        ""
                     )
-                except Exception as exc:
-                    report_message = f"Erro: {str(exc)}"
 
-                report_rows.append(
-                    build_report_row(
-                        user,
-                        report_message
-                    )
-                )
-        finally:
-            context.close()
-            browser.close()
+                    if not prepared_user:
+                        continue
+
+                    try:
+                        report_message = process_user_prepared_value(
+                            page,
+                            prepared_user,
+                            expiration_date
+                        )
+                    except Exception as exc:
+                        report_message = f"Erro: {str(exc)}"
+
+                    batch_row[REPORT_COLUMN_NAME] = report_message
+            finally:
+                context.close()
+                browser.close()
+
+    report_rows = [
+        build_report_row(
+            row.get(REPORT_COLUMN_USER, ""),
+            row.get(REPORT_COLUMN_NAME, "")
+        )
+        for row in batch_rows
+    ]
 
     write_report(
         spreadsheet_path,

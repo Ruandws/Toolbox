@@ -1,10 +1,11 @@
 import threading
 from tkinter import filedialog
-
-import customtkinter as ctk
-
-from prorrogador_sti import run_automation, run_batch_automation
-
+import customtkinter as ctk  # type: ignore[import-untyped]
+from prorrogador_sti import (
+    prepare_user_value, 
+    run_automation, 
+    run_batch_automation
+)
 
 class ExtratorApp(ctk.CTk):
 
@@ -290,6 +291,8 @@ class ExtratorApp(ctk.CTk):
             text=(
                 "Para lote, informe planilha e pasta de relatório. "
                 "A coluna de usuários será identificada automaticamente. "
+                "Linhas com usuário vazio ou inválido entram como erro no relatório "
+                "e não acionam o Playwright. "
                 "O XLSX gerado conterá apenas as colunas usuário e relatório."
             ),
             text_color="gray",
@@ -374,11 +377,20 @@ class ExtratorApp(ctk.CTk):
                 )
                 return
 
+            try:
+                prepared_search_value = prepare_user_value(search_value)
+            except ValueError as exc:
+                self.show_status(
+                    f"Erro: {str(exc)}",
+                    "red"
+                )
+                return
+
             args = (
                 "single",
                 login,
                 password,
-                search_value,
+                prepared_search_value,
                 expiration_date
             )
             status_text = "Iniciando automação individual..."
@@ -436,7 +448,6 @@ class ExtratorApp(ctk.CTk):
             text=message,
             text_color=color
         )
-
 
 if __name__ == "__main__":
     ctk.set_appearance_mode("System")
