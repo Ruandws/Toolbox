@@ -173,7 +173,7 @@ def generate_report_filename(
     if not clean_extension.startswith("."):
         clean_extension = f".{clean_extension}"
 
-    timestamp = reference_date.strftime("%d_%m_%y_%Hh%M")
+    timestamp = reference_date.strftime("%d_%m_%y_%Hh%Mm%S")
 
     return f"Resultado_{timestamp}{clean_extension}"
 
