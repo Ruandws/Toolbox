@@ -7,6 +7,8 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 from urllib.parse import quote
 
 from openpyxl import Workbook, load_workbook
+from openpyxl.utils import get_column_letter
+from openpyxl.worksheet.worksheet import Worksheet
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import sync_playwright
 
@@ -51,7 +53,6 @@ USER_DATE_INPUT_TIMEOUT_MS = 7000
 USER_UPDATE_BUTTON_TIMEOUT_MS = 7000
 USER_SAVE_RESPONSE_TIMEOUT_MS = 10000
 USER_SAVE_CONFIRMATION_TIMEOUT_MS = 3000
-
 USER_SAVE_REQUEST_METHODS = {
     "POST",
     "PUT",
@@ -69,7 +70,6 @@ USER_NOT_FOUND_SELECTOR = (
     ".well, "
     ".swal2-popup"
 )
-
 USER_NOT_FOUND_PATTERN = re.compile(
     r"("
     r"usu[aá]rio|user"
@@ -120,6 +120,13 @@ BATCH_ENTRY_PREPARED_USER = "_prepared_user"
 #Constantes globais de planilha
 SUPPORTED_EXTENSIONS = (".xlsx",)
 Row = Dict[str, Any]
+
+# Constantes globais de layout XLSX
+XLSX_HEADER_ROW = 1
+XLSX_FREEZE_PANES_CELL = "A2"
+XLSX_MIN_COLUMN_WIDTH = 12
+XLSX_MAX_COLUMN_WIDTH = 60
+XLSX_COLUMN_PADDING = 2
 
 
 # -----------------------------
@@ -347,6 +354,7 @@ def write_xlsx_report(
 
     if worksheet is None:
         raise ValueError("A planilha não possui aba ativa.")
+
     worksheet.title = "Relatório"
 
     worksheet.append(list(headers))
@@ -357,7 +365,51 @@ def write_xlsx_report(
             for header in headers
         ])
 
+    apply_xlsx_report_layout(worksheet)
     workbook.save(report_path)
+
+# Aplica filtros, congelamento e largura automática no XLSX.
+def apply_xlsx_report_layout(worksheet: Worksheet) -> None:
+    if worksheet.max_row < XLSX_HEADER_ROW or worksheet.max_column < 1:
+        return
+
+    worksheet.freeze_panes = XLSX_FREEZE_PANES_CELL
+    worksheet.auto_filter.ref = build_xlsx_filter_range(worksheet)
+    autofit_xlsx_columns(worksheet)
+
+
+# Monta intervalo de filtros do relatório.
+def build_xlsx_filter_range(worksheet: Worksheet) -> str:
+    last_column = get_column_letter(worksheet.max_column)
+    return f"A{XLSX_HEADER_ROW}:{last_column}{worksheet.max_row}"
+
+
+# Ajusta largura das colunas conforme o maior conteúdo.
+def autofit_xlsx_columns(worksheet: Worksheet) -> None:
+    for column_cells in worksheet.columns:
+        if not column_cells:
+            continue
+        col_idx = column_cells[0].column
+        if not isinstance(col_idx, int):
+            continue
+        column_letter = get_column_letter(col_idx)
+        max_length = max(
+            get_xlsx_cell_text_length(cell.value)
+            for cell in column_cells
+        )
+        width = max_length + XLSX_COLUMN_PADDING
+        worksheet.column_dimensions[column_letter].width = min(
+            max(width, XLSX_MIN_COLUMN_WIDTH),
+            XLSX_MAX_COLUMN_WIDTH,
+        )
+
+# Calcula tamanho visível de uma célula.
+def get_xlsx_cell_text_length(value: Any) -> int:
+    if value is None:
+        return 0
+
+    lines = str(value).splitlines() or [""]
+    return max(len(line) for line in lines)
 
 # -----------------------------
 # Login alvo / validação

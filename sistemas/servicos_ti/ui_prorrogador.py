@@ -316,11 +316,7 @@ class ExtratorApp(ctk.CTk):
         self.label_batch_info = ctk.CTkLabel(
             self.frame_inputs,
             text=(
-                "Para lote, informe planilha e pasta de relatório. "
-                "A coluna de usuários será identificada automaticamente. "
-                "Linhas com usuário vazio ou inválido entram como erro no relatório "
-                "e não acionam o Playwright. "
-                "O XLSX gerado conterá apenas as colunas usuário e relatório."
+                "Para lote, informe planilha e pasta de relatório."
             ),
             text_color="gray",
             wraplength=620
