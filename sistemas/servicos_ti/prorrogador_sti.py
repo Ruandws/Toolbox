@@ -557,19 +557,27 @@ def login_to_system(page, login: str, password: str) -> None:
 
 
 # -----------------------------
-# Tela de usuário / esperas observáveis
+# Tela de usuário / navegação / seletores / esperas observáveis
 # -----------------------------
 
-# Obtém locator do campo de data da tela de usuário.
-def get_user_date_input_locator(page):
+# Abre a tela de prorrogação do usuário.
+def open_user_page(page, prepared_user_value: str) -> None:
+    page.goto(
+        build_user_url(prepared_user_value),
+        wait_until="domcontentloaded"
+    )
+
+
+# Obtém locator do campo de data de expiração.
+def get_expiration_date_locator(page):
     return page.get_by_role(
         "textbox",
         name=DATE_INPUT_NAME
     ).first
 
 
-# Obtém locator do botão de atualização da tela de usuário.
-def get_user_update_button_locator(page):
+# Obtém locator do botão de atualização.
+def get_update_button_locator(page):
     return page.get_by_role(
         "button",
         name=USER_UPDATE_BUTTON_TEXT
@@ -592,31 +600,22 @@ def get_user_save_confirmation_locator(page):
 
 # Aguarda a tela do usuário ficar pronta sem usar espera fixa.
 def wait_for_user_page_ready(page) -> bool:
-    date_input = get_user_date_input_locator(page)
+    expiration_date = get_expiration_date_locator(page)
     not_found = get_user_not_found_locator(page)
 
     try:
-        date_input.or_(not_found).first.wait_for(
+        expiration_date.or_(not_found).first.wait_for(
             state="visible",
             timeout=USER_PAGE_READY_TIMEOUT_MS
         )
     except PlaywrightTimeoutError:
         return False
 
-    if date_input.is_visible():
-        return True
+    if not expiration_date.is_visible():
+        return False
 
-    return False
-
-
-# Aguarda campo de data e botão de atualização.
-def wait_for_user_form_ready(page) -> bool:
     try:
-        get_user_date_input_locator(page).wait_for(
-            state="visible",
-            timeout=USER_DATE_INPUT_TIMEOUT_MS
-        )
-        get_user_update_button_locator(page).wait_for(
+        get_update_button_locator(page).wait_for(
             state="visible",
             timeout=USER_UPDATE_BUTTON_TIMEOUT_MS
         )
@@ -624,6 +623,21 @@ def wait_for_user_form_ready(page) -> bool:
         return False
 
     return True
+
+
+# Preenche a nova data de expiração.
+def fill_expiration_date(page, expiration_date: str) -> None:
+    expiration_date_input = get_expiration_date_locator(page)
+
+    expiration_date_input.wait_for(
+        state="visible",
+        timeout=USER_DATE_INPUT_TIMEOUT_MS
+    )
+    expiration_date_input.click()
+    page.keyboard.press("Escape")
+    expiration_date_input.press("ControlOrMeta+A")
+    expiration_date_input.fill("")
+    expiration_date_input.type(expiration_date)
 
 
 # Identifica resposta HTTP provável de salvamento.
@@ -654,8 +668,8 @@ def wait_for_user_save_confirmation_if_available(page) -> Optional[str]:
 
 
 # Clica em atualizar e aguarda estado observável de pós-salvamento.
-def click_update_and_wait_for_post_save_state(page) -> None:
-    update_button = get_user_update_button_locator(page)
+def click_update_button(page) -> None:
+    update_button = get_update_button_locator(page)
 
     try:
         with page.expect_response(
@@ -696,6 +710,8 @@ def click_update_and_wait_for_post_save_state(page) -> None:
             "Não foi possível confirmar o salvamento da prorrogação. "
             "Nenhuma resposta HTTP ou confirmação visual foi detectada."
         )
+
+
 # Prorroga data do usuário validando/preparando o valor internamente.
 def process_user(
     page,
@@ -732,30 +748,16 @@ def process_user_prepared_value(
     if not expiration_date:
         raise ValueError("Nova data preparada não informada.")
 
-    user_url = build_user_url(user)
-
-    page.goto(
-        user_url,
-        wait_until="domcontentloaded"
-    )
+    open_user_page(page, user)
 
     if not wait_for_user_page_ready(page):
         return "Usuário não Encontrado"
 
-    if not wait_for_user_form_ready(page):
-        return "Usuário não Encontrado"
-
-    date_input = get_user_date_input_locator(page)
-
-    date_input.click()
-    page.keyboard.press("Escape")
-    date_input.press("ControlOrMeta+A")
-    date_input.fill("")
-    date_input.type(expiration_date)
-
-    click_update_and_wait_for_post_save_state(page)
+    fill_expiration_date(page, expiration_date)
+    click_update_button(page)
 
     return f"Data prorrogada para {expiration_date}"
+
 
 # -----------------------------
 # Entry points
