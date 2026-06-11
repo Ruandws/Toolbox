@@ -1,12 +1,57 @@
+import ctypes
+import os
+import sys
 import threading
-from tkinter import filedialog
+from tkinter import BooleanVar, filedialog
+
 import customtkinter as ctk  # type: ignore[import-untyped]
 from prorrogador_sti import (
     normalize_expiration_date,
-    prepare_user_value, 
-    run_automation, 
+    prepare_user_value,
+    run_automation,
     run_batch_automation
 )
+
+_TERMINAL_ALLOCATED_BY_APP = False
+
+# Exibe terminal no Windows quando o app estiver sem console anexado.
+def set_terminal_visibility(show_terminal: bool) -> None:
+    global _TERMINAL_ALLOCATED_BY_APP
+
+    if os.name != "nt":
+        return
+
+    try:
+        kernel32 = ctypes.windll.kernel32
+        has_console = bool(kernel32.GetConsoleWindow())
+
+        if show_terminal:
+            if has_console:
+                return
+
+            if kernel32.AllocConsole():
+                _TERMINAL_ALLOCATED_BY_APP = True
+                sys.stdout = open(
+                    "CONOUT$",
+                    "w",
+                    encoding="utf-8",
+                    buffering=1
+                )
+                sys.stderr = open(
+                    "CONOUT$",
+                    "w",
+                    encoding="utf-8",
+                    buffering=1
+                )
+
+            return
+
+        if _TERMINAL_ALLOCATED_BY_APP and has_console:
+            kernel32.FreeConsole()
+            _TERMINAL_ALLOCATED_BY_APP = False
+
+    except Exception:
+        return
 
 class ExtratorApp(ctk.CTk):
 
@@ -19,7 +64,7 @@ class ExtratorApp(ctk.CTk):
         super().__init__()
 
         self.title("Extrator - Interface Visual")
-        self.geometry("720x680")
+        self.geometry("720x760")
         self.grid_columnconfigure(0, weight=1)
 
         self.label_title = ctk.CTkLabel(
@@ -45,6 +90,7 @@ class ExtratorApp(ctk.CTk):
         self.frame_inputs.grid_columnconfigure(1, weight=1)
 
         self.create_login_fields()
+        self.create_execution_options()
         self.create_single_user_fields()
         self.create_batch_fields()
 
@@ -159,7 +205,38 @@ class ExtratorApp(ctk.CTk):
             pady=10,
             sticky="ew"
         )
-    
+
+    # Cria opções de execução.
+    def create_execution_options(self):
+        self.label_execution_options = ctk.CTkLabel(
+            self.frame_inputs,
+            text="Opções de execução",
+            font=ctk.CTkFont(weight="bold")
+        )
+        self.label_execution_options.grid(
+            row=3,
+            column=0,
+            columnspan=3,
+            padx=10,
+            pady=(20, 5),
+            sticky="w"
+        )
+
+        self.var_show_terminal_logs = BooleanVar(value=False)
+        self.switch_terminal_logs = ctk.CTkSwitch(
+            self.frame_inputs,
+            text="Exibir terminal/logs de execução",
+            variable=self.var_show_terminal_logs
+        )
+        self.switch_terminal_logs.grid(
+            row=4,
+            column=1,
+            columnspan=2,
+            padx=10,
+            pady=8,
+            sticky="w"
+        )
+        
     #Máscara no campo "Nova data". Insere automaticamente "/" conforme digitação.
     def format_expiration_date_input(self, event=None):
         raw_value = self.entry_date.get()
@@ -190,7 +267,7 @@ class ExtratorApp(ctk.CTk):
             font=ctk.CTkFont(weight="bold")
         )
         self.label_single_title.grid(
-            row=3,
+            row=6,
             column=0,
             columnspan=3,
             padx=10,
@@ -203,7 +280,7 @@ class ExtratorApp(ctk.CTk):
             text="Usuário alvo:"
         )
         self.label_search.grid(
-            row=4,
+            row=7,
             column=0,
             padx=10,
             pady=10,
@@ -215,7 +292,7 @@ class ExtratorApp(ctk.CTk):
             placeholder_text="Digite o usuário alvo"
         )
         self.entry_search.grid(
-            row=4,
+            row=7,
             column=1,
             columnspan=2,
             padx=10,
@@ -231,7 +308,7 @@ class ExtratorApp(ctk.CTk):
             font=ctk.CTkFont(weight="bold")
         )
         self.label_batch_title.grid(
-            row=5,
+            row=8,
             column=0,
             columnspan=3,
             padx=10,
@@ -244,7 +321,7 @@ class ExtratorApp(ctk.CTk):
             text="Planilha:"
         )
         self.label_spreadsheet.grid(
-            row=6,
+            row=9,
             column=0,
             padx=10,
             pady=10,
@@ -256,7 +333,7 @@ class ExtratorApp(ctk.CTk):
             placeholder_text="Caminho do arquivo .xlsx"
         )
         self.entry_spreadsheet.grid(
-            row=6,
+            row=9,
             column=1,
             padx=10,
             pady=10,
@@ -270,7 +347,7 @@ class ExtratorApp(ctk.CTk):
             command=self.select_spreadsheet
         )
         self.button_select_spreadsheet.grid(
-            row=6,
+            row=9,
             column=2,
             padx=10,
             pady=10
@@ -281,7 +358,7 @@ class ExtratorApp(ctk.CTk):
             text="Pasta relatório:"
         )
         self.label_report_dir.grid(
-            row=7,
+            row=10,
             column=0,
             padx=10,
             pady=10,
@@ -293,7 +370,7 @@ class ExtratorApp(ctk.CTk):
             placeholder_text="Pasta onde o relatório será salvo"
         )
         self.entry_report_dir.grid(
-            row=7,
+            row=10,
             column=1,
             padx=10,
             pady=10,
@@ -307,7 +384,7 @@ class ExtratorApp(ctk.CTk):
             command=self.select_report_directory
         )
         self.button_select_report_dir.grid(
-            row=7,
+            row=10,
             column=2,
             padx=10,
             pady=10
@@ -322,7 +399,7 @@ class ExtratorApp(ctk.CTk):
             wraplength=620
         )
         self.label_batch_info.grid(
-            row=8,
+            row=11,
             column=0,
             columnspan=3,
             padx=10,
@@ -365,6 +442,9 @@ class ExtratorApp(ctk.CTk):
         expiration_date = self.entry_date.get().strip()
         spreadsheet_path = self.entry_spreadsheet.get().strip()
         report_directory = self.entry_report_dir.get().strip()
+        show_terminal_logs = bool(self.var_show_terminal_logs.get())
+
+
 
         if not login or not password.strip() or not expiration_date:
             self.show_status(
@@ -400,7 +480,8 @@ class ExtratorApp(ctk.CTk):
                 password,
                 spreadsheet_path,
                 report_directory,
-                normalized_expiration_date
+                normalized_expiration_date,
+                show_terminal_logs
             )
             status_text = "Iniciando automação em lote..."
         else:
@@ -425,10 +506,11 @@ class ExtratorApp(ctk.CTk):
                 login,
                 password,
                 prepared_search_value,
-                normalized_expiration_date
+                normalized_expiration_date,
+                show_terminal_logs,
             )
             status_text = "Iniciando automação individual..."
-
+        set_terminal_visibility(show_terminal_logs)
         self.show_status(status_text, "blue")
 
         self.button_run.configure(

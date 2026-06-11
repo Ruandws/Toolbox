@@ -5,7 +5,8 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 from urllib.parse import quote
-
+import logging
+import sys
 from openpyxl import Workbook, load_workbook
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
@@ -110,7 +111,7 @@ EXPIRATION_DATE_PATTERN = re.compile(r"^\d{2}/\d{2}/\d{4}$")
 REPORT_COLUMN_USER = "usuário"
 REPORT_COLUMN_NAME = "relatório"
 REPORT_HEADERS = (REPORT_COLUMN_USER,REPORT_COLUMN_NAME,)
-USER_COLUMN_CANDIDATES = ("usuário","usuario","login","rede","REDE",)
+USER_COLUMN_CANDIDATES = ("usuário","usuario","login","rede",)
 
 #Constantes globais de usuários
 USER_LOGIN_ALLOWED_PATTERN = re.compile(r"^[A-Za-z0-9._@'-]+$")
@@ -128,6 +129,64 @@ XLSX_MIN_COLUMN_WIDTH = 12
 XLSX_MAX_COLUMN_WIDTH = 60
 XLSX_COLUMN_PADDING = 2
 
+# Constantes globais de logging
+LOGGER_NAME = "Prorrogador"
+LOG_FORMAT = "%(asctime)s [%(levelname)s] %(message)s"
+LOG_DATE_FORMAT = "%d/%m/%Y %H:%M:%S"
+
+logger = logging.getLogger(LOGGER_NAME)
+logger.addHandler(logging.NullHandler())
+
+
+# -----------------------------
+# Logging
+# -----------------------------
+
+# Obtém stream disponível para logging em terminal.
+def get_stream_for_logging() -> Optional[Any]:
+    return (
+        sys.stdout
+        or sys.stderr
+        or sys.__stdout__
+        or sys.__stderr__
+    )
+
+
+# Configura logging da automação.
+def configure_automation_logging(
+    show_terminal_logs: bool = False
+) -> logging.Logger:
+    automation_logger = logging.getLogger(LOGGER_NAME)
+    automation_logger.setLevel(logging.INFO)
+    automation_logger.propagate = False
+
+    for handler in list(automation_logger.handlers):
+        automation_logger.removeHandler(handler)
+        handler.close()
+
+    if show_terminal_logs:
+        formatter = logging.Formatter(
+            LOG_FORMAT,
+            datefmt=LOG_DATE_FORMAT
+        )
+
+        stream = get_stream_for_logging()
+
+        if stream is not None:
+            stream_handler = logging.StreamHandler(stream)
+            stream_handler.setLevel(logging.INFO)
+            stream_handler.setFormatter(formatter)
+            automation_logger.addHandler(stream_handler)
+
+    else:
+        automation_logger.addHandler(logging.NullHandler())
+
+    automation_logger.info(
+        "Logging configurado. Terminal: %s.",
+        "sim" if show_terminal_logs else "não"
+    )
+
+    return automation_logger
 
 # -----------------------------
 # Planilha / relatório
@@ -590,12 +649,16 @@ def wait_for_login_completion(page) -> None:
 
 # Realiza login no sistema.
 def login_to_system(page, login: str, password: str) -> None:
+    logger.info("Acessando tela de login.")
+
     page.goto(
         LOGIN_URL,
         wait_until="domcontentloaded"
     )
 
     wait_for_login_page_ready(page)
+
+    logger.info("Tela de login carregada. Preenchendo credenciais.")
 
     get_login_textbox_locator(page).fill(login)
     get_login_password_locator(page).fill(password)
@@ -604,6 +667,8 @@ def login_to_system(page, login: str, password: str) -> None:
         "button",
         name=LOGIN_BUTTON_TEXT
     ).click()
+
+    logger.info("Login submetido. Aguardando conclusão.")
 
     wait_for_login_completion(page)
 
@@ -718,10 +783,11 @@ def wait_for_user_save_confirmation_if_available(page) -> Optional[str]:
         confirmation.inner_text(timeout=500).split()
     )
 
-
 # Clica em atualizar e aguarda estado observável de pós-salvamento.
 def click_update_button(page) -> None:
     update_button = get_update_button_locator(page)
+
+    logger.info("Acionando botão de atualização.")
 
     try:
         with page.expect_response(
@@ -732,19 +798,40 @@ def click_update_button(page) -> None:
 
         response = response_info.value
 
+        logger.info(
+            "Resposta de salvamento recebida. HTTP %s.",
+            response.status
+        )
+
         if response.status >= 400:
             raise RuntimeError(
                 "Falha ao salvar a prorrogação. "
                 f"Resposta HTTP: {response.status}."
             )
 
-        wait_for_user_save_confirmation_if_available(page)
-        return
-
-    except PlaywrightTimeoutError:
         confirmation_text = wait_for_user_save_confirmation_if_available(page)
 
         if confirmation_text:
+            logger.info(
+                "Confirmação visual detectada: %s.",
+                confirmation_text
+            )
+
+        return
+
+    except PlaywrightTimeoutError:
+        logger.warning(
+            "Nenhuma resposta HTTP de salvamento foi detectada no prazo. "
+            "Verificando confirmação visual."
+        )
+
+        confirmation_text = wait_for_user_save_confirmation_if_available(page)
+
+        if confirmation_text:
+            logger.info(
+                "Confirmação visual detectada: %s.",
+                confirmation_text
+            )
             return
 
         try:
@@ -762,23 +849,6 @@ def click_update_button(page) -> None:
             "Não foi possível confirmar o salvamento da prorrogação. "
             "Nenhuma resposta HTTP ou confirmação visual foi detectada."
         )
-
-
-# Prorroga data do usuário validando/preparando o valor internamente.
-def process_user(
-    page,
-    search_value: str,
-    expiration_date: str
-) -> str:
-    prepared_user = prepare_user_value(search_value)
-    normalized_expiration_date = normalize_expiration_date(expiration_date)
-
-    return process_user_prepared_value(
-        page,
-        prepared_user,
-        normalized_expiration_date
-    )
-
 
 # Prorroga data usando usuário já validado/preparado.
 def process_user_prepared_value(
@@ -800,16 +870,29 @@ def process_user_prepared_value(
     if not expiration_date:
         raise ValueError("Nova data preparada não informada.")
 
+    logger.info("Abrindo tela do usuário: %s.", user)
+
     open_user_page(page, user)
 
     if not wait_for_user_page_ready(page):
+        logger.warning("Usuário não encontrado: %s.", user)
         return "Usuário não Encontrado"
+
+    logger.info(
+        "Tela do usuário carregada. Preenchendo nova data: %s.",
+        expiration_date
+    )
 
     fill_expiration_date(page, expiration_date)
     click_update_button(page)
 
-    return f"Data prorrogada para {expiration_date}"
+    logger.info(
+        "Usuário %s prorrogado com sucesso para %s.",
+        user,
+        expiration_date
+    )
 
+    return f"Data prorrogada para {expiration_date}"
 
 # -----------------------------
 # Entry points
@@ -820,75 +903,22 @@ def run_automation(
     login: str,
     password: str,
     search_value: str,
-    expiration_date: str
+    expiration_date: str,
+    show_terminal_logs: bool = False
 ) -> str:
-    prepared_user = prepare_user_value(search_value)
-    normalized_expiration_date = normalize_expiration_date(expiration_date)
+    automation_logger = configure_automation_logging(
+        show_terminal_logs=show_terminal_logs
+    )
 
-    with sync_playwright() as playwright:
-        browser = playwright.chromium.launch(
-            headless=False
+    try:
+        prepared_user = prepare_user_value(search_value)
+        normalized_expiration_date = normalize_expiration_date(expiration_date)
+
+        automation_logger.info(
+            "Iniciando automação individual. Usuário: %s.",
+            prepared_user
         )
-        context = browser.new_context()
 
-        try:
-            page = context.new_page()
-            login_to_system(page, login, password)
-
-            return process_user_prepared_value(
-                page,
-                prepared_user,
-                normalized_expiration_date
-            )
-        finally:
-            context.close()
-            browser.close()
-
-
-# Executa automação em lote.
-def run_batch_automation(
-    login: str,
-    password: str,
-    spreadsheet_path: str,
-    report_directory: str,
-    expiration_date: str
-) -> str:
-    normalized_expiration_date = normalize_expiration_date(expiration_date)
-
-    headers, source_rows = read_spreadsheet(spreadsheet_path)
-    user_column = identify_user_column(headers)
-    report_path = build_report_path(
-        report_directory,
-        spreadsheet_path
-    )
-
-    batch_rows: List[Row] = []
-
-    for source_row in source_rows:
-        user_value = source_row.get(user_column, "")
-        report_user = normalize_user_value(user_value)
-
-        batch_row: Row = {
-            REPORT_COLUMN_USER: report_user,
-            REPORT_COLUMN_NAME: "",
-            BATCH_ENTRY_PREPARED_USER: "",
-        }
-
-        try:
-            prepared_user = prepare_user_value(user_value)
-            batch_row[REPORT_COLUMN_USER] = prepared_user
-            batch_row[BATCH_ENTRY_PREPARED_USER] = prepared_user
-        except ValueError as exc:
-            batch_row[REPORT_COLUMN_NAME] = f"Erro: {str(exc)}"
-
-        batch_rows.append(batch_row)
-
-    has_prepared_rows = any(
-        row.get(BATCH_ENTRY_PREPARED_USER)
-        for row in batch_rows
-    )
-
-    if has_prepared_rows:
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch(
                 headless=False
@@ -899,44 +929,187 @@ def run_batch_automation(
                 page = context.new_page()
                 login_to_system(page, login, password)
 
-                for batch_row in batch_rows:
-                    prepared_user = batch_row.get(
-                        BATCH_ENTRY_PREPARED_USER,
-                        ""
-                    )
+                result = process_user_prepared_value(
+                    page,
+                    prepared_user,
+                    normalized_expiration_date
+                )
 
-                    if not prepared_user:
-                        continue
+                automation_logger.info(
+                    "Automação individual finalizada. Resultado: %s.",
+                    result
+                )
 
-                    try:
-                        report_message = process_user_prepared_value(
-                            page,
-                            prepared_user,
-                            normalized_expiration_date
-                        )
-                    except Exception as exc:
-                        report_message = f"Erro: {str(exc)}"
-
-                    batch_row[REPORT_COLUMN_NAME] = report_message
+                return result
             finally:
                 context.close()
                 browser.close()
+                automation_logger.info("Navegador encerrado.")
 
-    report_rows = [
-        build_report_row(
-            row.get(REPORT_COLUMN_USER, ""),
-            row.get(REPORT_COLUMN_NAME, "")
+    except Exception:
+        automation_logger.exception(
+            "Automação individual finalizada com erro."
         )
-        for row in batch_rows
-    ]
+        raise
 
-    write_report(
-        spreadsheet_path,
-        report_path,
-        report_rows
+
+# Executa automação em lote.
+def run_batch_automation(
+    login: str,
+    password: str,
+    spreadsheet_path: str,
+    report_directory: str,
+    expiration_date: str,
+    show_terminal_logs: bool = False
+) -> str:
+    automation_logger = configure_automation_logging(
+        show_terminal_logs=show_terminal_logs
     )
 
-    return (
-        f"Lote finalizado. {len(report_rows)} usuário(s) processado(s). "
-        f"Relatório: {report_path}"
-    )
+    try:
+        normalized_expiration_date = normalize_expiration_date(expiration_date)
+
+        automation_logger.info(
+            "Iniciando automação em lote. Planilha: %s. "
+            "Pasta relatório: %s.",
+            spreadsheet_path,
+            report_directory
+        )
+
+        headers, source_rows = read_spreadsheet(spreadsheet_path)
+        user_column = identify_user_column(headers)
+        report_path = build_report_path(
+            report_directory,
+            spreadsheet_path
+        )
+
+        automation_logger.info(
+            "Planilha carregada. Linhas úteis: %s. Coluna de usuários: %s.",
+            len(source_rows),
+            user_column
+        )
+
+        batch_rows: List[Row] = []
+
+        for source_row in source_rows:
+            user_value = source_row.get(user_column, "")
+            report_user = normalize_user_value(user_value)
+
+            batch_row: Row = {
+                REPORT_COLUMN_USER: report_user,
+                REPORT_COLUMN_NAME: "",
+                BATCH_ENTRY_PREPARED_USER: "",
+            }
+
+            try:
+                prepared_user = prepare_user_value(user_value)
+                batch_row[REPORT_COLUMN_USER] = prepared_user
+                batch_row[BATCH_ENTRY_PREPARED_USER] = prepared_user
+            except ValueError as exc:
+                batch_row[REPORT_COLUMN_NAME] = f"Erro: {str(exc)}"
+
+                automation_logger.warning(
+                    "Usuário inválido no lote: %s. Erro: %s.",
+                    report_user,
+                    str(exc)
+                )
+
+            batch_rows.append(batch_row)
+
+        prepared_rows = [
+            row for row in batch_rows
+            if row.get(BATCH_ENTRY_PREPARED_USER)
+        ]
+
+        automation_logger.info(
+            "Usuários válidos para processamento: %s.",
+            len(prepared_rows)
+        )
+
+        if prepared_rows:
+            with sync_playwright() as playwright:
+                browser = playwright.chromium.launch(
+                    headless=False
+                )
+                context = browser.new_context()
+
+                try:
+                    page = context.new_page()
+                    login_to_system(page, login, password)
+
+                    for index, batch_row in enumerate(
+                        prepared_rows,
+                        start=1
+                    ):
+                        prepared_user = batch_row.get(
+                            BATCH_ENTRY_PREPARED_USER,
+                            ""
+                        )
+
+                        automation_logger.info(
+                            "Processando usuário %s/%s: %s.",
+                            index,
+                            len(prepared_rows),
+                            prepared_user
+                        )
+
+                        try:
+                            report_message = process_user_prepared_value(
+                                page,
+                                prepared_user,
+                                normalized_expiration_date
+                            )
+
+                            automation_logger.info(
+                                "Resultado do usuário %s: %s.",
+                                prepared_user,
+                                report_message
+                            )
+                        except Exception as exc:
+                            report_message = f"Erro: {str(exc)}"
+
+                            automation_logger.exception(
+                                "Erro ao processar usuário %s.",
+                                prepared_user
+                            )
+
+                        batch_row[REPORT_COLUMN_NAME] = report_message
+
+                finally:
+                    context.close()
+                    browser.close()
+                    automation_logger.info("Navegador encerrado.")
+        else:
+            automation_logger.warning(
+                "Nenhum usuário válido para processamento."
+            )
+
+        report_rows = [
+            build_report_row(
+                row.get(REPORT_COLUMN_USER, ""),
+                row.get(REPORT_COLUMN_NAME, "")
+            )
+            for row in batch_rows
+        ]
+
+        write_report(
+            spreadsheet_path,
+            report_path,
+            report_rows
+        )
+
+        result = (
+            f"Lote finalizado. {len(prepared_rows)} usuário(s) processado(s). "
+            f"{len(report_rows)} linha(s) avaliadas."
+        )
+
+        automation_logger.info("Relatório gerado: %s.", report_path)
+        automation_logger.info(result)
+
+        return result
+
+    except Exception:
+        automation_logger.exception(
+            "Automação em lote finalizada com erro."
+        )
+        raise
