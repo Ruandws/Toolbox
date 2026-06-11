@@ -43,6 +43,64 @@ LOGIN_FAILED_WARNING_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+# Constantes globais da tela de usuário
+USER_UPDATE_BUTTON_TEXT = "Atualizar dados"
+
+USER_PAGE_READY_TIMEOUT_MS = 15000
+USER_DATE_INPUT_TIMEOUT_MS = 7000
+USER_UPDATE_BUTTON_TIMEOUT_MS = 7000
+USER_SAVE_RESPONSE_TIMEOUT_MS = 10000
+USER_SAVE_CONFIRMATION_TIMEOUT_MS = 3000
+
+USER_SAVE_REQUEST_METHODS = {
+    "POST",
+    "PUT",
+    "PATCH",
+}
+
+USER_NOT_FOUND_SELECTOR = (
+    "[role='alert'], "
+    ".alert, "
+    ".alert-danger, "
+    ".alert-warning, "
+    ".toast, "
+    ".toast-error, "
+    ".toast-message, "
+    ".well, "
+    ".swal2-popup"
+)
+
+USER_NOT_FOUND_PATTERN = re.compile(
+    r"("
+    r"usu[aá]rio|user"
+    r").{0,80}("
+    r"n[aã]o encontrado|não encontrado|nao encontrado|inexistente"
+    r")|("
+    r"n[aã]o encontrado|não encontrado|nao encontrado|inexistente"
+    r").{0,80}("
+    r"usu[aá]rio|user"
+    r")",
+    re.IGNORECASE,
+)
+
+USER_SAVE_CONFIRMATION_SELECTOR = (
+    "[role='alert'], "
+    ".alert, "
+    ".alert-success, "
+    ".alert-info, "
+    ".toast, "
+    ".toast-success, "
+    ".toast-message, "
+    ".swal2-popup"
+)
+
+USER_SAVE_CONFIRMATION_PATTERN = re.compile(
+    r"("
+    r"salv|atualiz|alterad|sucesso|prorrog|dados"
+    r")",
+    re.IGNORECASE,
+)
+
 #Constantes globais de data
 DATE_INPUT_NAME = "__/__/____"
 EXPIRATION_DATE_FORMAT = "%d/%m/%Y"
@@ -344,12 +402,6 @@ def prepare_user_value(user_value: Any) -> str:
 
     return user
 
-
-# Prepara usuário para execução em lote.
-def prepare_batch_user_value(user_value: Any) -> str:
-    return prepare_user_value(user_value)
-
-
 # Monta URL segura para usuário já validado/preparado.
 def build_user_url(prepared_user_value: str) -> str:
     encoded_user = quote(
@@ -378,8 +430,6 @@ def normalize_expiration_date(value: Any) -> str:
 
     if isinstance(value, date):
         return value.strftime(EXPIRATION_DATE_FORMAT)
-
-    text = str(value).strip()
 
     text = str(value).strip()
 
@@ -505,6 +555,147 @@ def login_to_system(page, login: str, password: str) -> None:
 
     wait_for_login_completion(page)
 
+
+# -----------------------------
+# Tela de usuário / esperas observáveis
+# -----------------------------
+
+# Obtém locator do campo de data da tela de usuário.
+def get_user_date_input_locator(page):
+    return page.get_by_role(
+        "textbox",
+        name=DATE_INPUT_NAME
+    ).first
+
+
+# Obtém locator do botão de atualização da tela de usuário.
+def get_user_update_button_locator(page):
+    return page.get_by_role(
+        "button",
+        name=USER_UPDATE_BUTTON_TEXT
+    )
+
+
+# Obtém locator de mensagem explícita de usuário não encontrado.
+def get_user_not_found_locator(page):
+    return page.locator(USER_NOT_FOUND_SELECTOR).filter(
+        has_text=USER_NOT_FOUND_PATTERN
+    )
+
+
+# Obtém locator de confirmação pós-salvamento.
+def get_user_save_confirmation_locator(page):
+    return page.locator(USER_SAVE_CONFIRMATION_SELECTOR).filter(
+        has_text=USER_SAVE_CONFIRMATION_PATTERN
+    )
+
+
+# Aguarda a tela do usuário ficar pronta sem usar espera fixa.
+def wait_for_user_page_ready(page) -> bool:
+    date_input = get_user_date_input_locator(page)
+    not_found = get_user_not_found_locator(page)
+
+    try:
+        date_input.or_(not_found).first.wait_for(
+            state="visible",
+            timeout=USER_PAGE_READY_TIMEOUT_MS
+        )
+    except PlaywrightTimeoutError:
+        return False
+
+    if date_input.is_visible():
+        return True
+
+    return False
+
+
+# Aguarda campo de data e botão de atualização.
+def wait_for_user_form_ready(page) -> bool:
+    try:
+        get_user_date_input_locator(page).wait_for(
+            state="visible",
+            timeout=USER_DATE_INPUT_TIMEOUT_MS
+        )
+        get_user_update_button_locator(page).wait_for(
+            state="visible",
+            timeout=USER_UPDATE_BUTTON_TIMEOUT_MS
+        )
+    except PlaywrightTimeoutError:
+        return False
+
+    return True
+
+
+# Identifica resposta HTTP provável de salvamento.
+def is_user_save_response(response) -> bool:
+    request = response.request
+
+    if request.method not in USER_SAVE_REQUEST_METHODS:
+        return False
+
+    return 200 <= response.status < 500
+
+
+# Aguarda confirmação visual pós-salvamento, quando existir.
+def wait_for_user_save_confirmation_if_available(page) -> Optional[str]:
+    confirmation = get_user_save_confirmation_locator(page).first
+
+    try:
+        confirmation.wait_for(
+            state="visible",
+            timeout=USER_SAVE_CONFIRMATION_TIMEOUT_MS
+        )
+    except PlaywrightTimeoutError:
+        return None
+
+    return " ".join(
+        confirmation.inner_text(timeout=500).split()
+    )
+
+
+# Clica em atualizar e aguarda estado observável de pós-salvamento.
+def click_update_and_wait_for_post_save_state(page) -> None:
+    update_button = get_user_update_button_locator(page)
+
+    try:
+        with page.expect_response(
+            is_user_save_response,
+            timeout=USER_SAVE_RESPONSE_TIMEOUT_MS
+        ) as response_info:
+            update_button.click(timeout=USER_UPDATE_BUTTON_TIMEOUT_MS)
+
+        response = response_info.value
+
+        if response.status >= 400:
+            raise RuntimeError(
+                "Falha ao salvar a prorrogação. "
+                f"Resposta HTTP: {response.status}."
+            )
+
+        wait_for_user_save_confirmation_if_available(page)
+        return
+
+    except PlaywrightTimeoutError:
+        confirmation_text = wait_for_user_save_confirmation_if_available(page)
+
+        if confirmation_text:
+            return
+
+        try:
+            update_button.wait_for(
+                state="visible",
+                timeout=USER_UPDATE_BUTTON_TIMEOUT_MS
+            )
+        except PlaywrightTimeoutError as exc:
+            raise RuntimeError(
+                "Não foi possível confirmar o salvamento da prorrogação. "
+                "O botão de atualização não voltou a ficar disponível."
+            ) from exc
+
+        raise RuntimeError(
+            "Não foi possível confirmar o salvamento da prorrogação. "
+            "Nenhuma resposta HTTP ou confirmação visual foi detectada."
+        )
 # Prorroga data do usuário validando/preparando o valor internamente.
 def process_user(
     page,
@@ -525,7 +716,7 @@ def process_user(
 def process_user_prepared_value(
     page,
     prepared_user_value: str,
-    expiration_date: str
+    prepared_expiration_date: str
 ) -> str:
     user = "" if prepared_user_value is None else str(
         prepared_user_value
@@ -534,48 +725,37 @@ def process_user_prepared_value(
     if not user:
         raise ValueError("Usuário preparado não informado.")
 
-    normalized_expiration_date = normalize_expiration_date(expiration_date)
+    expiration_date = "" if prepared_expiration_date is None else str(
+        prepared_expiration_date
+    ).strip()
+
+    if not expiration_date:
+        raise ValueError("Nova data preparada não informada.")
+
     user_url = build_user_url(user)
 
     page.goto(
         user_url,
-        wait_until="networkidle"
+        wait_until="domcontentloaded"
     )
 
-    page.wait_for_timeout(3000)
-
-    date_input = page.get_by_role(
-        "textbox",
-        name=DATE_INPUT_NAME
-    ).first
-
-    update_button = page.get_by_role(
-        "button",
-        name="Atualizar dados"
-    )
-
-    try:
-        date_input.wait_for(
-            state="visible",
-            timeout=5000
-        )
-        update_button.wait_for(
-            state="visible",
-            timeout=5000
-        )
-    except PlaywrightTimeoutError:
+    if not wait_for_user_page_ready(page):
         return "Usuário não Encontrado"
+
+    if not wait_for_user_form_ready(page):
+        return "Usuário não Encontrado"
+
+    date_input = get_user_date_input_locator(page)
 
     date_input.click()
     page.keyboard.press("Escape")
     date_input.press("ControlOrMeta+A")
     date_input.fill("")
-    date_input.type(normalized_expiration_date)
+    date_input.type(expiration_date)
 
-    update_button.click()
-    page.wait_for_timeout(1000)
+    click_update_and_wait_for_post_save_state(page)
 
-    return f"Data prorrogada para {normalized_expiration_date}"
+    return f"Data prorrogada para {expiration_date}"
 
 # -----------------------------
 # Entry points
@@ -641,7 +821,7 @@ def run_batch_automation(
         }
 
         try:
-            prepared_user = prepare_batch_user_value(user_value)
+            prepared_user = prepare_user_value(user_value)
             batch_row[REPORT_COLUMN_USER] = prepared_user
             batch_row[BATCH_ENTRY_PREPARED_USER] = prepared_user
         except ValueError as exc:
