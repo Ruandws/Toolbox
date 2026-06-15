@@ -1,30 +1,31 @@
 import re
 from playwright.sync_api import BrowserContext, Page
+from autenticador import autenticar_aghu_page, exigir_login_valido
 
 # ==========================================
 # ROBÔ ESPECIALISTA: ALMOXARIFADO (CADASTRAR IMPRESSORA)
 # ==========================================
 
 def fazer_login(page_aghu: Page, usuario_str: str, senha_str: str):
-    """Ensina o robô especialista a entrar no prédio principal do AGHUX."""
-    print("🔐 Checando o acesso (tela de login do AGHUX)...")
-    try:
-        campo_usuario = page_aghu.locator("input[type='text'], input[id*='usuario'], input[id*='login']").first
-        campo_usuario.wait_for(state="visible", timeout=3000)
-        
-        print("🔑 Tela de login detectada! Digitando credenciais...")
-        campo_usuario.fill(usuario_str)  
-        campo_senha = page_aghu.locator("input[type='password']").first
-        campo_senha.fill(senha_str)      
-        
-        botao_entrar = page_aghu.locator("button, input[type='submit']").filter(has_text="Entrar").first
-        botao_entrar.click()
-        
-        print("⏳ Aguardando a verificação de acesso...")
-        page_aghu.get_by_text("Outros Módulos", exact=True).locator("visible=true").first.wait_for(state="visible", timeout=10000)
-        print("🔓 Entramos no sistema com sucesso!")
-    except Exception:
-        print("➡️ Nenhuma tela de login detectada (ou a sessão já estava ativa). Seguindo...")
+    """Autentica no AGHUX usando o autenticador centralizado."""
+    print("Checando autenticação no AGHUX.")
+
+    resultado = autenticar_aghu_page(
+        page=page_aghu,
+        usuario=usuario_str,
+        senha=senha_str,
+        timeout_ms=15000,
+    )
+
+    if resultado.status == "sessao_ativa":
+        print("Sessão já estava ativa.")
+    elif resultado.status == "sucesso":
+        print("Login efetuado com sucesso.")
+    else:
+        print(f"Falha de autenticação: {resultado.mensagem}")
+
+    exigir_login_valido(resultado)
+    return resultado
 
 # ==========================================
 # CAPÍTULO: SITE SECUNDÁRIO (CUPS)
@@ -55,7 +56,7 @@ def consultar_dados_site_secundario(context: BrowserContext, impressora_alvo: st
     
     try:
         linha_resultado.wait_for(state="visible", timeout=5000)
-    except:
+    except Exception:
         page_cups.close()
         # O Maestro escuta exatamente este erro para saber o que fazer!
         raise ValueError("Não existe no CUPS")
@@ -154,7 +155,7 @@ def cadastrar_nova_impressora(janela_sistema, dados: dict):
         # Espera o texto de erro aparecer
         janela_sistema.get_by_text("Nenhum registro encontrado!").wait_for(state="visible", timeout=5000)
         print("✔️ Confirmado: Impressora não existe no AGHUX. Botão 'Novo' liberado!")
-    except:
+    except Exception:
         print("⚠️ A impressora já apareceu na tabela do AGHUX! Abortando criação duplicada.")
         return # Encerra a função pois já existe
         
@@ -174,7 +175,7 @@ def cadastrar_nova_impressora(janela_sistema, dados: dict):
     try:
         janela_sistema.locator("label:has-text('Tipo da Impressora') ~ div .ui-selectonemenu-trigger").first.click(timeout=2000)
         janela_sistema.locator("li").filter(has_text=tipo_imp_selecao).click()
-    except:
+    except Exception:
         janela_sistema.locator("div.ui-selectonemenu-trigger").nth(0).click()
         janela_sistema.locator("li").filter(has_text=tipo_imp_selecao).first.click()
 
@@ -183,7 +184,7 @@ def cadastrar_nova_impressora(janela_sistema, dados: dict):
     try:
         janela_sistema.locator("label:has-text('Tipo do Cups') ~ div .ui-selectonemenu-trigger").first.click(timeout=2000)
         janela_sistema.locator("li").filter(has_text=dados['classe']).click()
-    except:
+    except Exception:
         janela_sistema.locator("div.ui-selectonemenu-trigger").nth(1).click()
         janela_sistema.locator("li, td").filter(has_text=dados['classe']).first.click()
 

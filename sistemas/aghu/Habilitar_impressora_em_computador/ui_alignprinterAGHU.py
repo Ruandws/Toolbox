@@ -1,5 +1,6 @@
 import ctypes
 import os
+import sys
 import threading
 from datetime import datetime
 from pathlib import Path
@@ -12,10 +13,11 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 from playwright.sync_api import sync_playwright
 
+sys.path.append(str(Path(__file__).resolve().parent.parent))
+
 from PrinterAGHU import fazer_login, navegar_ate_modulo, processar_computadores
+from autenticador import AGHU_URL
 
-
-AGHU_URL_PRODUCAO = "https://aghu.hub-unb.ebserh/aghu/pages/casca/casca.xhtml"
 BASE_DIR = Path(__file__).resolve().parent
 LOGS_DIR = BASE_DIR / "logs"
 
@@ -180,7 +182,7 @@ def executar_automacao_aghu(
         page = context.new_page()
 
         try:
-            page.goto(AGHU_URL_PRODUCAO)
+            page.goto(AGHU_URL)
             print(f"🌍 Ambiente acessado: {page.url}")
 
             fazer_login(page, usuario, senha)
