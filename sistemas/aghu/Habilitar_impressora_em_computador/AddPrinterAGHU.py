@@ -1,6 +1,9 @@
 import re
 from playwright.sync_api import BrowserContext, Page
+
+#Imports de classes utilitárias públicas.
 from autenticador import autenticar_aghu_page, exigir_login_valido
+from menu import navegar_menu_impressora
 
 # ==========================================
 # ROBÔ ESPECIALISTA: ALMOXARIFADO (CADASTRAR IMPRESSORA)
@@ -107,41 +110,26 @@ def consultar_dados_site_secundario(context: BrowserContext, impressora_alvo: st
 # ==========================================
 
 def navegar_ate_cadastro_impressora(page_aghu: Page):
-    """Navega pelo menu até a sala de Impressoras."""
+    """Navega pelo menu até a tela de Cadastro de Impressoras."""
     print("\n🗺️ Navegando até o módulo de Cadastro de Impressoras (AGHUX)...")
-    
+
     for tentativa in range(2):
         try:
-            if not page_aghu.get_by_text("Configuração", exact=True).locator("visible=true").first.is_visible():
-                page_aghu.get_by_text("Outros Módulos", exact=True).locator("visible=true").first.click(timeout=5000)
-                
-            if not page_aghu.get_by_text("Impressão", exact=True).locator("visible=true").first.is_visible():
-                page_aghu.get_by_text("Configuração", exact=True).locator("visible=true").first.click(timeout=5000)
-                
-            if not page_aghu.get_by_text("Cadastros", exact=True).locator("visible=true").first.is_visible():
-                page_aghu.get_by_text("Impressão", exact=True).locator("visible=true").first.click(timeout=5000)
+            janela_sistema = navegar_menu_impressora(
+                page=page_aghu,
+                item_final="Impressora",
+            )
 
-            if not page_aghu.get_by_text("Impressora", exact=True).locator("visible=true").first.is_visible():
-                page_aghu.get_by_text("Cadastros", exact=True).locator("visible=true").first.click(timeout=5000)
-                
-            # Clica no menu final "Impressora" (não o 'por Computador')
-            page_aghu.get_by_text("Impressora", exact=True).locator("visible=true").first.click(timeout=5000)
-            
-            print("⏳ Aguardando a tela carregar dentro da janela (iframe)...")
-            janela_sistema = page_aghu.frame_locator("iframe").last
-            
-            # O validador de que chegamos é o botão de Pesquisar estar visível
-            janela_sistema.get_by_role("button", name="Pesquisar").first.wait_for(state="visible", timeout=15000)
             print("🎯 Chegamos na tela 'Impressora'!")
             return janela_sistema
-            
-        except Exception as e:
+
+        except Exception as erro:
             if tentativa == 0:
-                print("🔄 Dando 'F5' (Refresh) para limpar o menu travado...")
+                print("🔄 Dando 'F5' para limpar o menu travado...")
                 page_aghu.reload()
                 page_aghu.wait_for_timeout(3000)
             else:
-                raise e
+                raise erro
 
 def cadastrar_nova_impressora(janela_sistema, dados: dict):
     """Realiza o preenchimento do formulário no AGHUX baseando-se nos dados do CUPS."""

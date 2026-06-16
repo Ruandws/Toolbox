@@ -1,10 +1,17 @@
 import os
 import re
+import sys
 from datetime import datetime
 from pathlib import Path
 
+sys.path.append(str(Path(__file__).resolve().parent.parent))
+
 import pandas as pd
 from playwright.sync_api import BrowserContext, Page
+
+#Imports de classes utilitárias públicas.
+from autenticador import AGHU_URL, autenticar_aghu_page, exigir_login_valido
+from menu import navegar_menu_impressora
 
 from AddPrinterAGHU import (
     cadastrar_nova_impressora,
@@ -14,8 +21,6 @@ from AddPrinterAGHU import (
 
 
 BASE_DIR = Path(__file__).resolve().parent
-AGHU_URL_PRODUCAO = "https://aghu.hub-unb.ebserh/aghu/pages/casca/casca.xhtml"
-
 
 def ler_planilha(caminho_arquivo: str) -> pd.DataFrame:
     caminho = Path(caminho_arquivo)
@@ -53,71 +58,84 @@ def ler_planilha(caminho_arquivo: str) -> pd.DataFrame:
 
 
 def fazer_login(page: Page, usuario_str: str, senha_str: str):
-    print(f"🔐 Checando a portaria do AGHUX com o usuário: {usuario_str} ...")
-    try:
-        campo_senha = page.locator("input[type='password']").first
-        campo_senha.wait_for(state="visible", timeout=3000)
-        
-        print("🔑 Tela de login detectada! Injetando credenciais do técnico...")
-        campo_usuario = page.locator("input[id*='usuario' i], input[id*='login' i], input[type='text']").first
-        campo_usuario.fill(usuario_str)  
-        campo_senha.fill(senha_str)      
-        
-        botao_entrar = page.locator("button, input[type='submit']").filter(has_text="Entrar").first
-        botao_entrar.click()
-        
-        page.get_by_text("Outros Módulos", exact=True).locator("visible=true").first.wait_for(state="visible", timeout=10000)
-        print("🔓 Entramos no prédio com sucesso!")
-    except Exception:
-        print("➡️ Nenhuma tela de login detectada (sessão já ativa). Seguindo direto pro menu...")
+    print(f"Checando autenticação no AGHUX com o usuário: {usuario_str}")
+
+    resultado = autenticar_aghu_page(
+        page=page,
+        usuario=usuario_str,
+        senha=senha_str,
+        timeout_ms=15000,
+    )
+
+    if resultado.status == "sessao_ativa":
+        print("Sessão já estava ativa.")
+    elif resultado.status == "sucesso":
+        print("Login efetuado com sucesso.")
+    else:
+        print(f"Falha de autenticação: {resultado.mensagem}")
+
+    exigir_login_valido(resultado)
+    return resultado
 
 # ==========================================
 # ISOLAMENTO DE SESSÃO (CLEAN STATE)
 # ==========================================
 def trocar_aba_aghux(context: BrowserContext, page_atual: Page, usuario_str: str, senha_str: str) -> Page:
-    print("🔄 [Clean State] Destruindo aba antiga e abrindo uma aba nova virgem...")
+    print("[Clean State] Fechando aba atual e abrindo nova aba limpa.")
+
     try:
         page_atual.close()
-    except:
-        pass 
-        
+    except Exception:
+        pass
+
     nova_page = context.new_page()
-    #teste
-    #nova_page.goto("http://10.6.0.153:8080/aghu/pages/casca/casca.xhtml")
-    #Produção
-    nova_page.goto(AGHU_URL_PRODUCAO)
-    print(f"🌍 Ambiente acessado: {nova_page.url}")
-    fazer_login(nova_page, usuario_str, senha_str)
+    nova_page.goto(AGHU_URL)
+    print(f"Ambiente acessado: {nova_page.url}")
+
+    resultado = autenticar_aghu_page(
+        page=nova_page,
+        usuario=usuario_str,
+        senha=senha_str,
+        timeout_ms=15000,
+    )
+
+    if resultado.status == "sessao_ativa":
+        print("Sessão reaproveitada na nova aba.")
+    elif resultado.status == "sucesso":
+        print("Login efetuado na nova aba.")
+    else:
+        print(f"Falha ao autenticar nova aba: {resultado.mensagem}")
+
+    exigir_login_valido(resultado)
     return nova_page
 
-def navegar_ate_modulo(context: BrowserContext, page_atual: Page, usuario_str: str, senha_str: str):
+
+def navegar_ate_modulo(
+    context: BrowserContext,
+    page_atual: Page,
+    usuario_str: str,
+    senha_str: str,
+):
     print("🗺️ Navegando até o módulo de Impressora por Computador...")
     page = page_atual
-    
+
     for tentativa in range(2):
         try:
-            if not page.get_by_text("Configuração", exact=True).locator("visible=true").first.is_visible():
-                page.get_by_text("Outros Módulos", exact=True).locator("visible=true").first.click(timeout=5000)
-            if not page.get_by_text("Impressão", exact=True).locator("visible=true").first.is_visible():
-                page.get_by_text("Configuração", exact=True).locator("visible=true").first.click(timeout=5000)
-            if not page.get_by_text("Cadastros", exact=True).locator("visible=true").first.is_visible():
-                page.get_by_text("Impressão", exact=True).locator("visible=true").first.click(timeout=5000)
-            if not page.get_by_text("Impressora por Computador", exact=True).locator("visible=true").first.is_visible():
-                page.get_by_text("Cadastros", exact=True).locator("visible=true").first.click(timeout=5000)
-            
-            page.get_by_text("Impressora por Computador", exact=True).locator("visible=true").first.click(timeout=5000)
-            
-            janela_sistema = page.frame_locator("iframe").last
-            janela_sistema.get_by_role("button", name="Pesquisar").first.wait_for(state="visible", timeout=15000)
-            
+            janela_sistema = navegar_menu_impressora(
+                page=page,
+                item_final="Impressora por Computador",
+            )
+
             return page, janela_sistema
-            
-        except Exception as e:
+
+        except Exception as erro:
             if tentativa == 0:
                 print("⚠️ Falha ao navegar no menu. Acionando Clean State...")
                 page = trocar_aba_aghux(context, page, usuario_str, senha_str)
             else:
-                raise e
+                raise erro
+
+    raise RuntimeError("Falha ao navegar até o módulo de Impressora por Computador.")
 
 # ==========================================
 # CAPÍTULO 3: O CÉREBRO MAESTRO
@@ -146,8 +164,8 @@ def processar_computadores(
         impressora_fabricada_agora = False 
         passo_atual = "Iniciando"
         
-        print(f"\n========================================")
-        print(f"🔍 Investigando [{index + 1}/{len(planilha)}]: Computador [{ip_pc}] | Alvo [{impressora_alvo}]")
+        print("\n========================================")
+        print(f"🔍 Investigando [{int(str(index)) + 1}/{len(planilha)}]: Computador [{ip_pc}] | Alvo [{impressora_alvo}]")  # type: ignore
         
         for tentativa in range(3):
             try:
@@ -165,7 +183,7 @@ def processar_computadores(
                 try:
                     caixa_flutuante_pc.wait_for(state="visible", timeout=6000)
                     caixa_flutuante_pc.click()
-                except:
+                except Exception:
                     raise ValueError("Computador não encontrado")
                 
                 passo_atual = "Pesquisando na Tabela"
@@ -176,20 +194,20 @@ def processar_computadores(
                 try:
                     linha_alvo.wait_for(state="visible", timeout=5000) 
                     linha_encontrada = True
-                except:
+                except Exception:
                     linha_encontrada = False
                 
                 if linha_encontrada:
                     texto_da_linha = linha_alvo.inner_text()
                     if impressora_alvo in texto_da_linha:
-                        print(f"✅ SUCESSO! A impressora já estava correta.")
+                        print("✅ SUCESSO! A impressora já estava correta.")
                         status_da_linha = "Mantido"
                         detalhes_da_linha = "Impressora já estava correta no sistema."
                         janela_sistema.locator("button:has(.aghu-icon-cleaner-aghu)").first.click()
                         break
                     else:
                         passo_atual = "Editando Impressora Existente"
-                        print(f"⚠️ DIVERGÊNCIA! Atualizando a impressora...")
+                        print("⚠️ DIVERGÊNCIA! Atualizando a impressora...")
                         botao_lapis = linha_alvo.locator("[title*='editar' i], [title*='alterar' i], .aghu-icon-edit").first
                         botao_lapis.click()
                         janela_sistema.get_by_role("button", name="Gravar").wait_for(state="visible")
@@ -204,7 +222,7 @@ def processar_computadores(
                         try:
                             caixa_flutuante_imp.wait_for(state="visible", timeout=6000)
                             caixa_flutuante_imp.click()
-                        except:
+                        except Exception:
                             raise ValueError("Impressora não existe") 
                         
                         janela_sistema.get_by_role("button", name="Gravar").click()
@@ -232,7 +250,7 @@ def processar_computadores(
                     try:
                         caixa_flutuante_pc_novo.wait_for(state="visible", timeout=6000)
                         caixa_flutuante_pc_novo.click()
-                    except:
+                    except Exception:
                         raise ValueError("Computador não encontrado")
                     
                     campo_impressora_novo = janela_sistema.locator("input[id*='impressora' i]").locator("visible=true").first
@@ -243,7 +261,7 @@ def processar_computadores(
                     try:
                         caixa_flutuante_imp_novo.wait_for(state="visible", timeout=6000)
                         caixa_flutuante_imp_novo.click()
-                    except:
+                    except Exception:
                         raise ValueError("Impressora não existe") 
                     
                     campo_classe = janela_sistema.locator("input[id*='classe' i], input[id*='impressao' i]").locator("visible=true").last
@@ -251,7 +269,7 @@ def processar_computadores(
                     if classe_impressao.upper() not in classe_atual.upper():
                         try:
                             janela_sistema.locator("button:has(.aghu-icon-cleaner-aghu)").locator("visible=true").last.click(timeout=2000)
-                        except:
+                        except Exception:
                             campo_classe.clear() 
                         botao_lupa = janela_sistema.locator("button:has(.ui-icon-triangle-1-s)").locator("visible=true").last
                         botao_lupa.click()
@@ -322,11 +340,11 @@ def processar_computadores(
                         print(f"❌ Identificado erro sem salvação imediata: {status_da_linha}")
                         try:
                             janela_sistema.get_by_role("button", name="Cancelar").click(timeout=1000)
-                        except:
+                        except Exception:
                             pass 
                         try:
                             janela_sistema.locator("button:has(.aghu-icon-cleaner-aghu)").first.click(timeout=1500)
-                        except:
+                        except Exception:
                             pass
                         break 
                 
@@ -347,7 +365,7 @@ def processar_computadores(
                         try:
                             page = trocar_aba_aghux(context, page, usuario_str, senha_str)
                             page, janela_sistema = navegar_ate_modulo(context, page, usuario_str, senha_str)
-                        except:
+                        except Exception:
                             pass
                         break
 
