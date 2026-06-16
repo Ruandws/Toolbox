@@ -3,10 +3,11 @@
 - **Status:** Estável
 - **Autor:** Pedro e Ruan
 - **Data:** 2026-06
-- **Atualizado em:** 2026-06-15
+- **Atualizado em:** 2026-06-16
 - **Arquivo:** `PrinterAGHU.py`
 - **Depende de:** `autenticador.py`
 - **Depende de:** `AddPrinterAGHU.py` (RFC-002)
+- **Depende de:** `menu.py` (RFC-004)
 - **Chamado por:** `ui_alignprinterAGHU.py` (RFC-003)
 
 ---
@@ -31,8 +32,8 @@ Esta revisão atualiza a RFC para refletir as implementações atuais dos arquiv
 | URL do AGHUX | Uso de `AGHU_URL`, importada do autenticador, com suporte a variáveis de ambiente |
 | Login local | `fazer_login` agora é wrapper de `autenticar_aghu_page` + `exigir_login_valido` |
 | Clean State | Continua fechando a aba atual, abrindo nova aba no mesmo contexto e autenticando pela rotina central |
-| Navegação | Mantém retry de navegação com Clean State na primeira falha |
-| Busca de IP | Usa regex com `re.escape` e borda de palavra para evitar correspondência parcial de IP |
+| Navegação | Delegada a `navegar_menu_impressora` de `menu.py` (RFC-004); mantém retry com Clean State na primeira falha |
+| Busca de IP | Usa `_criar_matcher_exato` com `re.escape` e lookaround `(?<![\w.-])…(?![\w.-])` para evitar correspondência parcial de IP |
 | Relatório | Gera CSV em `logs/log_resultado_YYYYMMDD_HHMMSS.csv` com primeira linha de auditoria `Atualizado por: <usuario>` |
 
 ---
@@ -127,6 +128,23 @@ from AddPrinterAGHU import (
 
 O Maestro chama essas funções somente quando a seleção da impressora no módulo **Impressora por Computador** falha com `ValueError("Impressora não existe")`.
 
+### 5.3 `menu.py`
+
+`PrinterAGHU.py` importa:
+
+```python
+from menu import navegar_menu_impressora
+```
+
+Responsabilidades delegadas ao `menu.py`:
+
+| Item | Responsabilidade |
+|---|---|
+| `CAMINHO_MENU_IMPRESSORA` | Tupla com o caminho fixo de menu até o nível **Cadastros** |
+| `navegar_menu_impressora` | Percorre o caminho de menu, clica no item final e aguarda o iframe com botão **Pesquisar** |
+
+A navegação pelo menu do AGHUX não é mais implementada manualmente neste arquivo. Tanto o Maestro quanto o Almoxarifado usam `navegar_menu_impressora` para alcançar seus respectivos módulos.
+
 ---
 
 ## 6. Descrição dos Componentes
@@ -188,21 +206,16 @@ O uso do mesmo `BrowserContext` preserva sessão, certificados e configuração 
 
 ### 6.4 `navegar_ate_modulo(context, page_atual, usuario_str, senha_str)`
 
-Navega até o módulo **Impressora por Computador**:
-
-```text
-Outros Módulos → Configuração → Impressão → Cadastros → Impressora por Computador
-```
-
-Antes de clicar em cada item, verifica se o item de destino já está visível. Isso reduz cliques redundantes em menus já expandidos.
-
-Ao abrir o módulo, captura o último iframe com:
+Navega até o módulo **Impressora por Computador** delegando a travessia de menu a `navegar_menu_impressora` de `menu.py` (RFC-004):
 
 ```python
-janela_sistema = page.frame_locator("iframe").last
+janela_sistema = navegar_menu_impressora(
+    page=page,
+    item_final="Impressora por Computador",
+)
 ```
 
-A tela é considerada carregada quando o botão **Pesquisar** fica visível dentro do iframe.
+A função `navegar_menu_impressora` percorre o caminho de menu, verifica visibilidade de cada nível antes de clicar, abre o módulo e aguarda o botão **Pesquisar** no último iframe. O retorno é o `FrameLocator` do iframe carregado.
 
 A função faz até duas tentativas:
 
@@ -257,13 +270,16 @@ O IP é digitado com:
 press_sequentially(ip_pc, delay=150)
 ```
 
-A seleção do autocomplete usa regex com `re.escape` e borda de palavra:
+A seleção do autocomplete usa a função `_criar_matcher_exato`, que aplica `re.escape` e lookaround negativo para evitar correspondência parcial:
 
 ```python
-padrao_exato = re.compile(fr"\b{re.escape(ip_pc)}\b")
+re.compile(
+    rf"(?<![\w.-]){re.escape(valor)}(?![\w.-])",
+    re.IGNORECASE,
+)
 ```
 
-Esse ajuste evita que `10.6.0.22` corresponda indevidamente a `10.6.0.225`.
+Esse ajuste evita que `10.6.0.22` corresponda indevidamente a `10.6.0.225`. Para valores sem dígitos, a comparação é por substring literal.
 
 Se nenhuma sugestão compatível aparece, a linha recebe `Inexistente` com detalhe `Computador não cadastrado no AGHUX.`.
 

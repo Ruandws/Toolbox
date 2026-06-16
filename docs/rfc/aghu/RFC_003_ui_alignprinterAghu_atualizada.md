@@ -3,11 +3,12 @@
 - **Status:** Estável
 - **Autor:** Pedro e Ruan
 - **Data:** 2026-06
-- **Atualizado em:** 2026-06-15
+- **Atualizado em:** 2026-06-16
 - **Arquivo:** `ui_alignprinterAGHU.py`
 - **Depende de:** `PrinterAGHU.py` (RFC-001)
 - **Depende de:** `autenticador.py`
 - **Depende indiretamente de:** `AddPrinterAGHU.py` (RFC-002)
+- **Depende indiretamente de:** `menu.py` (RFC-004)
 
 ---
 
@@ -110,6 +111,10 @@ A URL do AGHUX não é mais uma constante local da UI. Ela vem do autenticador c
 ### 5.3 `AddPrinterAGHU.py`
 
 A dependência é indireta. A UI chama o Maestro; o Maestro chama o Almoxarifado quando precisa cadastrar uma impressora ausente.
+
+### 5.4 `menu.py`
+
+A dependência é indireta. O Maestro e o Almoxarifado importam `navegar_menu_impressora` de `menu.py` (RFC-004) para percorrer o menu do AGHUX. A UI não interage diretamente com a navegação de menu.
 
 ---
 

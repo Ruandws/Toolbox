@@ -3,9 +3,10 @@
 - **Status:** Estável
 - **Autor:** Pedro e Ruan
 - **Data:** 2026-06
-- **Atualizado em:** 2026-06-15
+- **Atualizado em:** 2026-06-16
 - **Arquivo:** `AddPrinterAGHU.py`
 - **Depende de:** `autenticador.py`
+- **Depende de:** `menu.py` (RFC-004)
 - **Chamado por:** `PrinterAGHU.py` (RFC-001)
 
 ---
@@ -83,7 +84,9 @@ O Robô Especialista isola a responsabilidade de criar a impressora no cadastro 
 
 ---
 
-## 5. Dependência de Autenticação
+## 5. Dependências
+
+### 5.1 `autenticador.py`
 
 O módulo importa:
 
@@ -101,6 +104,16 @@ Contrato de autenticação:
 | `exigir_login_valido` | Interrompe o fluxo se o login não for `sucesso` ou `sessao_ativa` |
 
 O módulo não deve manter seletores próprios para usuário, senha, botão **Entrar**, mensagem de credencial inválida ou confirmação de sessão ativa.
+
+### 5.2 `menu.py`
+
+O módulo importa:
+
+```python
+from menu import navegar_menu_impressora
+```
+
+A navegação até o cadastro mestre de impressoras é delegada a `navegar_menu_impressora` (RFC-004), que percorre o caminho de menu do AGHUX e aguarda o iframe de destino. O item final passado pelo Almoxarifado é `"Impressora"`, diferente do Maestro que passa `"Impressora por Computador"`.
 
 ---
 
@@ -192,21 +205,16 @@ A aba do CUPS é fechada antes do retorno em caso de sucesso.
 
 ### 6.3 `navegar_ate_cadastro_impressora(page_aghu)`
 
-Navega no AGHUX até o cadastro mestre de impressoras:
-
-```text
-Outros Módulos → Configuração → Impressão → Cadastros → Impressora
-```
-
-A função verifica a visibilidade dos níveis de menu antes de clicar, evitando cliques desnecessários em menus já abertos. O destino final é **Impressora**, não **Impressora por Computador**.
-
-Ao abrir o módulo, captura:
+Navega no AGHUX até o cadastro mestre de impressoras delegando a `navegar_menu_impressora` de `menu.py` (RFC-004):
 
 ```python
-janela_sistema = page_aghu.frame_locator("iframe").last
+janela_sistema = navegar_menu_impressora(
+    page=page_aghu,
+    item_final="Impressora",
+)
 ```
 
-A tela é considerada carregada quando o botão **Pesquisar** fica visível dentro do iframe.
+O item final passado é `"Impressora"`, diferente do Maestro que usa `"Impressora por Computador"`. A função `navegar_menu_impressora` percorre o caminho de menu, verifica visibilidade de cada nível e aguarda o botão **Pesquisar** no último iframe.
 
 Recuperação:
 
