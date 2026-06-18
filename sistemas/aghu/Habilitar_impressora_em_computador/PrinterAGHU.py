@@ -1,6 +1,7 @@
 import os
 import re
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -21,6 +22,323 @@ from AddPrinterAGHU import (
 
 
 BASE_DIR = Path(__file__).resolve().parent
+
+CARACTERES_DE_VALOR = r"A-Za-z0-9_.-"
+TABELA_COMPUTADOR_IMPRESSORA_SELECTOR = (
+    '[id="tabelaComputadorImpressora:resultList_data"]'
+)
+MENSAGEM_ERRO_PESQUISA_INDEFINIDA = (
+    "Conferir manualmente: pesquisa nao retornou nem linhas nem mensagem de "
+    "nenhum registro encontrado."
+)
+
+
+def _normalizar_busca(valor: object) -> str:
+    return re.sub(r"\s+", " ", str(valor or "").strip()).casefold()
+
+
+def _normalizar_texto_simples(valor: object) -> str:
+    return _normalizar_busca(valor)
+
+
+def _criar_regex_valor_exato(valor: object, flags: int = re.IGNORECASE) -> re.Pattern:
+    valor_normalizado = _normalizar_busca(valor)
+    return re.compile(
+        rf"(?<![{CARACTERES_DE_VALOR}])"
+        rf"{re.escape(valor_normalizado)}"
+        rf"(?![{CARACTERES_DE_VALOR}])",
+        flags,
+    )
+
+
+def _contem_valor_exato(texto: object, valor: object) -> bool:
+    valor_normalizado = _normalizar_busca(valor)
+
+    if not valor_normalizado:
+        return False
+
+    texto_normalizado = _normalizar_busca(texto)
+    padrao = _criar_regex_valor_exato(valor_normalizado, flags=0)
+
+    return bool(padrao.search(texto_normalizado))
+
+
+def _valor_exato(valor_atual: object, valor_esperado: object) -> bool:
+    return _normalizar_busca(valor_atual) == _normalizar_busca(valor_esperado)
+
+
+def _regex_ip_celula(ip_pc: str) -> re.Pattern:
+    return re.compile(rf"^\s*{re.escape(str(ip_pc).strip())}\s*$")
+
+
+def _ip_celula_confere(valor_celula: object, ip_pc: str) -> bool:
+    return bool(_regex_ip_celula(ip_pc).match(str(valor_celula or "")))
+
+
+def _classe_impressao_aghu(tipo_cups: str) -> str:
+    if _valor_exato(tipo_cups, "PDF"):
+        return "A"
+
+    return str(tipo_cups or "").strip()
+
+
+def _tbody_resultados(janela_sistema):
+    return janela_sistema.locator(TABELA_COMPUTADOR_IMPRESSORA_SELECTOR)
+
+
+def _linhas_resultado(tbody):
+    return tbody.locator("> tr[data-ri]")
+
+
+def _linha_vazia_resultado(tbody):
+    return tbody.locator(
+        "> tr.ui-datatable-empty-message",
+        has_text="Nenhum registro encontrado!",
+    )
+
+
+def _texto_celula(linha_tabela, indice: int) -> str:
+    try:
+        celulas = linha_tabela.locator("td")
+        if indice >= celulas.count():
+            return ""
+
+        return celulas.nth(indice).inner_text(timeout=1000).strip()
+    except Exception:
+        return ""
+
+
+def _aguardar_estado_resultado_pesquisa(
+    janela_sistema,
+    timeout_ms: int = 7000,
+) -> tuple[str, object]:
+    tbody = _tbody_resultados(janela_sistema)
+    linhas = _linhas_resultado(tbody)
+    linha_vazia = _linha_vazia_resultado(tbody)
+    fim = time.monotonic() + (timeout_ms / 1000)
+
+    while time.monotonic() < fim:
+        try:
+            if linhas.count() > 0 and linhas.first.is_visible(timeout=250):
+                return "linhas", linhas
+        except Exception:
+            pass
+
+        try:
+            if linha_vazia.is_visible(timeout=250):
+                return "vazio", linhas
+        except Exception:
+            pass
+
+        time.sleep(0.15)
+
+    return "indefinido", linhas
+
+
+def _registro_confere_tipo_e_classe(registro: dict, tipo_cups_esperado: str) -> bool:
+    if not _valor_exato(registro.get("tipo_cups", ""), tipo_cups_esperado):
+        return False
+
+    classe_esperada = _classe_impressao_aghu(tipo_cups_esperado)
+
+    if not classe_esperada:
+        return True
+
+    return _valor_exato(registro.get("classe", ""), classe_esperada)
+
+
+def _registro_eh_pdf(registro: dict) -> bool:
+    return _registro_confere_tipo_e_classe(registro, "PDF")
+
+
+def _decidir_acao_linhas(
+    registros_linhas: list[dict],
+    impressora_alvo: str,
+    classe_impressao: str,
+) -> tuple[str, dict | None]:
+    linha_pdf = None
+
+    for registro in registros_linhas:
+        if _valor_exato(registro.get("fila", ""), impressora_alvo):
+            if _registro_confere_tipo_e_classe(registro, classe_impressao):
+                return "mantido", registro
+
+            return "conferir", registro
+
+        if _registro_eh_pdf(registro):
+            linha_pdf = registro
+
+    if linha_pdf is not None:
+        return "alterar", linha_pdf
+
+    return "incluir", None
+
+
+def _coletar_linhas_computador(janela_sistema, ip_pc: str) -> tuple[str, list[dict]]:
+    estado_pesquisa, linhas_tabela = _aguardar_estado_resultado_pesquisa(janela_sistema)
+    registros_linhas = []
+
+    if estado_pesquisa != "linhas":
+        return estado_pesquisa, registros_linhas
+
+    for indice in range(linhas_tabela.count()):
+        linha_tabela = linhas_tabela.nth(indice)
+
+        try:
+            if not linha_tabela.is_visible(timeout=1000):
+                continue
+
+            texto_linha = linha_tabela.inner_text(timeout=1000)
+        except Exception:
+            continue
+
+        ip_linha = _texto_celula(linha_tabela, 1)
+
+        if not _ip_celula_confere(ip_linha, ip_pc):
+            continue
+
+        registros_linhas.append(
+            {
+                "linha": linha_tabela,
+                "texto": texto_linha,
+                "ip": ip_linha,
+                "computador": _texto_celula(linha_tabela, 2),
+                "descricao": _texto_celula(linha_tabela, 3),
+                "classe": _texto_celula(linha_tabela, 4),
+                "fila": _texto_celula(linha_tabela, 5),
+                "tipo_cups": _texto_celula(linha_tabela, 6),
+            }
+        )
+
+    return estado_pesquisa, registros_linhas
+
+
+def _extrair_ips(texto: object) -> list[str]:
+    return re.findall(
+        r"(?<!\S)(\d{1,3}(?:\.\d{1,3}){3})(?!\S)",
+        str(texto or ""),
+    )
+
+
+def _validar_computador_selecionado(
+    campo_computador,
+    ip_pc: str,
+    texto_item_selecionado: str,
+) -> tuple[bool, str]:
+    try:
+        valor_campo = campo_computador.input_value(timeout=1000).strip()
+    except Exception:
+        valor_campo = ""
+
+    textos = [texto for texto in (valor_campo, texto_item_selecionado) if texto]
+    ips_encontrados = []
+
+    for texto in textos:
+        ips_encontrados.extend(_extrair_ips(texto))
+
+    if ips_encontrados:
+        ips_divergentes = [ip for ip in ips_encontrados if ip != ip_pc]
+        if not ips_divergentes and ip_pc in ips_encontrados:
+            return True, ""
+
+        return False, ips_divergentes[0] if ips_divergentes else ips_encontrados[0]
+
+    if _ip_celula_confere(valor_campo, ip_pc):
+        return True, ""
+
+    return False, valor_campo or texto_item_selecionado or "nao identificado"
+
+
+def _mensagem_dialog(janela_sistema, seletor: str):
+    return janela_sistema.locator(
+        f'#msgDialog[aria-hidden="false"] #messagesInDialog {seletor}'
+    )
+
+
+def _aguardar_resultado_gravacao(
+    janela_sistema,
+    page: Page | None = None,
+    timeout_ms: int = 10000,
+) -> tuple[str, str]:
+    containers = [janela_sistema]
+
+    if page is not None:
+        containers.append(page)
+
+    mensagens_sucesso = [
+        _mensagem_dialog(container, "span.ui-messages-info-summary")
+        for container in containers
+    ]
+    mensagens_erro = [
+        _mensagem_dialog(container, "span.ui-messages-error-summary")
+        for container in containers
+    ]
+    fim = time.monotonic() + (timeout_ms / 1000)
+
+    while time.monotonic() < fim:
+        for mensagem_erro in mensagens_erro:
+            try:
+                if mensagem_erro.count() > 0 and mensagem_erro.first.is_visible(timeout=250):
+                    return "erro", mensagem_erro.first.inner_text(timeout=1000).strip()
+            except Exception:
+                pass
+
+        for mensagem_sucesso in mensagens_sucesso:
+            try:
+                if mensagem_sucesso.count() > 0 and mensagem_sucesso.first.is_visible(timeout=250):
+                    return "sucesso", mensagem_sucesso.first.inner_text(timeout=1000).strip()
+            except Exception:
+                pass
+
+        time.sleep(0.15)
+
+    return "indefinido", ""
+
+
+def _erro_classe_pdf_duplicada(mensagem: str) -> bool:
+    mensagem_normalizada = _normalizar_texto_simples(mensagem)
+    return (
+        "existe uma impressora cadastrada" in mensagem_normalizada
+        and "classe a" in mensagem_normalizada
+    )
+
+
+def _aguardar_botao_pesquisar_se_possivel(janela_sistema) -> None:
+    try:
+        janela_sistema.get_by_role("button", name="Pesquisar").wait_for(
+            state="visible",
+            timeout=3000,
+        )
+    except Exception:
+        pass
+
+
+def _limpar_estado_formulario(janela_sistema, page: Page | None = None) -> None:
+    containers = [janela_sistema]
+
+    if page is not None:
+        containers.append(page)
+
+    for container in containers:
+        try:
+            container.locator(
+                '#msgDialog[aria-hidden="false"] a.ui-dialog-titlebar-close, '
+                '#msgDialog[aria-hidden="false"] .ui-dialog-titlebar-close'
+            ).first.click(timeout=1000)
+            break
+        except Exception:
+            pass
+
+    try:
+        janela_sistema.get_by_role("button", name="Cancelar").click(timeout=1000)
+    except Exception:
+        pass
+
+    try:
+        janela_sistema.locator("button:has(.aghu-icon-cleaner-aghu)").first.click(timeout=1500)
+    except Exception:
+        pass
+
 
 def ler_planilha(caminho_arquivo: str) -> pd.DataFrame:
     caminho = Path(caminho_arquivo)
@@ -175,8 +493,8 @@ def processar_computadores(
                 campo_computador.clear()
                 campo_computador.press_sequentially(ip_pc, delay=150)
 
-                # re.escape protege os pontos do IP. O \b garante que não há números extras depois (evita o .225 quando deveria ser .22).
-                padrao_exato = re.compile(fr"\b{re.escape(ip_pc)}\b")
+                # Usa limites de valor para evitar falso positivo em IPs ou nomes com sufixo.
+                padrao_exato = _criar_regex_valor_exato(ip_pc)
 
                 #caixa_flutuante_pc = janela_sistema.locator("li, td, span").filter(has_text=ip_pc).locator("visible=true").first
                 caixa_flutuante_pc = janela_sistema.locator("tr, li, td, span").filter(has_text=padrao_exato).locator("visible=true").first
@@ -188,18 +506,58 @@ def processar_computadores(
                 
                 passo_atual = "Pesquisando na Tabela"
                 janela_sistema.get_by_role("button", name="Pesquisar").click()
-                linha_alvo = janela_sistema.get_by_role("row").filter(has_text=ip_pc).filter(has_text=classe_impressao).first
-                
-                linha_encontrada = False
-                try:
-                    linha_alvo.wait_for(state="visible", timeout=5000) 
-                    linha_encontrada = True
-                except Exception:
-                    linha_encontrada = False
+                estado_pesquisa, registros_linhas = _coletar_linhas_computador(
+                    janela_sistema=janela_sistema,
+                    ip_pc=ip_pc,
+                )
+
+                if estado_pesquisa == "indefinido":
+                    print("Pesquisa sem estado final claro. Conferir manualmente.")
+                    status_da_linha = "Erro"
+                    detalhes_da_linha = MENSAGEM_ERRO_PESQUISA_INDEFINIDA
+                    _limpar_estado_formulario(janela_sistema, page)
+                    break
+
+                if estado_pesquisa == "linhas" and not registros_linhas:
+                    print("Pesquisa retornou linhas, mas nenhuma com o IP esperado.")
+                    status_da_linha = "Erro"
+                    detalhes_da_linha = (
+                        "Conferir manualmente: pesquisa retornou linhas, mas nenhuma "
+                        f"com o IP esperado [{ip_pc}]."
+                    )
+                    _limpar_estado_formulario(janela_sistema, page)
+                    break
+
+                decisao_linha, registro_linha = _decidir_acao_linhas(
+                    registros_linhas=registros_linhas,
+                    impressora_alvo=impressora_alvo,
+                    classe_impressao=classe_impressao,
+                )
+
+                if decisao_linha == "conferir":
+                    tipo_cups_atual = (
+                        str(registro_linha.get("tipo_cups") or "nao identificado")
+                        if registro_linha
+                        else "nao identificado"
+                    )
+                    print("Tipo do Cups divergente. Conferir manualmente.")
+                    status_da_linha = "Erro"
+                    detalhes_da_linha = (
+                        "Conferir manualmente: impressora ja vinculada ao computador "
+                        f"com Tipo do Cups [{tipo_cups_atual}], diferente da planilha "
+                        f"[{classe_impressao}]."
+                    )
+                    janela_sistema.locator("button:has(.aghu-icon-cleaner-aghu)").first.click()
+                    break
+
+                linha_encontrada = decisao_linha in {"mantido", "alterar"}
+                linha_alvo = registro_linha["linha"] if linha_encontrada and registro_linha else None
+
+                if linha_encontrada and linha_alvo is None:
+                    raise RuntimeError("Linha da tabela para decisao nao localizada.")
                 
                 if linha_encontrada:
-                    texto_da_linha = linha_alvo.inner_text()
-                    if impressora_alvo in texto_da_linha:
+                    if decisao_linha == "mantido":
                         print("✅ SUCESSO! A impressora já estava correta.")
                         status_da_linha = "Mantido"
                         detalhes_da_linha = "Impressora já estava correta no sistema."
@@ -208,7 +566,10 @@ def processar_computadores(
                     else:
                         passo_atual = "Editando Impressora Existente"
                         print("⚠️ DIVERGÊNCIA! Atualizando a impressora...")
-                        botao_lapis = linha_alvo.locator("[title*='editar' i], [title*='alterar' i], .aghu-icon-edit").first
+                        botao_lapis = linha_alvo.locator(
+                            'td.first-column.auto-adjust a[title="editar"], '
+                            '[title*="editar" i], [title*="alterar" i], .aghu-icon-edit'
+                        ).first
                         botao_lapis.click()
                         janela_sistema.get_by_role("button", name="Gravar").wait_for(state="visible")
                         
@@ -226,7 +587,32 @@ def processar_computadores(
                             raise ValueError("Impressora não existe") 
                         
                         janela_sistema.get_by_role("button", name="Gravar").click()
-                        janela_sistema.get_by_role("button", name="Pesquisar").wait_for(state="visible")
+                        resultado_gravacao, mensagem_gravacao = _aguardar_resultado_gravacao(
+                            janela_sistema,
+                            page,
+                        )
+
+                        if resultado_gravacao == "erro":
+                            print(f"Erro retornado pelo AGHU: {mensagem_gravacao}")
+                            status_da_linha = "Erro"
+                            detalhes_da_linha = (
+                                "Conferir manualmente: AGHU retornou erro ao alterar: "
+                                f"{mensagem_gravacao}"
+                            )
+                            _limpar_estado_formulario(janela_sistema, page)
+                            break
+
+                        if resultado_gravacao == "indefinido":
+                            print("Gravacao sem sucesso ou erro conhecido. Conferir manualmente.")
+                            status_da_linha = "Erro"
+                            detalhes_da_linha = (
+                                "Conferir manualmente: gravacao nao retornou sucesso "
+                                "nem erro conhecido."
+                            )
+                            _limpar_estado_formulario(janela_sistema, page)
+                            break
+
+                        _aguardar_botao_pesquisar_se_possivel(janela_sistema)
                         print("🔄 Salvamento concluído!")
                         
                         status_da_linha = "Criado" if impressora_fabricada_agora else "Alterado"
@@ -236,7 +622,10 @@ def processar_computadores(
                         break
                 else:
                     passo_atual = "Cadastrando Nova Impressora (Vinculando)"
-                    print("🆕 Nenhum registro encontrado! Iniciando NOVO vínculo...")
+                    if registros_linhas:
+                        print("Vinculos existentes nao sao PDF. Iniciando NOVO vinculo...")
+                    else:
+                        print("Nenhum registro encontrado. Iniciando NOVO vinculo...")
                     janela_sistema.get_by_role("button", name="Novo").click()
                     janela_sistema.get_by_role("button", name="Gravar").wait_for(state="visible")
                     
@@ -249,10 +638,23 @@ def processar_computadores(
                     #caixa_flutuante_pc_novo = janela_sistema.locator("li, td, span").filter(has_text=ip_pc).locator("visible=true").first
                     try:
                         caixa_flutuante_pc_novo.wait_for(state="visible", timeout=6000)
+                        texto_computador_selecionado = caixa_flutuante_pc_novo.inner_text(timeout=1000)
                         caixa_flutuante_pc_novo.click()
                     except Exception:
                         raise ValueError("Computador não encontrado")
                     
+                    computador_confere, computador_selecionado = _validar_computador_selecionado(
+                        campo_computador_novo,
+                        ip_pc,
+                        texto_computador_selecionado,
+                    )
+                    if not computador_confere:
+                        raise ValueError(
+                            "Conferir manualmente: computador selecionado diverge "
+                            f"do IP esperado. Esperado: {ip_pc}; selecionado: "
+                            f"{computador_selecionado}."
+                        )
+
                     campo_impressora_novo = janela_sistema.locator("input[id*='impressora' i]").locator("visible=true").first
                     campo_impressora_novo.click()
                     campo_impressora_novo.clear()
@@ -266,19 +668,51 @@ def processar_computadores(
                     
                     campo_classe = janela_sistema.locator("input[id*='classe' i], input[id*='impressao' i]").locator("visible=true").last
                     classe_atual = str(campo_classe.input_value())
-                    if classe_impressao.upper() not in classe_atual.upper():
+                    classe_aghu = _classe_impressao_aghu(classe_impressao)
+                    if classe_aghu.upper() not in classe_atual.upper():
                         try:
                             janela_sistema.locator("button:has(.aghu-icon-cleaner-aghu)").locator("visible=true").last.click(timeout=2000)
                         except Exception:
                             campo_classe.clear() 
                         botao_lupa = janela_sistema.locator("button:has(.ui-icon-triangle-1-s)").locator("visible=true").last
                         botao_lupa.click()
-                        caixa_flutuante_classe = janela_sistema.locator("li, td, span").filter(has_text=classe_impressao).locator("visible=true").first
+                        caixa_flutuante_classe = janela_sistema.locator("li, td, span").filter(has_text=classe_aghu).locator("visible=true").first
                         caixa_flutuante_classe.wait_for(state="visible", timeout=5000)
                         caixa_flutuante_classe.click()
 
                     janela_sistema.get_by_role("button", name="Gravar").click()
-                    janela_sistema.get_by_role("button", name="Pesquisar").wait_for(state="visible")
+                    resultado_gravacao, mensagem_gravacao = _aguardar_resultado_gravacao(
+                        janela_sistema,
+                        page,
+                    )
+
+                    if resultado_gravacao == "erro":
+                        print(f"Erro retornado pelo AGHU: {mensagem_gravacao}")
+                        status_da_linha = "Erro"
+                        if _erro_classe_pdf_duplicada(mensagem_gravacao):
+                            detalhes_da_linha = (
+                                "Conferir manualmente: AGHU bloqueou inclusao porque "
+                                "ja existe impressora na classe A/PDF para o computador."
+                            )
+                        else:
+                            detalhes_da_linha = (
+                                "Conferir manualmente: AGHU retornou erro ao incluir: "
+                                f"{mensagem_gravacao}"
+                            )
+                        _limpar_estado_formulario(janela_sistema, page)
+                        break
+
+                    if resultado_gravacao == "indefinido":
+                        print("Gravacao sem sucesso ou erro conhecido. Conferir manualmente.")
+                        status_da_linha = "Erro"
+                        detalhes_da_linha = (
+                            "Conferir manualmente: gravacao nao retornou sucesso "
+                            "nem erro conhecido."
+                        )
+                        _limpar_estado_formulario(janela_sistema, page)
+                        break
+
+                    _aguardar_botao_pesquisar_se_possivel(janela_sistema)
                     print("🔄 Cadastro finalizado com sucesso!")
                     
                     status_da_linha = "Criado" if impressora_fabricada_agora else "Vinculado"
@@ -399,3 +833,4 @@ def processar_computadores(
     
     print(f"📊 Relatório gerado com sucesso: {nome_arquivo_log}")
     return str(nome_arquivo_log)
+
