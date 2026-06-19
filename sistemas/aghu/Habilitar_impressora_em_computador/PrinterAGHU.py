@@ -12,7 +12,7 @@ from playwright.sync_api import BrowserContext, Page
 
 #Imports de classes utilitárias públicas.
 from autenticador import AGHU_URL, autenticar_aghu_page, exigir_login_valido
-from menu import navegar_menu_impressora
+from menu import navegar_menu_aghu
 
 
 
@@ -24,6 +24,18 @@ from AddPrinterAGHU import (
 
 
 BASE_DIR = Path(__file__).resolve().parent
+
+# ==========================================
+# CAMINHOS DO PROCEDIMENTO
+# ==========================================
+
+CAMINHO_MENU_IMPRESSORA_POR_COMPUTADOR = (
+    "Outros Módulos",
+    "Configuração",
+    "Impressão",
+    "Cadastros",
+    "Impressora por Computador",
+)
 COLUNAS_OBRIGATORIAS_PLANILHA = ["IPPC", "HostPrinter", "PrinterClass"]
 CARACTERES_DE_VALOR = r"A-Za-z0-9_.-"
 TABELA_COMPUTADOR_IMPRESSORA_SELECTOR = (
@@ -457,9 +469,13 @@ def navegar_ate_modulo(
 
     for tentativa in range(2):
         try:
-            janela_sistema = navegar_menu_impressora(
+            janela_sistema = navegar_menu_aghu(
                 page=page,
-                item_final="Impressora por Computador",
+                caminho=CAMINHO_MENU_IMPRESSORA_POR_COMPUTADOR,
+            )
+            janela_sistema.get_by_role("button", name="Pesquisar").first.wait_for(
+                state="visible",
+                timeout=15000,
             )
 
             return page, janela_sistema

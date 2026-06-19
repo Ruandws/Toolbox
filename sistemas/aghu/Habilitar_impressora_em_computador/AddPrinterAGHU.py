@@ -3,7 +3,20 @@ from playwright.sync_api import BrowserContext, Page
 
 #Imports de classes utilitárias públicas.
 from autenticador import autenticar_aghu_page, exigir_login_valido
-from menu import navegar_menu_impressora
+from menu import navegar_menu_aghu
+
+
+# ==========================================
+# CAMINHOS DO PROCEDIMENTO
+# ==========================================
+
+CAMINHO_MENU_CADASTRO_IMPRESSORA = (
+    "Outros Módulos",
+    "Configuração",
+    "Impressão",
+    "Cadastros",
+    "Impressora",
+)
 
 # ==========================================
 # ROBÔ ESPECIALISTA: ALMOXARIFADO (CADASTRAR IMPRESSORA)
@@ -115,9 +128,13 @@ def navegar_ate_cadastro_impressora(page_aghu: Page):
 
     for tentativa in range(2):
         try:
-            janela_sistema = navegar_menu_impressora(
+            janela_sistema = navegar_menu_aghu(
                 page=page_aghu,
-                item_final="Impressora",
+                caminho=CAMINHO_MENU_CADASTRO_IMPRESSORA,
+            )
+            janela_sistema.get_by_role("button", name="Pesquisar").first.wait_for(
+                state="visible",
+                timeout=15000,
             )
 
             print("🎯 Chegamos na tela 'Impressora'!")
