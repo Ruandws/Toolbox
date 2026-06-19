@@ -405,13 +405,20 @@ def ler_planilha(caminho_arquivo: str) -> pd.DataFrame:
     return df
 
 
-def fazer_login(page: Page, usuario_str: str, senha_str: str):
+def fazer_login(
+    page: Page,
+    usuario_str: str,
+    senha_str: str,
+    *,
+    url_aghu: str = AGHU_URL,
+):
     print(f"Checando autenticação no AGHUX com o usuário: {usuario_str}")
 
     resultado = autenticar_aghu_page(
         page=page,
         usuario=usuario_str,
         senha=senha_str,
+        url_login=url_aghu,
         timeout_ms=15000,
     )
 
@@ -428,7 +435,14 @@ def fazer_login(page: Page, usuario_str: str, senha_str: str):
 # ==========================================
 # ISOLAMENTO DE SESSÃO (CLEAN STATE)
 # ==========================================
-def trocar_aba_aghux(context: BrowserContext, page_atual: Page, usuario_str: str, senha_str: str) -> Page:
+def trocar_aba_aghux(
+    context: BrowserContext,
+    page_atual: Page,
+    usuario_str: str,
+    senha_str: str,
+    *,
+    url_aghu: str = AGHU_URL,
+) -> Page:
     print("[Clean State] Fechando aba atual e abrindo nova aba limpa.")
 
     try:
@@ -437,13 +451,14 @@ def trocar_aba_aghux(context: BrowserContext, page_atual: Page, usuario_str: str
         pass
 
     nova_page = context.new_page()
-    nova_page.goto(AGHU_URL)
+    nova_page.goto(url_aghu)
     print(f"Ambiente acessado: {nova_page.url}")
 
     resultado = autenticar_aghu_page(
         page=nova_page,
         usuario=usuario_str,
         senha=senha_str,
+        url_login=url_aghu,
         timeout_ms=15000,
     )
 
@@ -463,6 +478,8 @@ def navegar_ate_modulo(
     page_atual: Page,
     usuario_str: str,
     senha_str: str,
+    *,
+    url_aghu: str = AGHU_URL,
 ):
     print("🗺️ Navegando até o módulo de Impressora por Computador...")
     page = page_atual
@@ -483,7 +500,13 @@ def navegar_ate_modulo(
         except Exception as erro:
             if tentativa == 0:
                 print("⚠️ Falha ao navegar no menu. Acionando Clean State...")
-                page = trocar_aba_aghux(context, page, usuario_str, senha_str)
+                page = trocar_aba_aghux(
+                    context,
+                    page,
+                    usuario_str,
+                    senha_str,
+                    url_aghu=url_aghu,
+                )
             else:
                 raise erro
 
@@ -500,6 +523,7 @@ def processar_computadores(
     usuario_str: str,
     senha_str: str,
     diretorio_logs: str | os.PathLike | None = None,
+    url_aghu: str = AGHU_URL,
 ) -> str:
     logs_do_diario = [] 
     
@@ -794,7 +818,13 @@ def processar_computadores(
                         for tentativa_estoque in range(3):
                             try:
                                 print(f"👷 [Estoquista - Tentativa {tentativa_estoque + 1}/3] Isolando ambiente...")
-                                page = trocar_aba_aghux(context, page, usuario_str, senha_str)
+                                page = trocar_aba_aghux(
+                                    context,
+                                    page,
+                                    usuario_str,
+                                    senha_str,
+                                    url_aghu=url_aghu,
+                                )
                                 
                                 dados_cups = consultar_dados_site_secundario(context, impressora_alvo, classe_impressao)
                                 janela_cadastro_imp = navegar_ate_cadastro_impressora(page)
@@ -809,8 +839,20 @@ def processar_computadores(
                         
                         if sucesso_estoquista:
                             print("🔙 O Estoquista terminou! Maestro criando nova aba limpa para retomar o vínculo...")
-                            page = trocar_aba_aghux(context, page, usuario_str, senha_str)
-                            page, janela_sistema = navegar_ate_modulo(context, page, usuario_str, senha_str)
+                            page = trocar_aba_aghux(
+                                context,
+                                page,
+                                usuario_str,
+                                senha_str,
+                                url_aghu=url_aghu,
+                            )
+                            page, janela_sistema = navegar_ate_modulo(
+                                context,
+                                page,
+                                usuario_str,
+                                senha_str,
+                                url_aghu=url_aghu,
+                            )
                             impressora_fabricada_agora = True
                             print("🔄 Estoque abastecido! Gastando uma Vida do Vinculador para tentar de novo...")
                             continue 
@@ -848,8 +890,20 @@ def processar_computadores(
                     if tentativa < 2:
                         print(f"⚡ Pegando o Desfibrilador! Iniciando tentativa {tentativa + 2}/3 em nova aba...")
                         try:
-                            page = trocar_aba_aghux(context, page, usuario_str, senha_str)
-                            page, janela_sistema = navegar_ate_modulo(context, page, usuario_str, senha_str)
+                            page = trocar_aba_aghux(
+                                context,
+                                page,
+                                usuario_str,
+                                senha_str,
+                                url_aghu=url_aghu,
+                            )
+                            page, janela_sistema = navegar_ate_modulo(
+                                context,
+                                page,
+                                usuario_str,
+                                senha_str,
+                                url_aghu=url_aghu,
+                            )
                             print("🔄 Sistema ressuscitado em nova aba limpa. Retomando a missão!")
                         except Exception as e_recup:
                             print(f"⚠️ A ressuscitação falhou: {e_recup}")
@@ -858,8 +912,20 @@ def processar_computadores(
                         detalhes_da_linha = f"Falha de sistema ou rede no passo '{passo_atual}' após 3 tentativas."
                         print("🚨 As 3 vidas acabaram. O sistema está instável.")
                         try:
-                            page = trocar_aba_aghux(context, page, usuario_str, senha_str)
-                            page, janela_sistema = navegar_ate_modulo(context, page, usuario_str, senha_str)
+                            page = trocar_aba_aghux(
+                                context,
+                                page,
+                                usuario_str,
+                                senha_str,
+                                url_aghu=url_aghu,
+                            )
+                            page, janela_sistema = navegar_ate_modulo(
+                                context,
+                                page,
+                                usuario_str,
+                                senha_str,
+                                url_aghu=url_aghu,
+                            )
                         except Exception:
                             pass
                         break

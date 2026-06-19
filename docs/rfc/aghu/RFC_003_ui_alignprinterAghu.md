@@ -16,7 +16,7 @@
 
 `ui_alignprinterAGHU.py` é a **camada de interface gráfica e empacotamento operacional** da automação de impressoras do AGHUX. Ele não implementa a regra principal de vínculo nem o cadastro mestre de impressoras. Em vez disso, coleta credenciais e caminhos de planilha, configura opções de execução, inicia o Playwright, chama o Maestro (`PrinterAGHU.py`, RFC-001) e converte o relatório CSV gerado pelo núcleo para uma planilha XLSX formatada.
 
-A UI também importa `AGHU_URL` de `autenticador.py`, refletindo a centralização da URL e da autenticação. O login em si é executado pelo Maestro, que chama o autenticador centralizado.
+A UI também importa `AGHU_URL` e `AGHU_URL_HOMOLOGACAO` de `autenticador.py`, refletindo a centralização das URLs e da autenticação. O operador escolhe o ambiente na interface, e a URL resolvida é enviada ao Maestro para login, navegação, processamento e retries em Clean State.
 
 ---
 
@@ -24,9 +24,11 @@ A UI também importa `AGHU_URL` de `autenticador.py`, refletindo a centralizaç�
 
 | Área | Situação atual |
 |---|---|
-| URL do AGHUX | Importada de `autenticador.py` como `AGHU_URL` |
+| URL do AGHUX | Importada de `autenticador.py` como `AGHU_URL` e `AGHU_URL_HOMOLOGACAO` |
+| Seletor de ambiente | `CTkOptionMenu` permite escolher `Produção` ou `Homologação`; Produção é o padrão |
+| Alerta de Produção | Painel visível quando `Produção` está selecionado, avisando que alterações serão feitas no AGHUX produtivo |
 | Constante antiga | Não há `AGHU_URL_PRODUCAO` na UI atual |
-| Execução | `executar_automacao_aghu` cria Playwright, browser, context e page |
+| Execução | `executar_automacao_aghu` cria Playwright, browser, context e page, e recebe `url_aghu` |
 | Browser | `headless=not mostrar_browser` e `slow_mo=500` |
 | Contexto | `browser.new_context(ignore_https_errors=True)` |
 | Entrada | Aceita `.xlsx`, `.xlsm` e `.csv` separado por `;` |
@@ -40,7 +42,7 @@ A UI também importa `AGHU_URL` de `autenticador.py`, refletindo a centralizaç�
 
 A automação precisa ser operada por usuário técnico, com credenciais de rede, seleção de arquivo de entrada e escolha do local de saída do relatório. Essas tarefas são de interface e não pertencem ao núcleo de processamento.
 
-Esta camada separa o uso humano do processamento automatizado. O Maestro continua responsável por navegar e corrigir vínculos, enquanto a UI cuida de experiência operacional: campos de login, seleção de planilhas, opção de exibir navegador, opção de exibir terminal, prevenção de processo invisível, execução em thread e entrega do relatório XLSX.
+Esta camada separa o uso humano do processamento automatizado. O Maestro continua responsável por navegar e corrigir vínculos, enquanto a UI cuida de experiência operacional: campos de login, seleção de ambiente, seleção de planilhas, opção de exibir navegador, opção de exibir terminal, prevenção de processo invisível, execução em thread e entrega do relatório XLSX.
 
 ---
 
@@ -54,6 +56,7 @@ Esta camada separa o uso humano do processamento automatizado. O Maestro continu
           ├─► Coleta:
           │     ├─ Usuário de rede
           │     ├─ Senha
+          │     ├─ Ambiente (Produção ou Homologação)
           │     ├─ Exibir navegador
           │     ├─ Exibir terminal
           │     ├─ Planilha de entrada (.xlsx, .xlsm ou .csv)
@@ -74,10 +77,10 @@ Esta camada separa o uso humano do processamento automatizado. O Maestro continu
                       ├─ Cria ./logs
                       ├─ Abre Chromium com Playwright
                       ├─ Cria BrowserContext com ignore_https_errors=True
-                      ├─ Acessa AGHU_URL
-                      ├─ Chama fazer_login() do Maestro
-                      ├─ Chama navegar_ate_modulo() do Maestro
-                      ├─ Chama processar_computadores() do Maestro
+                      ├─ Acessa url_aghu
+                      ├─ Chama fazer_login(..., url_aghu=url_aghu) do Maestro
+                      ├─ Chama navegar_ate_modulo(..., url_aghu=url_aghu) do Maestro
+                      ├─ Chama processar_computadores(..., url_aghu=url_aghu) do Maestro
                       ├─ Fecha browser em finally
                       ├─ Localiza CSV gerado em ./logs
                       ├─ Converte CSV para XLSX formatado
@@ -103,10 +106,10 @@ Essas funções executam o núcleo da automação. A UI não acessa diretamente 
 A UI importa:
 
 ```python
-from autenticador import AGHU_URL
+from autenticador import AGHU_URL, AGHU_URL_HOMOLOGACAO
 ```
 
-A URL do AGHUX não é mais uma constante local da UI. Ela vem do autenticador centralizado, que também é usado pelo Maestro e pelo Almoxarifado.
+As URLs do AGHUX não são constantes soltas dentro do fluxo de execução. Elas vêm do autenticador centralizado, que também é usado pelo Maestro e pelo Almoxarifado. A UI monta um mapa de ambiente e resolve a URL por `obter_url_ambiente_aghu`.
 
 ### 5.3 `AddPrinterAGHU.py`
 
@@ -124,9 +127,15 @@ A dependência é indireta. O Maestro e o Almoxarifado importam `navegar_menu_ag
 |---|---|
 | `BASE_DIR` | Diretório do arquivo `ui_alignprinterAGHU.py` |
 | `LOGS_DIR` | `BASE_DIR / "logs"`, usado para localizar o CSV gerado pelo Maestro |
-| `AGHU_URL` | Importada de `autenticador.py`; usada para abrir a página inicial |
+| `AGHU_URL` | Importada de `autenticador.py`; URL padrão de Produção |
+| `AGHU_URL_HOMOLOGACAO` | Importada de `autenticador.py`; URL de Homologação |
+| `AMBIENTE_PRODUCAO` | Rótulo `Produção` usado no seletor da UI |
+| `AMBIENTE_HOMOLOGACAO` | Rótulo `Homologação` usado no seletor da UI |
+| `URLS_AMBIENTE_AGHU` | Mapa entre rótulo de ambiente e URL efetiva |
 
-Não existe mais `AGHU_URL_PRODUCAO` nesta UI. Qualquer referência a esse nome deve ser substituída por `AGHU_URL`.
+Não existe mais `AGHU_URL_PRODUCAO` nesta UI. Qualquer referência a esse nome deve ser substituída por `AGHU_URL` ou pelo mapa `URLS_AMBIENTE_AGHU`, conforme o caso.
+
+O helper `obter_url_ambiente_aghu(ambiente)` retorna a URL correspondente ao rótulo selecionado, com fallback para `AGHU_URL` se o valor recebido não estiver no mapa.
 
 ---
 
@@ -252,41 +261,43 @@ executar_automacao_aghu(
     mostrar_browser: bool,
     caminho_planilha_entrada: str,
     caminho_planilha_saida: str,
+    url_aghu: str = AGHU_URL,
 ) -> str
 ```
 
 Fluxo interno:
 
 1. Valida usuário e senha.
-2. Oculta console se `mostrar_console` for falso.
-3. Executa `os.chdir(BASE_DIR)`.
-4. Lê a planilha com `ler_planilha_entrada`.
-5. Normaliza o caminho XLSX de saída.
-6. Cria `LOGS_DIR`.
-7. Registra timestamp de início.
-8. Abre Playwright.
-9. Abre Chromium com:
+2. Valida se `url_aghu` foi informado.
+3. Oculta console se `mostrar_console` for falso.
+4. Executa `os.chdir(BASE_DIR)`.
+5. Lê a planilha com `ler_planilha_entrada`.
+6. Normaliza o caminho XLSX de saída.
+7. Cria `LOGS_DIR`.
+8. Registra timestamp de início.
+9. Abre Playwright.
+10. Abre Chromium com:
 
 ```python
 headless=not mostrar_browser
 slow_mo=500
 ```
 
-10. Cria contexto com:
+11. Cria contexto com:
 
 ```python
 ignore_https_errors=True
 ```
 
-11. Cria nova página.
-12. Acessa `AGHU_URL`.
-13. Chama `fazer_login(page, usuario, senha)` do Maestro.
-14. Chama `navegar_ate_modulo(context, page, usuario, senha)`.
-15. Chama `processar_computadores(context, page, janela_sistema, planilha, usuario, senha)`.
-16. Fecha o browser em `finally`.
-17. Localiza o CSV gerado.
-18. Converte CSV para XLSX.
-19. Retorna mensagem de sucesso com o caminho final.
+12. Cria nova página.
+13. Acessa `url_aghu`.
+14. Chama `fazer_login(page, usuario, senha, url_aghu=url_aghu)` do Maestro.
+15. Chama `navegar_ate_modulo(context, page, usuario, senha, url_aghu=url_aghu)`.
+16. Chama `processar_computadores(context, page, janela_sistema, planilha, usuario, senha, url_aghu=url_aghu)`.
+17. Fecha o browser em `finally`.
+18. Localiza o CSV gerado.
+19. Converte CSV para XLSX.
+20. Retorna mensagem de sucesso com o caminho final.
 
 ---
 
@@ -299,7 +310,7 @@ Características da janela:
 | Propriedade | Valor |
 |---|---|
 | Título | `AGHUX Bot - Impressoras` |
-| Tamanho | `760x520` |
+| Tamanho | `760x590` |
 | Redimensionável | Não |
 | Coluna principal | `grid_columnconfigure(0, weight=1)` |
 | Tema | Definido no `__main__` como `System` |
@@ -310,6 +321,7 @@ Campos criados:
 | Grupo | Elementos |
 |---|---|
 | Login | Usuário de rede, senha mascarada |
+| Ambiente | Seletor `Produção`/`Homologação` e painel de alerta para Produção |
 | Execução | Checkboxes de navegador e terminal |
 | Planilhas | Entrada e saída com botões de seleção |
 | Controle | Botão `Iniciar Robô` e label de status |
@@ -319,8 +331,11 @@ Campos criados:
 | Método | Responsabilidade |
 |---|---|
 | `create_login_fields` | Monta campos de usuário e senha |
+| `create_environment_fields` | Monta seletor de ambiente e painel de alerta de Produção |
 | `create_execution_options` | Monta checkboxes de navegador/terminal |
 | `create_spreadsheet_fields` | Monta campos de planilha de entrada e saída |
+| `on_environment_changed` | Atualiza o alerta quando o operador troca o ambiente |
+| `update_environment_alert` | Exibe o painel quando o ambiente é Produção e oculta em Homologação |
 
 ### 8.2 Métodos de seleção de arquivo
 
@@ -337,6 +352,25 @@ Campos criados:
 | `run_playwright_task` | Executa `executar_automacao_aghu` fora da thread principal da UI |
 | `finish_automation` | Atualiza status final e reabilita botão |
 | `show_status` | Atualiza texto e cor do label de status |
+
+### 8.4 Seletor de ambiente
+
+O seletor de ambiente é um `CTkOptionMenu` controlado por `self.var_ambiente`, com `Produção` selecionado por padrão.
+
+Mapeamento atual:
+
+| Opção | URL |
+|---|---|
+| `Produção` | `AGHU_URL` |
+| `Homologação` | `AGHU_URL_HOMOLOGACAO` |
+
+Quando `Produção` está selecionado, a UI exibe um painel persistente com o alerta:
+
+```text
+Atenção: você está alterando para o Ambiente de Produção. As alterações serão executadas no AGHUX de produção.
+```
+
+Ao iniciar a automação, `start_automation` resolve `url_aghu = obter_url_ambiente_aghu(ambiente)` e passa a URL para a thread de execução.
 
 ---
 
@@ -381,7 +415,8 @@ A UI entrega ao Maestro:
 | Item | Origem |
 |---|---|
 | `context` | `browser.new_context(ignore_https_errors=True)` |
-| `page` | `context.new_page()` já aberta em `AGHU_URL` |
+| `page` | `context.new_page()` já aberta em `url_aghu` |
+| `url_aghu` | URL resolvida pelo seletor `Produção`/`Homologação` |
 | `usuario` | Campo de usuário da interface |
 | `senha` | Campo de senha da interface |
 | `planilha` | `DataFrame` validado por `ler_planilha_entrada` |
@@ -389,12 +424,26 @@ A UI entrega ao Maestro:
 A UI chama:
 
 ```python
-fazer_login(page, usuario, senha)
-page, janela_sistema = navegar_ate_modulo(context, page, usuario, senha)
-processar_computadores(context, page, janela_sistema, planilha, usuario, senha)
+fazer_login(page, usuario, senha, url_aghu=url_aghu)
+page, janela_sistema = navegar_ate_modulo(
+    context,
+    page,
+    usuario,
+    senha,
+    url_aghu=url_aghu,
+)
+processar_computadores(
+    context,
+    page,
+    janela_sistema,
+    planilha,
+    usuario,
+    senha,
+    url_aghu=url_aghu,
+)
 ```
 
-A UI não chama o Almoxarifado diretamente.
+A UI não chama o Almoxarifado diretamente. O repasse de `url_aghu` garante que retries e Clean States no Maestro permaneçam no ambiente escolhido pelo operador.
 
 ---
 
@@ -456,4 +505,4 @@ A UI é inicializada com tema do sistema e cor padrão azul.
 
 ## 15. Estado Atual da RFC
 
-Esta RFC passa a refletir o código atual de `ui_alignprinterAGHU.py`, incluindo o uso de `AGHU_URL` vindo de `autenticador.py`, a criação do Playwright na camada de UI, a execução em thread, a validação de planilhas, a regra anti-processo invisível e a conversão do CSV auditável para XLSX formatado.
+Esta RFC passa a refletir o código atual de `ui_alignprinterAGHU.py`, incluindo o uso de `AGHU_URL` e `AGHU_URL_HOMOLOGACAO` vindos de `autenticador.py`, o seletor Produção/Homologação com alerta de Produção, a criação do Playwright na camada de UI, a execução em thread, a validação de planilhas, a regra anti-processo invisível e a conversão do CSV auditável para XLSX formatado.

@@ -18,7 +18,7 @@
 
 Quando a impressora informada na planilha não existe no autocomplete do AGHUX, o Maestro delega o cadastro ao Robô Especialista (`AddPrinterAGHU.py`, RFC-002). O especialista consulta o CUPS, cadastra a impressora no catálogo do AGHUX e devolve o fluxo ao Maestro, que reconstrói uma aba limpa e tenta novamente a mesma linha.
 
-A autenticação não é mais implementada manualmente neste arquivo. O arquivo importa `AGHU_URL`, `autenticar_aghu_page` e `exigir_login_valido` de `autenticador.py`, que passa a ser a dependência transversal dos robôs.
+A autenticação não é mais implementada manualmente neste arquivo. O arquivo importa `AGHU_URL`, `autenticar_aghu_page` e `exigir_login_valido` de `autenticador.py`, que passa a ser a dependência transversal dos robôs. O Maestro também aceita `url_aghu` como parâmetro opcional nos pontos de login, navegação, processamento e Clean State, para preservar o ambiente escolhido pela UI.
 
 ---
 
@@ -29,10 +29,10 @@ Esta revisão atualiza a RFC para refletir as implementações da release de 19/
 | Área | Situação atual |
 |---|---|
 | Autenticação | Centralizada em `autenticador.py`, não mais descrita como lógica manual local do Maestro |
-| URL do AGHUX | Uso de `AGHU_URL`, importada do autenticador, com suporte a variáveis de ambiente |
+| URL do AGHUX | Uso de `AGHU_URL` como padrão, com suporte a `url_aghu` recebido do chamador para Produção/Homologação |
 | Login local | `fazer_login` agora é wrapper de `autenticar_aghu_page` + `exigir_login_valido` |
-| Clean State | Continua fechando a aba atual, abrindo nova aba no mesmo contexto e autenticando pela rotina central |
-| Navegação | Usa `navegar_menu_aghu` de `menu.py` (RFC-004) com caminho local `CAMINHO_MENU_IMPRESSORA_POR_COMPUTADOR`; mantém retry com Clean State na primeira falha |
+| Clean State | Continua fechando a aba atual, abrindo nova aba no mesmo contexto e autenticando pela rotina central; reaproveita sempre o `url_aghu` do fluxo atual |
+| Navegação | Usa `navegar_menu_aghu` de `menu.py` (RFC-004) com caminho local `CAMINHO_MENU_IMPRESSORA_POR_COMPUTADOR`; mantém retry com Clean State na primeira falha e preserva a URL selecionada |
 | Busca de IP | Usa `_criar_regex_valor_exato` com `re.escape` e lookaround usando `CARACTERES_DE_VALOR` (`A-Za-z0-9_.-`) para evitar correspondência parcial de IP |
 | Decisão de ação | Funções `_coletar_linhas_computador` e `_decidir_acao_linhas` separam coleta de registros da decisão, com quatro casos: `mantido`, `alterar`, `incluir` e `conferir` |
 | Validação de computador | `_validar_computador_selecionado` confirma que o IP selecionado no autocomplete corresponde ao esperado, prevenindo vínculo errado |
@@ -60,18 +60,18 @@ A separação entre núcleo (`PrinterAGHU.py`), cadastro especializado (`AddPrin
         │
         ├─► Cria BrowserContext e Page com Playwright
         │
-        ├─► page.goto(AGHU_URL)
+        ├─► page.goto(url_aghu)
         │
-        ├─► fazer_login(page, usuario, senha)
-        │        └─ autenticar_aghu_page(...) em autenticador.py
+        ├─► fazer_login(page, usuario, senha, url_aghu=url_aghu)
+        │        └─ autenticar_aghu_page(..., url_login=url_aghu) em autenticador.py
         │
-        ├─► navegar_ate_modulo(context, page, usuario, senha)
+        ├─► navegar_ate_modulo(context, page, usuario, senha, url_aghu=url_aghu)
         │        ├─ Outros Módulos → Configuração → Impressão → Cadastros
         │        ├─ Abre "Impressora por Computador"
         │        ├─ Valida tela pelo botão "Pesquisar" no último iframe
         │        └─ Em falha inicial, aciona Clean State
         │
-        └─► processar_computadores(...)
+        └─► processar_computadores(..., url_aghu=url_aghu)
                  │
                  ├─ Para cada linha da planilha:
                  │     ├─ Busca computador por IP no autocomplete
@@ -87,7 +87,7 @@ A separação entre núcleo (`PrinterAGHU.py`), cadastro especializado (`AddPrin
                  │
                  ├─ Se a impressora não existir no AGHUX:
                  │     └─► Delegação ao Almoxarifado (RFC-002)
-                 │           ├─ trocar_aba_aghux(...)
+                 │           ├─ trocar_aba_aghux(..., url_aghu=url_aghu)
                  │           ├─ consultar_dados_site_secundario(...)
                  │           ├─ navegar_ate_cadastro_impressora(...)
                  │           └─ cadastrar_nova_impressora(...)
@@ -117,7 +117,7 @@ Responsabilidades delegadas ao autenticador:
 
 | Item | Responsabilidade |
 |---|---|
-| `AGHU_URL` | URL padrão do AGHUX, com override por variáveis de ambiente |
+| `AGHU_URL` | URL padrão do AGHUX, com override por variáveis de ambiente; usada como default quando o chamador não fornece `url_aghu` |
 | `autenticar_aghu_page` | Autentica usando uma `Page` existente, sem criar ou fechar browser/context/page |
 | `exigir_login_valido` | Lança erro se o resultado de login não for `sucesso` ou `sessao_ativa` |
 
@@ -300,12 +300,12 @@ Erros previstos:
 | Extensão inválida | `ValueError("Formato inválido. Use .xlsx, .xlsm ou .csv.")` |
 | Coluna obrigatória ausente | `ValueError` com lista de colunas faltantes |
 
-### 8.2 `fazer_login(page, usuario_str, senha_str)`
+### 8.2 `fazer_login(page, usuario_str, senha_str, *, url_aghu=AGHU_URL)`
 
 É um wrapper local para autenticação centralizada. O fluxo atual é:
 
 1. Imprime o usuário usado na checagem de autenticação.
-2. Chama `autenticar_aghu_page(page=page, usuario=usuario_str, senha=senha_str, timeout_ms=15000)`.
+2. Chama `autenticar_aghu_page(page=page, usuario=usuario_str, senha=senha_str, url_login=url_aghu, timeout_ms=15000)`.
 3. Imprime mensagem conforme `resultado.status`:
    - `sessao_ativa`: sessão já estava ativa;
    - `sucesso`: login efetuado com sucesso;
@@ -315,15 +315,15 @@ Erros previstos:
 
 A função não contém mais seletores de campo de usuário, senha ou botão **Entrar**. A detecção da tela de login, credenciais inválidas, timeout e sessão já ativa pertence a `autenticador.py`.
 
-### 8.3 `trocar_aba_aghux(context, page_atual, usuario_str, senha_str)` — Clean State
+### 8.3 `trocar_aba_aghux(context, page_atual, usuario_str, senha_str, *, url_aghu=AGHU_URL)` — Clean State
 
-Fecha a aba atual, ignorando erro caso ela já esteja indisponível. Em seguida, abre uma nova `Page` no mesmo `BrowserContext`, acessa `AGHU_URL`, executa `autenticar_aghu_page` e valida o resultado com `exigir_login_valido`.
+Fecha a aba atual, ignorando erro caso ela já esteja indisponível. Em seguida, abre uma nova `Page` no mesmo `BrowserContext`, acessa `url_aghu`, executa `autenticar_aghu_page(..., url_login=url_aghu)` e valida o resultado com `exigir_login_valido`.
 
 O Clean State é usado como recuperação quando a interface do AGHUX fica inconsistente, quando o menu falha, quando o fluxo retorna do Almoxarifado ou quando há falhas técnicas durante o processamento de uma linha.
 
-O uso do mesmo `BrowserContext` preserva sessão, certificados e configuração do browser criada pelo chamador.
+O uso do mesmo `BrowserContext` preserva sessão, certificados e configuração do browser criada pelo chamador. O uso de `url_aghu` evita que retries ou clean states retornem para Produção quando a UI iniciou a execução em Homologação.
 
-### 8.4 `navegar_ate_modulo(context, page_atual, usuario_str, senha_str)`
+### 8.4 `navegar_ate_modulo(context, page_atual, usuario_str, senha_str, *, url_aghu=AGHU_URL)`
 
 Navega até o módulo **Impressora por Computador** usando o caminho completo declarado no próprio procedimento:
 
@@ -356,7 +356,7 @@ A função faz até duas tentativas:
 
 | Tentativa | Ação em falha |
 |---|---|
-| 1ª | Aciona `trocar_aba_aghux` e tenta novamente |
+| 1ª | Aciona `trocar_aba_aghux(..., url_aghu=url_aghu)` e tenta novamente |
 | 2ª | Propaga a exceção |
 
 Se o laço terminar sem retorno, lança `RuntimeError("Falha ao navegar até o módulo de Impressora por Computador.")`.
@@ -374,6 +374,7 @@ Se o laço terminar sem retorno, lança `RuntimeError("Falha ao navegar até o m
 | `usuario_str` | Registro de auditoria e reautenticação |
 | `senha_str` | Reautenticação em Clean State |
 | `diretorio_logs` | Diretório opcional para gravação do CSV |
+| `url_aghu` | URL do ambiente AGHUX usado em reautenticações e clean states; default `AGHU_URL` |
 
 Para cada linha, extrai:
 
@@ -529,7 +530,7 @@ Fluxo da delegação:
 ValueError("Impressora não existe")
         │
         └─► Até 3 tentativas de Almoxarifado:
-              ├─ trocar_aba_aghux(...)
+              ├─ trocar_aba_aghux(..., url_aghu=url_aghu)
               ├─ consultar_dados_site_secundario(context, impressora, classe)
               ├─ navegar_ate_cadastro_impressora(page)
               └─ cadastrar_nova_impressora(janela, dados_cups)
@@ -629,10 +630,10 @@ Mantido, Alterado, Vinculado, Criado, Inexistente, Erro
 | Função | Responsabilidade |
 |---|---|
 | `ler_planilha(caminho_arquivo)` | Lê e valida a planilha de entrada |
-| `fazer_login(page, usuario_str, senha_str)` | Autentica usando o autenticador centralizado |
-| `trocar_aba_aghux(context, page_atual, usuario_str, senha_str)` | Fecha aba atual, abre aba limpa e reautentica |
-| `navegar_ate_modulo(context, page_atual, usuario_str, senha_str)` | Abre **Impressora por Computador** e retorna `(page, janela_sistema)` |
-| `processar_computadores(...)` | Processa linhas da planilha e gera CSV auditável |
+| `fazer_login(page, usuario_str, senha_str, *, url_aghu=AGHU_URL)` | Autentica usando o autenticador centralizado na URL do ambiente atual |
+| `trocar_aba_aghux(context, page_atual, usuario_str, senha_str, *, url_aghu=AGHU_URL)` | Fecha aba atual, abre aba limpa na URL informada e reautentica |
+| `navegar_ate_modulo(context, page_atual, usuario_str, senha_str, *, url_aghu=AGHU_URL)` | Abre **Impressora por Computador** e retorna `(page, janela_sistema)`, preservando a URL em retry |
+| `processar_computadores(..., url_aghu=AGHU_URL)` | Processa linhas da planilha, preserva a URL em clean states e gera CSV auditável |
 
 ---
 
@@ -654,12 +655,13 @@ A UI deve fornecer:
 | Item | Origem |
 |---|---|
 | `BrowserContext` | Criado pela UI com `ignore_https_errors=True` |
-| `Page` | Criada pela UI e apontada para `AGHU_URL` |
+| `Page` | Criada pela UI e apontada para `url_aghu` |
+| `url_aghu` | URL resolvida a partir do seletor de ambiente da UI |
 | Credenciais | Campos da interface |
 | Planilha | Lida e validada antes da execução |
 | Caminho de saída | Usado pela UI após localizar o CSV gerado |
 
-O Maestro retorna o caminho do CSV gerado, mas a UI atual localiza o arquivo por timestamp em `./logs` e converte para XLSX.
+O Maestro retorna o caminho do CSV gerado, mas a UI atual localiza o arquivo por timestamp em `./logs` e converte para XLSX. A UI deve passar o mesmo `url_aghu` para `fazer_login`, `navegar_ate_modulo` e `processar_computadores`, garantindo que qualquer Clean State permaneça no ambiente selecionado.
 
 ---
 
@@ -668,10 +670,11 @@ O Maestro retorna o caminho do CSV gerado, mas a UI atual localiza o arquivo por
 1. `PrinterAGHU.py` não cria o browser principal; o chamador cria `Browser`, `BrowserContext` e `Page`.
 2. O módulo cria novas abas no mesmo contexto apenas para Clean State.
 3. A autenticação deve permanecer centralizada em `autenticador.py`.
-4. O fluxo depende de textos visíveis do AGHUX como **Outros Módulos**, **Configuração**, **Impressão**, **Cadastros**, **Impressora por Computador**, **Pesquisar**, **Novo** e **Gravar**.
-5. As mensagens de erro usadas como contrato (`Impressora não existe`, `Computador não encontrado`, `Não existe no CUPS`) não devem ser alteradas sem atualizar as RFCs e os tratadores.
-6. O uso de `press_sequentially` é intencional para disparar eventos JSF/autocomplete.
-7. O seletor `TABELA_COMPUTADOR_IMPRESSORA_SELECTOR` e os índices de coluna usados em `_coletar_linhas_computador` dependem da estrutura HTML atual do AGHUX; mudanças na tabela exigem ajuste coordenado.
+4. O parâmetro `url_aghu` deve ser propagado por todo retry, retomada e Clean State para evitar troca acidental de ambiente.
+5. O fluxo depende de textos visíveis do AGHUX como **Outros Módulos**, **Configuração**, **Impressão**, **Cadastros**, **Impressora por Computador**, **Pesquisar**, **Novo** e **Gravar**.
+6. As mensagens de erro usadas como contrato (`Impressora não existe`, `Computador não encontrado`, `Não existe no CUPS`) não devem ser alteradas sem atualizar as RFCs e os tratadores.
+7. O uso de `press_sequentially` é intencional para disparar eventos JSF/autocomplete.
+8. O seletor `TABELA_COMPUTADOR_IMPRESSORA_SELECTOR` e os índices de coluna usados em `_coletar_linhas_computador` dependem da estrutura HTML atual do AGHUX; mudanças na tabela exigem ajuste coordenado.
 
 ---
 
@@ -690,7 +693,7 @@ O Maestro retorna o caminho do CSV gerado, mas a UI atual localiza o arquivo por
 ## 17. Estado Atual da RFC
 
 Esta RFC passa a refletir o código atual de `PrinterAGHU.py` conforme a release de 19/06/2026, incluindo:
-- Dependência explícita de `autenticador.py`, login centralizado e uso de `AGHU_URL`.
+- Dependência explícita de `autenticador.py`, login centralizado e uso de `AGHU_URL` como default com `url_aghu` propagado em runtime.
 - Clean State reautenticado e delegação ao Almoxarifado.
 - Ecossistema completo de funções auxiliares privadas: normalização, comparação, validação de IP, classificação de impressão, manipulação de tabela, lógica de decisão e tratamento de gravação.
 - Quatro casos de decisão (`mantido`, `conferir`, `alterar`, `incluir`) documentados individualmente.

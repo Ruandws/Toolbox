@@ -10,6 +10,7 @@ from playwright.sync_api import sync_playwright
 
 
 DEFAULT_AGHU_URL = "https://aghu.hub-unb.ebserh/aghu/pages/casca/casca.xhtml"
+AGHU_URL_HOMOLOGACAO = "http://10.6.0.152:8080/aghu/pages/casca/casca.xhtml"
 
 AGHU_URL = os.getenv(
     "AGHU_URL",

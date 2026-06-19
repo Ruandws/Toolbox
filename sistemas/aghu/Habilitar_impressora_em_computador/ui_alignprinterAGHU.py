@@ -16,10 +16,20 @@ from playwright.sync_api import sync_playwright
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 
 from PrinterAGHU import fazer_login, navegar_ate_modulo, processar_computadores
-from autenticador import AGHU_URL
+from autenticador import AGHU_URL, AGHU_URL_HOMOLOGACAO
 
 BASE_DIR = Path(__file__).resolve().parent
 LOGS_DIR = BASE_DIR / "logs"
+AMBIENTE_PRODUCAO = "Produção"
+AMBIENTE_HOMOLOGACAO = "Homologação"
+URLS_AMBIENTE_AGHU = {
+    AMBIENTE_PRODUCAO: AGHU_URL,
+    AMBIENTE_HOMOLOGACAO: AGHU_URL_HOMOLOGACAO,
+}
+
+
+def obter_url_ambiente_aghu(ambiente: str) -> str:
+    return URLS_AMBIENTE_AGHU.get(ambiente, AGHU_URL)
 
 
 def esconder_console_windows() -> None:
@@ -158,9 +168,13 @@ def executar_automacao_aghu(
     mostrar_browser: bool,
     caminho_planilha_entrada: str,
     caminho_planilha_saida: str,
+    url_aghu: str = AGHU_URL,
 ) -> str:
     if not usuario or not senha:
         raise ValueError("Preencha usuário de rede e senha.")
+
+    if not url_aghu:
+        raise ValueError("Informe o ambiente do AGHU.")
 
     if not mostrar_console:
         esconder_console_windows()
@@ -182,11 +196,17 @@ def executar_automacao_aghu(
         page = context.new_page()
 
         try:
-            page.goto(AGHU_URL)
+            page.goto(url_aghu)
             print(f"🌍 Ambiente acessado: {page.url}")
 
-            fazer_login(page, usuario, senha)
-            page, janela_sistema = navegar_ate_modulo(context, page, usuario, senha)
+            fazer_login(page, usuario, senha, url_aghu=url_aghu)
+            page, janela_sistema = navegar_ate_modulo(
+                context,
+                page,
+                usuario,
+                senha,
+                url_aghu=url_aghu,
+            )
 
             processar_computadores(
                 context,
@@ -195,6 +215,7 @@ def executar_automacao_aghu(
                 planilha,
                 usuario,
                 senha,
+                url_aghu=url_aghu,
             )
         finally:
             browser.close()
@@ -210,12 +231,13 @@ class AghuPrinterApp(ctk.CTk):
         super().__init__()
 
         self.title("AGHUX Bot - Impressoras")
-        self.geometry("760x520")
+        self.geometry("760x590")
         self.resizable(False, False)
         self.grid_columnconfigure(0, weight=1)
 
         self.var_browser = tk.BooleanVar(value=True)
         self.var_console = tk.BooleanVar(value=True)
+        self.var_ambiente = tk.StringVar(value=AMBIENTE_PRODUCAO)
 
         self.label_title = ctk.CTkLabel(
             self,
@@ -229,6 +251,7 @@ class AghuPrinterApp(ctk.CTk):
         self.frame_inputs.grid_columnconfigure(1, weight=1)
 
         self.create_login_fields()
+        self.create_environment_fields()
         self.create_execution_options()
         self.create_spreadsheet_fields()
 
@@ -284,6 +307,70 @@ class AghuPrinterApp(ctk.CTk):
             sticky="ew",
         )
 
+    def create_environment_fields(self) -> None:
+        self.label_environment = ctk.CTkLabel(self.frame_inputs, text="Ambiente:")
+        self.label_environment.grid(row=2, column=0, padx=12, pady=8, sticky="e")
+
+        self.option_environment = ctk.CTkOptionMenu(
+            self.frame_inputs,
+            values=list(URLS_AMBIENTE_AGHU.keys()),
+            variable=self.var_ambiente,
+            command=self.on_environment_changed,
+        )
+        self.option_environment.grid(
+            row=2,
+            column=1,
+            columnspan=2,
+            padx=12,
+            pady=8,
+            sticky="ew",
+        )
+
+        self.frame_environment_alert = ctk.CTkFrame(
+            self.frame_inputs,
+            fg_color=("#FFF4CE", "#3A2D00"),
+            border_color=("#D79A00", "#8A6500"),
+            border_width=1,
+        )
+        self.frame_environment_alert.grid_columnconfigure(0, weight=1)
+
+        self.label_environment_alert = ctk.CTkLabel(
+            self.frame_environment_alert,
+            text=(
+                "Atenção: você está alterando para o Ambiente de Produção. "
+                "As alterações serão executadas no AGHUX de produção."
+            ),
+            text_color=("#5C3B00", "#FFE8A3"),
+            wraplength=680,
+            justify="left",
+        )
+        self.label_environment_alert.grid(
+            row=0,
+            column=0,
+            padx=12,
+            pady=8,
+            sticky="ew",
+        )
+
+        self.update_environment_alert(self.var_ambiente.get())
+
+    def on_environment_changed(self, ambiente: str) -> None:
+        self.update_environment_alert(ambiente)
+
+    def update_environment_alert(self, ambiente: str) -> None:
+        if ambiente == AMBIENTE_PRODUCAO:
+            self.frame_environment_alert.grid(
+                row=3,
+                column=0,
+                columnspan=3,
+                padx=12,
+                pady=(0, 8),
+                sticky="ew",
+            )
+            return
+
+        self.frame_environment_alert.grid_remove()
+
     def create_execution_options(self) -> None:
         self.checkbox_browser = ctk.CTkCheckBox(
             self.frame_inputs,
@@ -292,7 +379,7 @@ class AghuPrinterApp(ctk.CTk):
             command=self.validate_visibility_options_from_browser,
         )
         self.checkbox_browser.grid(
-            row=2,
+            row=4,
             column=1,
             columnspan=2,
             padx=12,
@@ -307,7 +394,7 @@ class AghuPrinterApp(ctk.CTk):
             command=self.validate_visibility_options_from_console,
         )
         self.checkbox_console.grid(
-            row=3,
+            row=5,
             column=1,
             columnspan=2,
             padx=12,
@@ -320,14 +407,14 @@ class AghuPrinterApp(ctk.CTk):
             self.frame_inputs,
             text="Planilha entrada:",
         )
-        self.label_spreadsheet_in.grid(row=4, column=0, padx=12, pady=10, sticky="e")
+        self.label_spreadsheet_in.grid(row=6, column=0, padx=12, pady=10, sticky="e")
 
         self.entry_spreadsheet_in = ctk.CTkEntry(
             self.frame_inputs,
             placeholder_text="Arquivo .xlsx, .xlsm ou .csv",
         )
         self.entry_spreadsheet_in.grid(
-            row=4,
+            row=6,
             column=1,
             padx=12,
             pady=10,
@@ -340,14 +427,14 @@ class AghuPrinterApp(ctk.CTk):
             width=110,
             command=self.select_input_spreadsheet,
         )
-        self.button_select_spreadsheet_in.grid(row=4, column=2, padx=12, pady=10)
+        self.button_select_spreadsheet_in.grid(row=6, column=2, padx=12, pady=10)
 
         self.label_spreadsheet_out = ctk.CTkLabel(
             self.frame_inputs,
             text="Planilha saída:",
         )
         self.label_spreadsheet_out.grid(
-            row=5,
+            row=7,
             column=0,
             padx=12,
             pady=(10, 16),
@@ -359,7 +446,7 @@ class AghuPrinterApp(ctk.CTk):
             placeholder_text="Arquivo .xlsx do relatório",
         )
         self.entry_spreadsheet_out.grid(
-            row=5,
+            row=7,
             column=1,
             padx=12,
             pady=(10, 16),
@@ -373,7 +460,7 @@ class AghuPrinterApp(ctk.CTk):
             command=self.select_output_spreadsheet,
         )
         self.button_select_spreadsheet_out.grid(
-            row=5,
+            row=7,
             column=2,
             padx=12,
             pady=(10, 16),
@@ -436,6 +523,8 @@ class AghuPrinterApp(ctk.CTk):
         caminho_saida = self.entry_spreadsheet_out.get().strip()
         mostrar_console = bool(self.var_console.get())
         mostrar_browser = bool(self.var_browser.get())
+        ambiente = self.var_ambiente.get()
+        url_aghu = obter_url_ambiente_aghu(ambiente)
 
         if not usuario or not senha:
             self.show_status("Erro: preencha usuário de rede e senha.", "red")
@@ -467,6 +556,7 @@ class AghuPrinterApp(ctk.CTk):
                 mostrar_browser,
                 caminho_entrada,
                 caminho_saida,
+                url_aghu,
             ),
             daemon=True,
         )
@@ -480,6 +570,7 @@ class AghuPrinterApp(ctk.CTk):
         mostrar_browser: bool,
         caminho_entrada: str,
         caminho_saida: str,
+        url_aghu: str,
     ) -> None:
         try:
             result_msg = executar_automacao_aghu(
@@ -489,6 +580,7 @@ class AghuPrinterApp(ctk.CTk):
                 mostrar_browser=mostrar_browser,
                 caminho_planilha_entrada=caminho_entrada,
                 caminho_planilha_saida=caminho_saida,
+                url_aghu=url_aghu,
             )
             self.after(0, self.finish_automation, result_msg, "green")
         except Exception as exc:
