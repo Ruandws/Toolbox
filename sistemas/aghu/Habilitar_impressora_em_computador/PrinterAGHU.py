@@ -14,6 +14,8 @@ from playwright.sync_api import BrowserContext, Page
 from autenticador import AGHU_URL, autenticar_aghu_page, exigir_login_valido
 from menu import navegar_menu_impressora
 
+
+
 from AddPrinterAGHU import (
     cadastrar_nova_impressora,
     consultar_dados_site_secundario,
@@ -22,7 +24,7 @@ from AddPrinterAGHU import (
 
 
 BASE_DIR = Path(__file__).resolve().parent
-
+COLUNAS_OBRIGATORIAS_PLANILHA = ["IPPC", "HostPrinter", "PrinterClass"]
 CARACTERES_DE_VALOR = r"A-Za-z0-9_.-"
 TABELA_COMPUTADOR_IMPRESSORA_SELECTOR = (
     '[id="tabelaComputadorImpressora:resultList_data"]'
@@ -339,6 +341,22 @@ def _limpar_estado_formulario(janela_sistema, page: Page | None = None) -> None:
     except Exception:
         pass
 
+def _valor_planilha_em_branco(valor: object) -> bool:
+    try:
+        if pd.isna(valor):
+            return True
+    except (TypeError, ValueError):
+        pass
+
+    return str(valor).strip() == ""
+
+
+def _campos_obrigatorios_planilha_em_branco(linha: pd.Series) -> list[str]:
+    return [
+        coluna
+        for coluna in COLUNAS_OBRIGATORIAS_PLANILHA
+        if _valor_planilha_em_branco(linha.get(coluna, ""))
+    ]     
 
 def ler_planilha(caminho_arquivo: str) -> pd.DataFrame:
     caminho = Path(caminho_arquivo)
@@ -361,7 +379,7 @@ def ler_planilha(caminho_arquivo: str) -> pd.DataFrame:
     df.columns = df.columns.str.strip()
     df = df.fillna("")
 
-    colunas_obrigatorias = ["IPPC", "HostPrinter", "PrinterClass"]
+    colunas_obrigatorias = COLUNAS_OBRIGATORIAS_PLANILHA
     colunas_faltantes = [
         coluna for coluna in colunas_obrigatorias if coluna not in df.columns
     ]
@@ -473,9 +491,36 @@ def processar_computadores(
     janela_sistema = janela_sistema_inicial
     
     for index, linha in planilha.iterrows():
-        ip_pc = str(linha['IPPC']).strip()
-        impressora_alvo = str(linha['HostPrinter']).strip()
-        classe_impressao = str(linha['PrinterClass']).strip()
+        ip_pc = str(linha["IPPC"]).strip()
+        impressora_alvo = str(linha["HostPrinter"]).strip()
+        classe_impressao = str(linha["PrinterClass"]).strip()
+
+        campos_em_branco = _campos_obrigatorios_planilha_em_branco(linha)
+
+        if campos_em_branco:
+            status_da_linha = "Erro"
+            detalhes_da_linha = (
+                "Linha ignorada: campos obrigatorios em branco: "
+                f"{', '.join(campos_em_branco)}."
+            )
+
+            print("\n========================================")
+            print(
+                f"⏭️ Ignorando linha [{int(str(index)) + 1}/{len(planilha)}]: "
+                f"{detalhes_da_linha}"
+            )  # type: ignore
+
+            logs_do_diario.append({
+                "HostPC": linha.get("HostPC", ""),
+                "IPPC": ip_pc,
+                "HostPrinter": impressora_alvo,
+                "IPPrinter": linha.get("IPPrinter", ""),
+                "PrinterClass": classe_impressao,
+                "Status": status_da_linha,
+                "Detalhes": detalhes_da_linha,
+            })
+
+            continue
         
         status_da_linha = "Erro"
         detalhes_da_linha = "Falha Desconhecida."

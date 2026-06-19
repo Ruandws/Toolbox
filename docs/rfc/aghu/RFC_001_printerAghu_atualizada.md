@@ -3,7 +3,7 @@
 - **Status:** Estável
 - **Autor:** Pedro e Ruan
 - **Data:** 2026-06
-- **Atualizado em:** 2026-06-16
+- **Atualizado em:** 2026-06-19
 - **Arquivo:** `PrinterAGHU.py`
 - **Depende de:** `autenticador.py`
 - **Depende de:** `AddPrinterAGHU.py` (RFC-002)
@@ -24,7 +24,7 @@ A autenticação não é mais implementada manualmente neste arquivo. O arquivo 
 
 ## 2. Mudanças incorporadas nesta revisão
 
-Esta revisão atualiza a RFC para refletir as implementações atuais dos arquivos de automação:
+Esta revisão atualiza a RFC para refletir as implementações da release de 19/06/2026:
 
 | Área | Situação atual |
 |---|---|
@@ -33,8 +33,13 @@ Esta revisão atualiza a RFC para refletir as implementações atuais dos arquiv
 | Login local | `fazer_login` agora é wrapper de `autenticar_aghu_page` + `exigir_login_valido` |
 | Clean State | Continua fechando a aba atual, abrindo nova aba no mesmo contexto e autenticando pela rotina central |
 | Navegação | Delegada a `navegar_menu_impressora` de `menu.py` (RFC-004); mantém retry com Clean State na primeira falha |
-| Busca de IP | Usa `_criar_matcher_exato` com `re.escape` e lookaround `(?<![\w.-])…(?![\w.-])` para evitar correspondência parcial de IP |
+| Busca de IP | Usa `_criar_regex_valor_exato` com `re.escape` e lookaround usando `CARACTERES_DE_VALOR` (`A-Za-z0-9_.-`) para evitar correspondência parcial de IP |
+| Decisão de ação | Funções `_coletar_linhas_computador` e `_decidir_acao_linhas` separam coleta de registros da decisão, com quatro casos: `mantido`, `alterar`, `incluir` e `conferir` |
+| Validação de computador | `_validar_computador_selecionado` confirma que o IP selecionado no autocomplete corresponde ao esperado, prevenindo vínculo errado |
+| Tratamento de gravação | `_aguardar_resultado_gravacao` diferencia `sucesso`, `erro` e `indefinido`; erros de classe PDF duplicada recebem mensagem específica |
+| Normalização | Ecossistema de funções `_normalizar_busca`, `_valor_exato`, `_contem_valor_exato` para comparação case-insensitive e tolerante a espaços |
 | Relatório | Gera CSV em `logs/log_resultado_YYYYMMDD_HHMMSS.csv` com primeira linha de auditoria `Atualizado por: <usuario>` |
+| Campos Vazios | Validação proativa de campos obrigatórios em branco via `_campos_obrigatorios_planilha_em_branco`, ignorando e registrando erro nas linhas divergentes |
 
 ---
 
@@ -70,11 +75,15 @@ A separação entre núcleo (`PrinterAGHU.py`), cadastro especializado (`AddPrin
                  │
                  ├─ Para cada linha da planilha:
                  │     ├─ Busca computador por IP no autocomplete
-                 │     ├─ Pesquisa vínculo existente por IP e classe
+                 │     │    └─ Usa _criar_regex_valor_exato com CARACTERES_DE_VALOR
+                 │     ├─ Pesquisa vínculo existente (botão Pesquisar)
+                 │     ├─ _coletar_linhas_computador: coleta registros com IP correspondente
+                 │     ├─ _decidir_acao_linhas: decide caso com base nos registros
                  │     │
-                 │     ├─ [Caso A] Vínculo correto      → Status: Mantido
-                 │     ├─ [Caso B] Vínculo divergente   → Edita  → Status: Alterado/Criado
-                 │     └─ [Caso C] Sem vínculo          → Cria   → Status: Vinculado/Criado
+                 │     ├─ [Caso A] "mantido"    → Vínculo correto      → Status: Mantido
+                 │     ├─ [Caso B] "conferir"   → Tipo Cups diverge    → Status: Erro (conferência manual)
+                 │     ├─ [Caso C] "alterar"    → Linha PDF existente  → Edita  → Status: Alterado/Criado
+                 │     └─ [Caso D] "incluir"    → Sem vínculo útil     → Cria   → Status: Vinculado/Criado
                  │
                  ├─ Se a impressora não existir no AGHUX:
                  │     └─► Delegação ao Almoxarifado (RFC-002)
@@ -147,9 +156,119 @@ A navegação pelo menu do AGHUX não é mais implementada manualmente neste arq
 
 ---
 
-## 6. Descrição dos Componentes
+## 6. Constantes de Módulo
 
-### 6.1 `ler_planilha(caminho_arquivo)`
+| Constante | Valor | Uso |
+|---|---|---|
+| `BASE_DIR` | `Path(__file__).resolve().parent` | Diretório base para localização de logs |
+| `CARACTERES_DE_VALOR` | `r"A-Za-z0-9_.-"` | Classe de caracteres usada nos lookarounds de `_criar_regex_valor_exato` para definir limites de "palavra" em IPs e nomes de fila |
+| `TABELA_COMPUTADOR_IMPRESSORA_SELECTOR` | `'[id="tabelaComputadorImpressora:resultList_data"]'` | Seletor CSS do `<tbody>` da tabela de resultados do módulo |
+| `MENSAGEM_ERRO_PESQUISA_INDEFINIDA` | Texto descritivo | Mensagem de detalhe quando a pesquisa não retorna linhas nem mensagem de "nenhum registro" |
+
+---
+
+## 7. Funções Auxiliares Privadas
+
+### 7.1 Normalização e Comparação
+
+| Função | Assinatura | Descrição |
+|---|---|---|
+| `_normalizar_busca` | `(valor: object) → str` | Remove espaços extras, aplica `strip()` e `casefold()` |
+| `_normalizar_texto_simples` | `(valor: object) → str` | Alias de `_normalizar_busca` |
+| `_criar_regex_valor_exato` | `(valor: object, flags=re.IGNORECASE) → re.Pattern` | Cria regex com `re.escape` e lookaround negativo usando `CARACTERES_DE_VALOR` para evitar correspondência parcial |
+| `_contem_valor_exato` | `(texto: object, valor: object) → bool` | Verifica se `texto` contém `valor` como token isolado usando `_criar_regex_valor_exato` (flags=0) |
+| `_valor_exato` | `(valor_atual: object, valor_esperado: object) → bool` | Igualdade exata após normalização |
+
+O regex gerado por `_criar_regex_valor_exato` tem a forma:
+
+```python
+re.compile(
+    rf"(?<![A-Za-z0-9_.-]){re.escape(valor_normalizado)}(?![A-Za-z0-9_.-])",
+    flags,
+)
+```
+
+Isso impede que `10.6.0.22` corresponda a `10.6.0.225`, por exemplo.
+
+### 7.2 Validação de IP
+
+| Função | Assinatura | Descrição |
+|---|---|---|
+| `_regex_ip_celula` | `(ip_pc: str) → re.Pattern` | Cria regex `^\s*<ip>\s*$` para conferência de célula |
+| `_ip_celula_confere` | `(valor_celula: object, ip_pc: str) → bool` | Valida se o valor de uma célula da tabela confere com o IP esperado |
+| `_extrair_ips` | `(texto: object) → list[str]` | Extrai todos os endereços IPv4 de um texto |
+| `_validar_computador_selecionado` | `(campo_computador, ip_pc, texto_item) → (bool, str)` | Verifica se o computador selecionado no autocomplete corresponde ao IP esperado, retornando `(True, "")` em caso de sucesso ou `(False, ip_divergente)` |
+
+### 7.3 Classificação de Impressão
+
+| Função | Assinatura | Descrição |
+|---|---|---|
+| `_classe_impressao_aghu` | `(tipo_cups: str) → str` | Converte o tipo CUPS para classe de impressão AGHU; `"PDF"` → `"A"`, demais mantém o valor original |
+| `_registro_confere_tipo_e_classe` | `(registro: dict, tipo_cups_esperado: str) → bool` | Verifica se o registro da tabela corresponde ao tipo CUPS esperado e à classe de impressão derivada |
+| `_registro_eh_pdf` | `(registro: dict) → bool` | Atalho para verificar se um registro é do tipo PDF (classe A) |
+
+### 7.4 Manipulação da Tabela de Resultados
+
+| Função | Assinatura | Descrição |
+|---|---|---|
+| `_tbody_resultados` | `(janela_sistema) → Locator` | Localiza o `<tbody>` da tabela pelo seletor `TABELA_COMPUTADOR_IMPRESSORA_SELECTOR` |
+| `_linhas_resultado` | `(tbody) → Locator` | Localiza linhas de dados (`tr[data-ri]`) dentro do tbody |
+| `_linha_vazia_resultado` | `(tbody) → Locator` | Localiza a linha de "Nenhum registro encontrado!" |
+| `_texto_celula` | `(linha_tabela, indice: int) → str` | Extrai o texto da célula na posição `indice` de uma linha da tabela |
+
+### 7.5 Espera e Estado da Pesquisa
+
+| Função | Assinatura | Descrição |
+|---|---|---|
+| `_aguardar_estado_resultado_pesquisa` | `(janela_sistema, timeout_ms=7000) → (str, Locator)` | Aguarda resultado da pesquisa e retorna estado: `"linhas"` (registros encontrados), `"vazio"` (nenhum registro), ou `"indefinido"` (timeout) |
+| `_coletar_linhas_computador` | `(janela_sistema, ip_pc: str) → (str, list[dict])` | Combina `_aguardar_estado_resultado_pesquisa` com extração de registros. Filtra somente linhas cujo IP confere e retorna lista de dicts com chaves: `linha`, `texto`, `ip`, `computador`, `descricao`, `classe`, `fila`, `tipo_cups` |
+
+Mapeamento de colunas da tabela:
+
+| Índice | Chave no dict | Campo da tabela |
+|---|---|---|
+| 1 | `ip` | Endereço IP |
+| 2 | `computador` | Nome do computador |
+| 3 | `descricao` | Descrição |
+| 4 | `classe` | Classe de impressão |
+| 5 | `fila` | Fila de impressão |
+| 6 | `tipo_cups` | Tipo CUPS |
+
+### 7.6 Lógica de Decisão
+
+```python
+_decidir_acao_linhas(registros_linhas, impressora_alvo, classe_impressao) → (str, dict | None)
+```
+
+Percorre os registros coletados e decide a ação:
+
+| Retorno | Condição | Significado |
+|---|---|---|
+| `"mantido"`, registro | Registro com `fila == impressora_alvo` e tipo+classe conferem | Vínculo já está correto |
+| `"conferir"`, registro | Registro com `fila == impressora_alvo` mas tipo+classe divergem | Divergência de tipo; requer conferência manual |
+| `"alterar"`, registro_pdf | Nenhum registro com a fila alvo, mas existe registro PDF (classe A) | Reutilizar linha PDF existente editando a impressora |
+| `"incluir"`, None | Nenhum registro com fila alvo e nenhum PDF | Necessário criar novo vínculo |
+
+### 7.7 Tratamento de Gravação
+
+| Função | Assinatura | Descrição |
+|---|---|---|
+| `_mensagem_dialog` | `(janela_sistema, seletor: str) → Locator` | Localiza mensagem dentro do dialog modal de mensagens do AGHU |
+| `_aguardar_resultado_gravacao` | `(janela_sistema, page=None, timeout_ms=10000) → (str, str)` | Espera mensagem de sucesso ou erro após clique em Gravar. Retorna `("sucesso", msg)`, `("erro", msg)` ou `("indefinido", "")` |
+| `_erro_classe_pdf_duplicada` | `(mensagem: str) → bool` | Detecta erro específico "existe uma impressora cadastrada ... classe A" — caso onde o AGHU bloqueia inclusão de segunda impressora PDF no mesmo computador |
+
+### 7.8 Limpeza de Estado
+
+| Função | Assinatura | Descrição |
+|---|---|---|
+| `_aguardar_botao_pesquisar_se_possivel` | `(janela_sistema) → None` | Aguarda até 3s pelo botão Pesquisar ficar visível (pós-gravação) |
+| `_limpar_estado_formulario` | `(janela_sistema, page=None) → None` | Sequência de limpeza: fecha dialog modal, clica Cancelar, clica botão limpar (cleaner). Usada após erros de gravação |
+
+---
+
+## 8. Descrição dos Componentes Públicos
+
+### 8.1 `ler_planilha(caminho_arquivo)`
 
 Recebe um caminho de arquivo e retorna um `DataFrame` normalizado. A função não assume arquivo fixo no diretório do script; o caminho é fornecido pelo chamador.
 
@@ -181,7 +300,7 @@ Erros previstos:
 | Extensão inválida | `ValueError("Formato inválido. Use .xlsx, .xlsm ou .csv.")` |
 | Coluna obrigatória ausente | `ValueError` com lista de colunas faltantes |
 
-### 6.2 `fazer_login(page, usuario_str, senha_str)`
+### 8.2 `fazer_login(page, usuario_str, senha_str)`
 
 É um wrapper local para autenticação centralizada. O fluxo atual é:
 
@@ -196,7 +315,7 @@ Erros previstos:
 
 A função não contém mais seletores de campo de usuário, senha ou botão **Entrar**. A detecção da tela de login, credenciais inválidas, timeout e sessão já ativa pertence a `autenticador.py`.
 
-### 6.3 `trocar_aba_aghux(context, page_atual, usuario_str, senha_str)` — Clean State
+### 8.3 `trocar_aba_aghux(context, page_atual, usuario_str, senha_str)` — Clean State
 
 Fecha a aba atual, ignorando erro caso ela já esteja indisponível. Em seguida, abre uma nova `Page` no mesmo `BrowserContext`, acessa `AGHU_URL`, executa `autenticar_aghu_page` e valida o resultado com `exigir_login_valido`.
 
@@ -204,7 +323,7 @@ O Clean State é usado como recuperação quando a interface do AGHUX fica incon
 
 O uso do mesmo `BrowserContext` preserva sessão, certificados e configuração do browser criada pelo chamador.
 
-### 6.4 `navegar_ate_modulo(context, page_atual, usuario_str, senha_str)`
+### 8.4 `navegar_ate_modulo(context, page_atual, usuario_str, senha_str)`
 
 Navega até o módulo **Impressora por Computador** delegando a travessia de menu a `navegar_menu_impressora` de `menu.py` (RFC-004):
 
@@ -226,7 +345,7 @@ A função faz até duas tentativas:
 
 Se o laço terminar sem retorno, lança `RuntimeError("Falha ao navegar até o módulo de Impressora por Computador.")`.
 
-### 6.5 `processar_computadores(...)`
+### 8.5 `processar_computadores(...)`
 
 É o laço principal da automação. Recebe:
 
@@ -254,9 +373,9 @@ Cada linha possui até três tentativas para falhas técnicas. O estado inicial 
 
 ---
 
-## 7. Regras de Processamento por Linha
+## 9. Regras de Processamento por Linha
 
-### 7.1 Busca do computador
+### 9.1 Busca do computador
 
 O campo de computador é localizado por:
 
@@ -270,38 +389,43 @@ O IP é digitado com:
 press_sequentially(ip_pc, delay=150)
 ```
 
-A seleção do autocomplete usa a função `_criar_matcher_exato`, que aplica `re.escape` e lookaround negativo para evitar correspondência parcial:
+A seleção do autocomplete usa a função `_criar_regex_valor_exato`, que aplica `re.escape` e lookaround negativo com `CARACTERES_DE_VALOR` para evitar correspondência parcial:
 
 ```python
 re.compile(
-    rf"(?<![\w.-]){re.escape(valor)}(?![\w.-])",
+    rf"(?<![A-Za-z0-9_.-]){re.escape(valor_normalizado)}(?![A-Za-z0-9_.-])",
     re.IGNORECASE,
 )
 ```
 
-Esse ajuste evita que `10.6.0.22` corresponda indevidamente a `10.6.0.225`. Para valores sem dígitos, a comparação é por substring literal.
+Esse ajuste evita que `10.6.0.22` corresponda indevidamente a `10.6.0.225`.
 
 Se nenhuma sugestão compatível aparece, a linha recebe `Inexistente` com detalhe `Computador não cadastrado no AGHUX.`.
 
-### 7.2 Pesquisa do vínculo
+### 9.2 Pesquisa e coleta de vínculos
 
-Após selecionar o computador, o Maestro clica em **Pesquisar** e procura uma linha da tabela contendo o IP e a classe:
+Após selecionar o computador, o Maestro clica em **Pesquisar**. A função `_coletar_linhas_computador` é invocada e:
 
-```text
-row com IPPC + PrinterClass
-```
+1. Chama `_aguardar_estado_resultado_pesquisa` que monitora a tabela `TABELA_COMPUTADOR_IMPRESSORA_SELECTOR` até detectar linhas visíveis, mensagem de "nenhum registro", ou timeout.
+2. Se o estado for `"linhas"`, percorre cada `tr[data-ri]` visível e filtra somente aquelas cujo IP da célula (índice 1) confere com `ip_pc` via `_ip_celula_confere`.
+3. Monta registros com as colunas: `ip`, `computador`, `descricao`, `classe`, `fila`, `tipo_cups`.
 
-Se a linha existir, o conteúdo da linha define o próximo passo.
+O estado retornado guia o fluxo:
 
-### 7.3 Vínculo já correto
+| Estado | Significado | Ação |
+|---|---|---|
+| `"linhas"` com registros | Registros encontrados para o IP | Passa para `_decidir_acao_linhas` |
+| `"linhas"` sem registros | Tabela tem linhas, mas nenhuma com o IP | Erro: conferência manual |
+| `"vazio"` | Nenhum registro encontrado | Passa para `_decidir_acao_linhas` (lista vazia → incluir) |
+| `"indefinido"` | Timeout sem estado claro | Erro: `MENSAGEM_ERRO_PESQUISA_INDEFINIDA` |
 
-Condição:
+### 9.3 Decisão de ação (`_decidir_acao_linhas`)
 
-```text
-linha encontrada contém HostPrinter
-```
+A função percorre os registros e retorna uma das quatro ações:
 
-Resultado:
+#### Caso A: Vínculo já correto (`"mantido"`)
+
+Condição: existe registro com `fila == impressora_alvo` e `_registro_confere_tipo_e_classe` retorna `True`.
 
 | Campo | Valor |
 |---|---|
@@ -310,53 +434,61 @@ Resultado:
 
 A tela é limpa pelo botão com ícone `.aghu-icon-cleaner-aghu`.
 
-### 7.4 Vínculo divergente
+#### Caso B: Tipo CUPS divergente (`"conferir"`)
 
-Condição:
+Condição: existe registro com `fila == impressora_alvo`, mas `_registro_confere_tipo_e_classe` retorna `False` — ou seja, a impressora está vinculada ao computador mas com tipo de CUPS diferente do informado na planilha.
 
-```text
-linha encontrada contém IPPC e PrinterClass, mas não contém HostPrinter
-```
+| Campo | Valor |
+|---|---|
+| `Status` | `Erro` |
+| `Detalhes` | `Conferir manualmente: impressora ja vinculada ao computador com Tipo do Cups [<atual>], diferente da planilha [<esperado>].` |
+
+Neste caso o Maestro não tenta alterar automaticamente, pois a divergência de tipo pode indicar configuração intencional.
+
+#### Caso C: Linha PDF existente para reutilizar (`"alterar"`)
+
+Condição: nenhum registro com `fila == impressora_alvo`, mas existe registro com tipo `PDF` / classe `A`.
 
 Ação:
 
-1. Clica no botão de edição da linha por título `editar`/`alterar` ou ícone `.aghu-icon-edit`.
+1. Clica no botão de edição da linha PDF por título `editar`/`alterar` ou ícone `.aghu-icon-edit`.
 2. Aguarda botão **Gravar**.
-3. Limpa o campo de impressora.
+3. Limpa o campo de impressora (botão cleaner).
 4. Digita `HostPrinter` com `press_sequentially(..., delay=150)`.
-5. Seleciona a sugestão.
+5. Seleciona a sugestão do autocomplete.
 6. Clica em **Gravar**.
-7. Aguarda retorno do botão **Pesquisar**.
-8. Limpa a tela.
-
-Se a impressora já precisou ser fabricada pelo Almoxarifado durante esta linha, o status final é `Criado`; caso contrário, é `Alterado`.
+7. Aguarda resultado da gravação via `_aguardar_resultado_gravacao`:
+   - `"sucesso"`: prossegue.
+   - `"erro"`: registra erro com mensagem do AGHU e aciona `_limpar_estado_formulario`.
+   - `"indefinido"`: registra erro de conferência manual e aciona `_limpar_estado_formulario`.
+8. Aguarda botão **Pesquisar** (`_aguardar_botao_pesquisar_se_possivel`).
+9. Limpa a tela.
 
 | Condição | Status | Detalhes |
 |---|---|---|
 | Impressora já existia no AGHUX | `Alterado` | `Vínculo atualizado com sucesso.` |
 | Impressora foi cadastrada nesta execução | `Criado` | `Impressora cadastrada no CUPS e atualizada.` |
 
-### 7.5 Sem vínculo existente
+#### Caso D: Sem vínculo utilizável (`"incluir"`)
 
-Condição:
-
-```text
-Nenhuma linha encontrada para IPPC + PrinterClass
-```
+Condição: nenhum registro com `fila == impressora_alvo` e nenhum registro PDF.
 
 Ação:
 
 1. Clica em **Novo**.
 2. Aguarda botão **Gravar**.
 3. Seleciona novamente o computador pelo IP exato.
-4. Seleciona a impressora alvo.
-5. Valida a classe preenchida automaticamente.
-6. Se a classe não corresponder, limpa o campo e usa a lupa para selecionar `PrinterClass`.
-7. Clica em **Gravar**.
-8. Aguarda retorno do botão **Pesquisar**.
-9. Limpa a tela.
-
-Resultado:
+4. Valida o computador selecionado com `_validar_computador_selecionado` — se o IP selecionado diverge do esperado, lança `ValueError` para conferência manual.
+5. Seleciona a impressora alvo.
+6. Verifica a classe preenchida automaticamente via `_classe_impressao_aghu`.
+7. Se a classe não corresponder, limpa o campo e usa a lupa (botão `.ui-icon-triangle-1-s`) para selecionar a classe correta.
+8. Clica em **Gravar**.
+9. Aguarda resultado da gravação via `_aguardar_resultado_gravacao`:
+   - `"sucesso"`: prossegue.
+   - `"erro"`: verifica se é `_erro_classe_pdf_duplicada` para mensagem específica; caso contrário, registra erro genérico. Aciona `_limpar_estado_formulario`.
+   - `"indefinido"`: registra erro de conferência manual e aciona `_limpar_estado_formulario`.
+10. Aguarda botão **Pesquisar** (`_aguardar_botao_pesquisar_se_possivel`).
+11. Limpa a tela.
 
 | Condição | Status | Detalhes |
 |---|---|---|
@@ -365,7 +497,7 @@ Resultado:
 
 ---
 
-## 8. Delegação ao Almoxarifado
+## 10. Delegação ao Almoxarifado
 
 A delegação é acionada quando a seleção da impressora lança exatamente:
 
@@ -403,7 +535,7 @@ Se a delegação falhar definitivamente:
 
 ---
 
-## 9. Recuperação de Falhas Técnicas
+## 11. Recuperação de Falhas Técnicas
 
 Erros do tipo `ValueError` são tratados como eventos de negócio quando contêm mensagens conhecidas:
 
@@ -420,11 +552,15 @@ Demais exceções são tratadas como falha técnica ou instabilidade do navegado
 | 1ª ou 2ª | Cria aba limpa, renavega ao módulo e tenta novamente |
 | 3ª | Marca `Erro` e detalhe `Falha de sistema ou rede no passo '<passo_atual>' após 3 tentativas.` |
 
-Após falhas funcionais, o Maestro tenta cancelar a tela ou limpar o formulário antes de seguir para a próxima linha.
+Após falhas funcionais, o Maestro tenta cancelar a tela ou limpar o formulário antes de seguir para a próxima linha. A limpeza é feita por `_limpar_estado_formulario`, que:
+
+1. Fecha o dialog modal de mensagens (se aberto).
+2. Clica em **Cancelar**.
+3. Clica no botão de limpeza (`.aghu-icon-cleaner-aghu`).
 
 ---
 
-## 10. Relatório de Auditoria
+## 12. Relatório de Auditoria
 
 Ao final, `processar_computadores` cria um `DataFrame` com os logs e grava um CSV em:
 
@@ -472,7 +608,7 @@ Mantido, Alterado, Vinculado, Criado, Inexistente, Erro
 
 ---
 
-## 11. API Pública do Módulo
+## 13. API Pública do Módulo
 
 | Função | Responsabilidade |
 |---|---|
@@ -484,9 +620,9 @@ Mantido, Alterado, Vinculado, Criado, Inexistente, Erro
 
 ---
 
-## 12. Contratos entre RFCs
+## 14. Contratos entre RFCs
 
-### 12.1 Contrato com RFC-002
+### 14.1 Contrato com RFC-002
 
 | Evento | Origem | Interpretação no Maestro |
 |---|---|---|
@@ -495,7 +631,7 @@ Mantido, Alterado, Vinculado, Criado, Inexistente, Erro
 | Retorno silencioso de `cadastrar_nova_impressora` | Impressora já existia no AGHUX | Retoma tentativa de vínculo |
 | Cadastro concluído | Almoxarifado | Abre aba limpa e reprocessa linha |
 
-### 12.2 Contrato com RFC-003
+### 14.2 Contrato com RFC-003
 
 A UI deve fornecer:
 
@@ -511,7 +647,7 @@ O Maestro retorna o caminho do CSV gerado, mas a UI atual localiza o arquivo por
 
 ---
 
-## 13. Considerações Operacionais
+## 15. Considerações Operacionais
 
 1. `PrinterAGHU.py` não cria o browser principal; o chamador cria `Browser`, `BrowserContext` e `Page`.
 2. O módulo cria novas abas no mesmo contexto apenas para Clean State.
@@ -519,10 +655,11 @@ O Maestro retorna o caminho do CSV gerado, mas a UI atual localiza o arquivo por
 4. O fluxo depende de textos visíveis do AGHUX como **Outros Módulos**, **Configuração**, **Impressão**, **Cadastros**, **Impressora por Computador**, **Pesquisar**, **Novo** e **Gravar**.
 5. As mensagens de erro usadas como contrato (`Impressora não existe`, `Computador não encontrado`, `Não existe no CUPS`) não devem ser alteradas sem atualizar as RFCs e os tratadores.
 6. O uso de `press_sequentially` é intencional para disparar eventos JSF/autocomplete.
+7. O seletor `TABELA_COMPUTADOR_IMPRESSORA_SELECTOR` e os índices de coluna usados em `_coletar_linhas_computador` dependem da estrutura HTML atual do AGHUX; mudanças na tabela exigem ajuste coordenado.
 
 ---
 
-## 14. Limitações Conhecidas
+## 16. Limitações Conhecidas
 
 | Limitação | Impacto |
 |---|---|
@@ -530,9 +667,19 @@ O Maestro retorna o caminho do CSV gerado, mas a UI atual localiza o arquivo por
 | Erros de negócio dependem de strings exatas | Alterações nas mensagens exigem atualização coordenada |
 | Relatório CSV é gerado mesmo se todas as linhas falharem | A auditoria fica preservada, mas o operador deve validar os status |
 | UI não passa `diretorio_logs` explicitamente | A localização do CSV depende de `BASE_DIR / "logs"` compartilhado entre os arquivos |
+| Pontos cegos restantes a mapear | Existem cenários não cobertos que devem ser mapeados e tratados em revisão futura |
 
 ---
 
-## 15. Estado Atual da RFC
+## 17. Estado Atual da RFC
 
-Esta RFC passa a refletir o código atual de `PrinterAGHU.py`, incluindo a dependência explícita de `autenticador.py`, o login centralizado, o uso de `AGHU_URL`, o Clean State reautenticado, a delegação ao Almoxarifado e o relatório CSV com linha de auditoria.
+Esta RFC passa a refletir o código atual de `PrinterAGHU.py` conforme a release de 19/06/2026, incluindo:
+- Dependência explícita de `autenticador.py`, login centralizado e uso de `AGHU_URL`.
+- Clean State reautenticado e delegação ao Almoxarifado.
+- Ecossistema completo de funções auxiliares privadas: normalização, comparação, validação de IP, classificação de impressão, manipulação de tabela, lógica de decisão e tratamento de gravação.
+- Quatro casos de decisão (`mantido`, `conferir`, `alterar`, `incluir`) documentados individualmente.
+- Validação de computador selecionado no autocomplete.
+- Tratamento diferenciado de resultados de gravação (sucesso, erro, indefinido) com mensagem específica para erro de classe PDF duplicada.
+- Relatório CSV com linha de auditoria.
+- Tratamento e registro correto de linhas com campos obrigatórios vazios.
+- Limitações atualizadas com base nas observações da release.
