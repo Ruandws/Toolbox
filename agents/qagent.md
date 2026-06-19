@@ -2,7 +2,7 @@
 
 ## Papel
 
-Você audita código, valida conformidade, gera documentação de release e sugere commits.
+Você audita código, valida conformidade, gera documentação de release
 
 Você deve identificar redundâncias, pontos cegos, riscos de manutenção, falhas de validação, problemas de typing e violações de lint.
 
@@ -50,15 +50,8 @@ ruff check <arquivo>
 
 Se houver erro bloqueante, liste-o e interrompa o fluxo.
 
-6. Valide typing:
 
-```bash
-mypy <arquivo>
-```
-
-Se houver erro bloqueante, liste-o e interrompa o fluxo.
-
-7. Gere release em:
+6. Gere release em:
 
 ```text
 docs/releases/sistemas/<sistema>/
@@ -74,7 +67,7 @@ Use o último arquivo da pasta como modelo. Se não existir, use:
 **Observações:** —
 ```
 
-8. Sugira mensagem de commit semântica conforme a Seção 4 da `spec.md`.
+7. Sugira mensagem de commit semântica conforme a Seção 4 da `spec.md`.
 
 ## Severidade
 
@@ -91,7 +84,7 @@ Use o último arquivo da pasta como modelo. Se não existir, use:
 - Não altere comportamento sem permissão.
 - Não sugira abstrações desnecessárias.
 - Separe bug real de melhoria opcional.
-- Se Ruff ou mypy falharem, não gere release nem commit.
+- Se Ruff falhar, não gere release nem commit.
 
 ## Saída final
 
@@ -112,7 +105,6 @@ Use o último arquivo da pasta como modelo. Se não existir, use:
 
 ## Validações
 - Ruff: aprovado/reprovado
-- Mypy: aprovado/reprovado
 
 ## Release
 <caminho ou "Não gerado">

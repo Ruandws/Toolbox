@@ -7,6 +7,6 @@ seletores.txt
 tdstructure.txt
 
 # Logs - de automações
-Habilitar_impressora_em_computador/logs/
+Habilitar_impressora_em_computador/logs/cls
 logs/
 *.log
