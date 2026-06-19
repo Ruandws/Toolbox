@@ -1,12 +1,32 @@
 # Python
 __pycache__/
-
+*.pyc
+*.pyo
+.mypy_cache/
+.pytest_cache/
 .ruff_cache/
+*.egg-info/
+dist/
+build/
 
-seletores.txt
-tdstructure.txt
+# Variáveis de ambiente
+.env
+.env.*
+
+# IDE
+.vscode/
+
+# Agentes
+agents/
+
+# Seletores
+Coleta_de_Seletores/
+Coleta de Seletores/
 
 # Logs - de automações
 Habilitar_impressora_em_computador/logs/cls
 logs/
 *.log
+
+# Outros
+HTMLCRUIDCE.TXT
