@@ -2,8 +2,6 @@
 #
 # Testa funções puras e dataclasses sem dependência de browser ou rede.
 
-from pathlib import Path
-
 import pytest
 
 from adduser_aghu import (
@@ -12,6 +10,8 @@ from adduser_aghu import (
     STATUS_IGNORADO,
     ResultadoImportacao,
     UsuarioImportacao,
+    executar_importacao_usuarios,
+    importar_usuario,
     _normalizar_login,
     _normalizar_texto,
     _resultado,
@@ -109,6 +109,42 @@ class TestValidarUsuario:
         erros = _validar_usuario(usuario)
         assert len(erros) == 3
 
+    def test_email_invalido(self):
+        usuario = UsuarioImportacao(
+            login="joao.silva",
+            nome_completo="Joao Silva",
+            email="joao.email.com",
+        )
+        erros = _validar_usuario(usuario)
+        assert any("E-mail invalido" in erro for erro in erros)
+
+    def test_email_com_espaco_indevido(self):
+        usuario = UsuarioImportacao(
+            login="joao.silva",
+            nome_completo="Joao Silva",
+            email="joao @email.com",
+        )
+        erros = _validar_usuario(usuario)
+        assert "E-mail contem espacos indevidos" in erros
+
+    def test_login_invalido(self):
+        usuario = UsuarioImportacao(
+            login="joao/silva",
+            nome_completo="Joao Silva",
+            email="joao@email.com",
+        )
+        erros = _validar_usuario(usuario)
+        assert any("Login invalido" in erro for erro in erros)
+
+    def test_nome_com_espaco_indevido(self):
+        usuario = UsuarioImportacao(
+            login="joao.silva",
+            nome_completo="Joao  Silva",
+            email="joao@email.com",
+        )
+        erros = _validar_usuario(usuario)
+        assert "Nome Completo contem espacos indevidos" in erros
+
 
 # ---------------------------------------------------------------------------
 # _resultado
@@ -127,6 +163,49 @@ class TestResultado:
         assert isinstance(resultado, ResultadoImportacao)
         assert resultado.login == "ana.maria"
         assert resultado.status == STATUS_IGNORADO
+
+
+# ---------------------------------------------------------------------------
+# validação antes do browser
+# ---------------------------------------------------------------------------
+
+
+class TestValidacaoAntesDoBrowser:
+    def test_importar_usuario_invalido_retorna_ignorado_sem_usar_janela(self):
+        usuario = UsuarioImportacao(
+            login="joao.silva",
+            nome_completo="Joao Silva",
+            email="email-invalido",
+        )
+        resultado = importar_usuario(None, usuario)  # type: ignore[arg-type]
+
+        assert resultado.status == STATUS_IGNORADO
+        assert "E-mail invalido" in resultado.detalhes
+
+    def test_executar_importacao_invalida_nao_abre_playwright(self, monkeypatch):
+        def falhar_sync_playwright():
+            raise AssertionError("Playwright nao deveria ser iniciado")
+
+        monkeypatch.setattr(
+            "adduser_aghu.sync_playwright",
+            falhar_sync_playwright,
+        )
+
+        resultados = executar_importacao_usuarios(
+            usuarios=[
+                UsuarioImportacao(
+                    login="joao.silva",
+                    nome_completo="Joao Silva",
+                    email="email-invalido",
+                )
+            ],
+            usuario_rede="usuario.rede",
+            senha="senha",
+        )
+
+        assert len(resultados) == 1
+        assert resultados[0].status == STATUS_IGNORADO
+        assert "E-mail invalido" in resultados[0].detalhes
 
 
 # ---------------------------------------------------------------------------

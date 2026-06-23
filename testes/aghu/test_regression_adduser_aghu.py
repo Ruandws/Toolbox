@@ -3,15 +3,11 @@
 # Validam comportamentos previamente corrigidos para garantir que não
 # regrediram. Cada teste documenta o cenário de bug original.
 
-import pytest
-
 from adduser_aghu import (
     COLUNAS_OBRIGATORIAS_PLANILHA,
-    STATUS_IGNORADO,
     UsuarioImportacao,
     _normalizar_login,
     _normalizar_texto,
-    _resultado,
     _validar_usuario,
     _valor_em_branco,
     ler_planilha_usuarios,
@@ -56,6 +52,7 @@ class TestRegressaoValidacao:
         )
         erros = _validar_usuario(usuario)
         assert "Login" not in erros
+        assert "Login contem espacos indevidos" in erros
 
 
 class TestRegressaoPlanilha:
@@ -106,3 +103,13 @@ class TestRegressaoPlanilha:
         usuarios = ler_planilha_usuarios(str(caminho))
         # Pode incluir linha vazia (depende de fillna), mas não deve crashar.
         assert len(usuarios) >= 2
+
+    def test_espacos_de_celula_sao_preservados_para_validacao(self, tmp_xlsx):
+        caminho = tmp_xlsx(
+            "espacos_celula.xlsx",
+            list(COLUNAS_OBRIGATORIAS_PLANILHA),
+            [[" joao.silva ", "Joao Silva", "joao@email.com"]],
+        )
+        usuarios = ler_planilha_usuarios(str(caminho))
+
+        assert usuarios[0].login == " joao.silva "

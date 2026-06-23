@@ -371,12 +371,9 @@ class AghuImportUserApp(ctk.CTk):
 
         try:
             usuario_rede, senha, url_aghu = self._credenciais_e_url()
-            login = self.entry_login_individual.get().strip()
-            nome_completo = self.entry_nome_individual.get().strip()
-            email = self.entry_email_individual.get().strip()
-
-            if not login or not nome_completo or not email:
-                raise ValueError("Preencha Login, Nome Completo e E-mail.")
+            login = self.entry_login_individual.get()
+            nome_completo = self.entry_nome_individual.get()
+            email = self.entry_email_individual.get()
         except Exception as exc:
             self._mostrar_status(f"Erro: {exc}", "red")
             return

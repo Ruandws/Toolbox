@@ -21,6 +21,8 @@ CAMINHO_MENU_CADASTRO_USUARIO = (
 )
 
 COLUNAS_OBRIGATORIAS_PLANILHA = ("Login", "Nome Completo", "E-mail")
+PADRAO_EMAIL_MINIMO = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+PADRAO_LOGIN_VALIDO = re.compile(r"^[A-Za-z0-9._-]+$")
 
 STATUS_IMPORTADO = "importado"
 STATUS_JA_IMPORTADO = "ja_importado"
@@ -81,6 +83,33 @@ def _valor_em_branco(valor: object) -> bool:
         pass
 
     return str(valor or "").strip() == ""
+
+
+def _texto_para_validacao(valor: object) -> str:
+    if _valor_em_branco(valor):
+        return ""
+
+    return str(valor)
+
+
+def _normalizar_usuario_importacao(
+    usuario: UsuarioImportacao,
+) -> UsuarioImportacao:
+    return UsuarioImportacao(
+        login=_normalizar_login(usuario.login),
+        nome_completo=_texto_para_validacao(usuario.nome_completo).strip(),
+        email=_texto_para_validacao(usuario.email).strip(),
+    )
+
+
+def _nome_tem_espacos_indevidos(nome: str) -> bool:
+    nome_sem_laterais = nome.strip()
+
+    return (
+        nome != nome_sem_laterais
+        or bool(re.search(r"[^\S ]", nome_sem_laterais))
+        or bool(re.search(r" {2,}", nome_sem_laterais))
+    )
 
 
 def _login_confere(valor_atual: object, login_esperado: str) -> bool:
@@ -404,7 +433,11 @@ def _gravar_cadastro_usuario(janela_sistema: FrameLocator) -> tuple[str, str]:
 
 
 def _validar_usuario(usuario: UsuarioImportacao) -> list[str]:
+    erros = []
     campos_em_branco = []
+    login = _texto_para_validacao(usuario.login)
+    nome_completo = _texto_para_validacao(usuario.nome_completo)
+    email = _texto_para_validacao(usuario.email)
 
     if _valor_em_branco(usuario.login):
         campos_em_branco.append("Login")
@@ -415,7 +448,74 @@ def _validar_usuario(usuario: UsuarioImportacao) -> list[str]:
     if _valor_em_branco(usuario.email):
         campos_em_branco.append("E-mail")
 
-    return campos_em_branco
+    erros.extend(campos_em_branco)
+
+    if "Login" not in campos_em_branco:
+        login_sem_espacos = login.strip()
+
+        if re.search(r"\s", login):
+            erros.append("Login contem espacos indevidos")
+        elif not PADRAO_LOGIN_VALIDO.fullmatch(login_sem_espacos):
+            erros.append(
+                "Login invalido: use apenas letras, numeros, ponto, hifen "
+                "ou sublinhado"
+            )
+
+    if "Nome Completo" not in campos_em_branco and _nome_tem_espacos_indevidos(
+        nome_completo
+    ):
+        erros.append("Nome Completo contem espacos indevidos")
+
+    if "E-mail" not in campos_em_branco:
+        email_sem_espacos = email.strip()
+
+        if re.search(r"\s", email):
+            erros.append("E-mail contem espacos indevidos")
+        elif not PADRAO_EMAIL_MINIMO.fullmatch(email_sem_espacos):
+            erros.append(
+                "E-mail invalido: informe um endereco no formato "
+                "nome@dominio.extensao"
+            )
+
+    return erros
+
+
+def _detalhar_validacao_usuario(erros: list[str]) -> str:
+    campos_em_branco = [
+        erro for erro in erros if erro in COLUNAS_OBRIGATORIAS_PLANILHA
+    ]
+    demais_erros = [
+        erro for erro in erros if erro not in COLUNAS_OBRIGATORIAS_PLANILHA
+    ]
+    detalhes = []
+
+    if campos_em_branco:
+        detalhes.append(
+            "campos obrigatorios em branco: " + ", ".join(campos_em_branco)
+        )
+
+    detalhes.extend(demais_erros)
+
+    return "Linha ignorada: " + "; ".join(detalhes) + "."
+
+
+def _preparar_usuario_importacao(
+    usuario: UsuarioImportacao,
+) -> tuple[UsuarioImportacao, ResultadoImportacao | None]:
+    usuario_normalizado = _normalizar_usuario_importacao(usuario)
+    erros = _validar_usuario(usuario)
+
+    if not erros:
+        return usuario_normalizado, None
+
+    return (
+        usuario_normalizado,
+        _resultado(
+            usuario_normalizado,
+            STATUS_IGNORADO,
+            _detalhar_validacao_usuario(erros),
+        ),
+    )
 
 
 def fazer_login(
@@ -547,22 +647,12 @@ def importar_usuario(
     janela_sistema: FrameLocator,
     usuario: UsuarioImportacao,
 ) -> ResultadoImportacao:
-    login = _normalizar_login(usuario.login)
-    usuario = UsuarioImportacao(
-        login=login,
-        nome_completo=usuario.nome_completo.strip(),
-        email=usuario.email.strip(),
-    )
+    usuario, resultado_validacao = _preparar_usuario_importacao(usuario)
 
-    campos_em_branco = _validar_usuario(usuario)
+    if resultado_validacao is not None:
+        return resultado_validacao
 
-    if campos_em_branco:
-        return _resultado(
-            usuario,
-            STATUS_IGNORADO,
-            "Linha ignorada: campos obrigatorios em branco: "
-            + ", ".join(campos_em_branco),
-        )
+    login = usuario.login
 
     estado_pesquisa, _ = _pesquisar_usuario_importado(janela_sistema, login)
 
@@ -621,6 +711,12 @@ def processar_usuarios(
     janela_sistema = janela_sistema_inicial
 
     for usuario in usuarios:
+        usuario, resultado_validacao = _preparar_usuario_importacao(usuario)
+
+        if resultado_validacao is not None:
+            resultados.append(resultado_validacao)
+            continue
+
         resultado_linha: ResultadoImportacao | None = None
 
         for tentativa in range(2):
@@ -698,9 +794,9 @@ def ler_planilha_usuarios(caminho_planilha: str) -> list[UsuarioImportacao]:
     for _, linha in df.iterrows():
         usuarios.append(
             UsuarioImportacao(
-                login=str(linha.get("Login", "")).strip(),
-                nome_completo=str(linha.get("Nome Completo", "")).strip(),
-                email=str(linha.get("E-mail", "")).strip(),
+                login=str(linha.get("Login", "")),
+                nome_completo=str(linha.get("Nome Completo", "")),
+                email=str(linha.get("E-mail", "")),
             )
         )
 
@@ -764,6 +860,23 @@ def executar_importacao_usuarios(
     if not url_aghu:
         raise ValueError("Informe o ambiente do AGHU.")
 
+    resultados: list[ResultadoImportacao | None] = []
+    indices_usuarios_validos = []
+    usuarios_validos = []
+
+    for indice, usuario in enumerate(usuarios):
+        usuario_normalizado, resultado_validacao = _preparar_usuario_importacao(
+            usuario
+        )
+        resultados.append(resultado_validacao)
+
+        if resultado_validacao is None:
+            indices_usuarios_validos.append(indice)
+            usuarios_validos.append(usuario_normalizado)
+
+    if not usuarios_validos:
+        return [resultado for resultado in resultados if resultado is not None]
+
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(
             headless=not mostrar_browser,
@@ -782,15 +895,23 @@ def executar_importacao_usuarios(
                 senha=senha,
                 url_aghu=url_aghu,
             )
-            return processar_usuarios(
+            resultados_processados = processar_usuarios(
                 context=context,
                 page_inicial=page,
                 janela_sistema_inicial=janela_sistema,
-                usuarios=usuarios,
+                usuarios=usuarios_validos,
                 usuario_rede=usuario_rede,
                 senha=senha,
                 url_aghu=url_aghu,
             )
+
+            for indice, resultado in zip(
+                indices_usuarios_validos,
+                resultados_processados,
+            ):
+                resultados[indice] = resultado
+
+            return [resultado for resultado in resultados if resultado is not None]
         finally:
             browser.close()
 
