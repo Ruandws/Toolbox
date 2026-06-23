@@ -17,7 +17,7 @@ CAMINHO_MENU_CADASTRO_USUARIO = (
     "Outros Módulos",
     "Configuração",
     "Acesso",
-    ("Usuários", "Usuário", "Usuarios", "Usuario"),
+    "Usuario",
 )
 
 COLUNAS_OBRIGATORIAS_PLANILHA = ("Login", "Nome Completo", "E-mail")
