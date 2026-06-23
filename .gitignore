@@ -30,3 +30,11 @@ logs/
 
 # Outros
 HTMLCRUIDCE.TXT
+
+# Testes - artefatos locais
+.pytest_tmp*/
+test-results/
+playwright-report/
+htmlcov/
+.coverage
+coverage.xml
