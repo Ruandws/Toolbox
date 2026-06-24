@@ -45,6 +45,8 @@ MENSAGEM_ERRO_PESQUISA_INDEFINIDA = (
     "Conferir manualmente: pesquisa nao retornou nem linhas nem mensagem de "
     "nenhum registro encontrado."
 )
+MAX_TENTATIVAS_AUTENTICAR_NOVA_ABA = 3
+INTERVALO_RETRY_AUTENTICAR_NOVA_ABA_SEGUNDOS = 1
 
 
 def _normalizar_busca(valor: object) -> str:
@@ -432,6 +434,30 @@ def fazer_login(
     exigir_login_valido(resultado)
     return resultado
 
+
+def _fechar_page_silenciosamente(page: Page | None) -> None:
+    if page is None:
+        return
+
+    try:
+        if not page.is_closed():
+            page.close()
+    except Exception:
+        pass
+
+
+def _fechar_abas_contexto(
+    context: BrowserContext,
+    *,
+    exceto: Page | None = None,
+) -> None:
+    for page_contexto in list(context.pages):
+        if exceto is not None and page_contexto == exceto:
+            continue
+
+        _fechar_page_silenciosamente(page_contexto)
+
+
 # ==========================================
 # ISOLAMENTO DE SESSÃO (CLEAN STATE)
 # ==========================================
@@ -442,35 +468,75 @@ def trocar_aba_aghux(
     senha_str: str,
     *,
     url_aghu: str = AGHU_URL,
+    max_tentativas_autenticacao: int = MAX_TENTATIVAS_AUTENTICAR_NOVA_ABA,
 ) -> Page:
-    print("[Clean State] Fechando aba atual e abrindo nova aba limpa.")
+    print("[Clean State] Fechando abas atuais e abrindo nova aba limpa.")
 
-    try:
-        page_atual.close()
-    except Exception:
-        pass
+    _fechar_page_silenciosamente(page_atual)
+    _fechar_abas_contexto(context)
 
-    nova_page = context.new_page()
-    nova_page.goto(url_aghu)
-    print(f"Ambiente acessado: {nova_page.url}")
+    total_tentativas = max(1, max_tentativas_autenticacao)
+    ultima_falha = "motivo nao identificado"
 
-    resultado = autenticar_aghu_page(
-        page=nova_page,
-        usuario=usuario_str,
-        senha=senha_str,
-        url_login=url_aghu,
-        timeout_ms=15000,
+    for tentativa in range(1, total_tentativas + 1):
+        nova_page: Page | None = None
+
+        try:
+            if tentativa > 1:
+                print(
+                    "[Clean State] Nova tentativa de autenticacao em aba limpa "
+                    f"({tentativa}/{total_tentativas})."
+                )
+
+            nova_page = context.new_page()
+            nova_page.goto(
+                url_aghu,
+                wait_until="domcontentloaded",
+                timeout=15000,
+            )
+            print(f"Ambiente acessado: {nova_page.url}")
+
+            resultado = autenticar_aghu_page(
+                page=nova_page,
+                usuario=usuario_str,
+                senha=senha_str,
+                url_login=url_aghu,
+                timeout_ms=15000,
+            )
+
+            if resultado.status == "sessao_ativa":
+                print("Sessao reaproveitada na nova aba.")
+                _fechar_abas_contexto(context, exceto=nova_page)
+                return nova_page
+
+            if resultado.status == "sucesso":
+                print("Login efetuado na nova aba.")
+                _fechar_abas_contexto(context, exceto=nova_page)
+                return nova_page
+
+            ultima_falha = resultado.mensagem
+            print(
+                "Falha ao autenticar nova aba "
+                f"({tentativa}/{total_tentativas}): {resultado.mensagem}"
+            )
+
+        except Exception as exc:
+            ultima_falha = str(exc)
+            print(
+                "Falha ao preparar/autenticar nova aba "
+                f"({tentativa}/{total_tentativas}): {ultima_falha}"
+            )
+
+        _fechar_page_silenciosamente(nova_page)
+
+        if tentativa < total_tentativas:
+            time.sleep(INTERVALO_RETRY_AUTENTICAR_NOVA_ABA_SEGUNDOS)
+
+    _fechar_abas_contexto(context)
+    raise RuntimeError(
+        "Falha ao autenticar nova aba apos "
+        f"{total_tentativas} tentativas: {ultima_falha}"
     )
-
-    if resultado.status == "sessao_ativa":
-        print("Sessão reaproveitada na nova aba.")
-    elif resultado.status == "sucesso":
-        print("Login efetuado na nova aba.")
-    else:
-        print(f"Falha ao autenticar nova aba: {resultado.mensagem}")
-
-    exigir_login_valido(resultado)
-    return nova_page
 
 
 def navegar_ate_modulo(
