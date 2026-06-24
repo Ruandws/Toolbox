@@ -3,7 +3,7 @@ from collections import Counter
 from datetime import datetime
 from pathlib import Path
 import tkinter as tk
-from tkinter import filedialog
+from tkinter import filedialog, messagebox
 
 import customtkinter as ctk
 
@@ -28,6 +28,8 @@ URLS_AMBIENTE_AGHU = {
     AMBIENTE_PRODUCAO: AGHU_URL,
     AMBIENTE_HOMOLOGACAO: AGHU_URL_HOMOLOGACAO,
 }
+BASE_DIR = Path(__file__).resolve().parent
+LOGS_DIR = BASE_DIR / "logs"
 
 
 def obter_url_ambiente_aghu(ambiente: str) -> str:
@@ -56,7 +58,7 @@ class AghuImportUserApp(ctk.CTk):
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
 
-        self.var_ambiente = tk.StringVar(value=AMBIENTE_PRODUCAO)
+        self.var_ambiente = tk.StringVar(value=AMBIENTE_HOMOLOGACAO)
         self.var_tipo_execucao = tk.StringVar(value=TIPO_INDIVIDUAL)
         self.em_execucao = False
 
@@ -356,6 +358,15 @@ class AghuImportUserApp(ctk.CTk):
 
     def _on_ambiente_changed(self, ambiente: str) -> None:
         self._atualizar_alerta_ambiente(ambiente)
+        if ambiente == AMBIENTE_PRODUCAO:
+            messagebox.showwarning(
+                "Atenção: Ambiente de Produção",
+                (
+                    "Você selecionou o ambiente de Produção.\n\n"
+                    "Tenha cautela: as alterações serão aplicadas no AGHUX de produção."
+                ),
+                parent=self,
+            )
 
     def _atualizar_alerta_ambiente(self, ambiente: str) -> None:
         if ambiente == AMBIENTE_PRODUCAO:
@@ -464,6 +475,7 @@ class AghuImportUserApp(ctk.CTk):
                 email=email,
                 url_aghu=url_aghu,
                 mostrar_browser=True,
+                diretorio_logs=LOGS_DIR,
             )
             mensagem = f"{resultado.login}: {resultado.status} - {resultado.detalhes}"
             self.after(0, self._finalizar_execucao, mensagem, "green")
@@ -518,6 +530,7 @@ class AghuImportUserApp(ctk.CTk):
                 caminho_relatorio=caminho_relatorio,
                 url_aghu=url_aghu,
                 mostrar_browser=True,
+                diretorio_logs=LOGS_DIR,
             )
             resumo = self._resumir_resultados(resultados)
             mensagem = f"{resumo} Relatório: {relatorio}"

@@ -210,6 +210,42 @@ def test_alerta_de_producao_aparece_somente_em_producao(app_fake):
     assert app_fake.frame_alerta_producao.visivel is False
 
 
+def test_on_ambiente_changed_exibe_alerta_modal_em_producao(app_fake, monkeypatch):
+    chamadas = []
+
+    def showwarning_fake(titulo, mensagem, parent=None):
+        chamadas.append((titulo, mensagem, parent))
+
+    monkeypatch.setattr(ui.messagebox, "showwarning", showwarning_fake)
+
+    ui.AghuImportUserApp._on_ambiente_changed(app_fake, ui.AMBIENTE_PRODUCAO)
+
+    assert app_fake.frame_alerta_producao.visivel is True
+    assert len(chamadas) == 1
+    titulo, mensagem, parent = chamadas[0]
+    assert ui.AMBIENTE_PRODUCAO in titulo
+    assert ui.AMBIENTE_PRODUCAO in mensagem
+    assert "cautela" in mensagem.lower()
+    assert parent is app_fake
+
+
+def test_on_ambiente_changed_nao_exibe_alerta_modal_em_homologacao(
+    app_fake,
+    monkeypatch,
+):
+    chamadas = []
+    monkeypatch.setattr(
+        ui.messagebox,
+        "showwarning",
+        lambda *args, **kwargs: chamadas.append((args, kwargs)),
+    )
+
+    ui.AghuImportUserApp._on_ambiente_changed(app_fake, ui.AMBIENTE_HOMOLOGACAO)
+
+    assert app_fake.frame_alerta_producao.visivel is False
+    assert chamadas == []
+
+
 def test_credenciais_e_url_retorna_dados_normalizados(app_fake):
     app_fake.entry_usuario_rede.valor = " usuario.rede "
     app_fake.entry_senha.valor = " senha com espaco "
