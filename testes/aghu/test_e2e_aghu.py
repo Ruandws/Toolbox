@@ -60,7 +60,7 @@ class TestE2EImportacaoUsuarioAghu:
     def test_importacao_usuario_individual(self, credenciais_rede):
         """Verifica o fluxo completo de importação de um usuário."""
         from autenticador import AGHU_URL_HOMOLOGACAO
-        from adduser_aghu import (
+        from criar_usuario_aghu import (
             UsuarioImportacao,
             executar_importacao_usuarios,
         )
