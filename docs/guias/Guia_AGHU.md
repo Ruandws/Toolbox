@@ -62,8 +62,9 @@ Regras práticas:
 ## 5. Ambientes
 
 - A UI escolhe `Produção` ou `Homologação` e repassa a URL resolvida ao Maestro (RFC-003).
-- Produção é o padrão atual da UI e deve exibir alerta operacional antes da execução.
-- Todo Clean State e retry deve preservar `url_aghu`; isso evita voltar para Produção quando a execução começou em Homologação.
+- Homologação é o padrão operacional seguro das UIs AGHU, salvo exceção documentada na RFC do módulo.
+- Produção pode ser selecionada manualmente e deve exibir alerta operacional antes da execução.
+- Todo Clean State e retry deve preservar `url_aghu`; isso evita trocar de ambiente quando a execução começou em Homologação ou Produção.
 - Na seleção do servidor CUPS, o item deve conter `10.6.0.121` e `CUPS`, e não pode conter `HOMOLOGAÇÃO` (RFC-002).
 
 ---

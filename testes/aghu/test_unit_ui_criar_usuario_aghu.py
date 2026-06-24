@@ -250,6 +250,7 @@ def test_on_ambiente_changed_nao_exibe_alerta_modal_em_homologacao(
     assert chamadas == []
 
 
+<<<<<<< HEAD
 def test_validar_opcoes_visibilidade_religa_browser_quando_tudo_oculto(
     app_fake,
     monkeypatch,
@@ -290,6 +291,8 @@ def test_validar_opcoes_visibilidade_religa_console_quando_tudo_oculto(
     assert len(chamadas) == 1
 
 
+=======
+>>>>>>> e2d6b15 (fix (ui_criar_usuario_aghu) : Definido ambiente 'Homologação'como padrão na criacão de usuario. Incrementado alerta ao selecionar ambiente de 'Produção'.)
 def test_credenciais_e_url_retorna_dados_normalizados(app_fake):
     app_fake.entry_usuario_rede.valor = " usuario.rede "
     app_fake.entry_senha.valor = " senha com espaco "

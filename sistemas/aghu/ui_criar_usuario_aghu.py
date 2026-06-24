@@ -533,8 +533,12 @@ class AghuImportUserApp(ctk.CTk):
                 nome_completo=nome_completo,
                 email=email,
                 url_aghu=url_aghu,
+<<<<<<< HEAD
                 mostrar_browser=mostrar_browser,
                 mostrar_console=mostrar_console,
+=======
+                mostrar_browser=True,
+>>>>>>> e2d6b15 (fix (ui_criar_usuario_aghu) : Definido ambiente 'Homologação'como padrão na criacão de usuario. Incrementado alerta ao selecionar ambiente de 'Produção'.)
                 diretorio_logs=LOGS_DIR,
             )
             mensagem = f"{resultado.login}: {resultado.status} - {resultado.detalhes}"
@@ -601,8 +605,12 @@ class AghuImportUserApp(ctk.CTk):
                 caminho_planilha=caminho_planilha,
                 caminho_relatorio=caminho_relatorio,
                 url_aghu=url_aghu,
+<<<<<<< HEAD
                 mostrar_browser=mostrar_browser,
                 mostrar_console=mostrar_console,
+=======
+                mostrar_browser=True,
+>>>>>>> e2d6b15 (fix (ui_criar_usuario_aghu) : Definido ambiente 'Homologação'como padrão na criacão de usuario. Incrementado alerta ao selecionar ambiente de 'Produção'.)
                 diretorio_logs=LOGS_DIR,
             )
             resumo = self._resumir_resultados(resultados)
