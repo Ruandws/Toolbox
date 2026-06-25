@@ -1,8 +1,12 @@
+import ctypes
+import os
 import re
 import time
+from contextlib import contextmanager, redirect_stderr, redirect_stdout
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
-from typing import Literal
+from typing import Iterator, Literal
 
 import pandas as pd
 from playwright.sync_api import BrowserContext, FrameLocator, Locator, Page
@@ -13,6 +17,7 @@ from autenticador import AGHU_URL, autenticar_aghu_page, exigir_login_valido
 from menu import navegar_menu_aghu
 
 
+BASE_DIR = Path(__file__).resolve().parent
 CAMINHO_MENU_CADASTRO_USUARIO = (
     "Outros Módulos",
     "Configuração",
@@ -49,6 +54,28 @@ SELECTOR_TABELA_IDENTITY = (
     '[id="tabelaUsuariosIdentityManager:resultList_data"] > tr'
 )
 TEXTO_NENHUM_REGISTRO = "Nenhum registro encontrado!"
+
+
+def esconder_console_windows() -> None:
+    if os.name != "nt":
+        return
+
+    hwnd = ctypes.windll.kernel32.GetConsoleWindow()
+    if hwnd:
+        ctypes.windll.user32.ShowWindow(hwnd, 0)
+
+
+@contextmanager
+def _controle_saida_terminal(mostrar_console: bool) -> Iterator[None]:
+    if mostrar_console:
+        yield
+        return
+
+    esconder_console_windows()
+
+    with open(os.devnull, "w", encoding="utf-8") as destino_nulo:
+        with redirect_stdout(destino_nulo), redirect_stderr(destino_nulo):
+            yield
 
 
 @dataclass(frozen=True)
@@ -141,6 +168,95 @@ def _resultado(
         status=status,
         detalhes=detalhes,
     )
+
+
+def _numero_linha_usuario(indice: int) -> int:
+    return indice + 1
+
+
+def _criar_log_resultado(resultado: ResultadoImportacao) -> dict:
+    return {
+        "Login": resultado.login,
+        "Nome Completo": resultado.nome_completo,
+        "E-mail": resultado.email,
+        "Status": resultado.status,
+        "Detalhes": resultado.detalhes,
+    }
+
+
+def _registrar_inicio_linha(
+    indice_linha: int,
+    total_linhas: int,
+    usuario: UsuarioImportacao,
+) -> None:
+    print("\n========================================")
+    print(
+        f"Investigando [{_numero_linha_usuario(indice_linha)}/{total_linhas}]: "
+        f"Usuario [{usuario.login}] | E-mail [{usuario.email}]"
+    )
+
+
+def _registrar_linha_ignorada(
+    indice_linha: int,
+    total_linhas: int,
+    resultado: ResultadoImportacao,
+) -> None:
+    print("\n========================================")
+    print(
+        f"Ignorando linha [{_numero_linha_usuario(indice_linha)}/{total_linhas}]: "
+        f"{resultado.detalhes}"
+    )
+
+
+def _gerar_csv_logs(
+    resultados: list[ResultadoImportacao],
+    usuario_rede: str,
+    diretorio_logs: str | os.PathLike | None,
+) -> str:
+    print("\nFim da leitura. Gerando arquivo CSV de logs...")
+    df_logs = pd.DataFrame([_criar_log_resultado(resultado) for resultado in resultados])
+    pasta_logs = Path(diretorio_logs) if diretorio_logs else BASE_DIR / "logs"
+    pasta_logs.mkdir(parents=True, exist_ok=True)
+    data_hora_atual = datetime.now().strftime("%Y%m%d_%H%M%S")
+    nome_arquivo_log = pasta_logs / f"log_resultado_{data_hora_atual}.csv"
+
+    with nome_arquivo_log.open("w", encoding="utf-8-sig") as arquivo:
+        arquivo.write(f"Atualizado por: {usuario_rede}\n")
+
+    df_logs.to_csv(
+        nome_arquivo_log,
+        index=False,
+        sep=";",
+        encoding="utf-8-sig",
+        mode="a",
+    )
+
+    print(f"Relatorio CSV gerado com sucesso: {nome_arquivo_log}")
+    return str(nome_arquivo_log)
+
+
+def _resultados_preenchidos(
+    resultados: list[ResultadoImportacao | None],
+) -> list[ResultadoImportacao]:
+    return [resultado for resultado in resultados if resultado is not None]
+
+
+def _finalizar_resultados_importacao(
+    resultados: list[ResultadoImportacao | None],
+    usuario_rede: str,
+    diretorio_logs: str | os.PathLike | None,
+    gerar_csv_log: bool,
+) -> list[ResultadoImportacao]:
+    resultados_finais = _resultados_preenchidos(resultados)
+
+    if gerar_csv_log:
+        _gerar_csv_logs(
+            resultados=resultados_finais,
+            usuario_rede=usuario_rede,
+            diretorio_logs=diretorio_logs,
+        )
+
+    return resultados_finais
 
 
 def _primeiro_visivel(
@@ -525,6 +641,8 @@ def fazer_login(
     *,
     url_aghu: str = AGHU_URL,
 ):
+    print(f"Checando autenticacao no AGHUX com o usuario: {usuario_rede}")
+
     resultado = autenticar_aghu_page(
         page=page,
         usuario=usuario_rede,
@@ -532,6 +650,14 @@ def fazer_login(
         url_login=url_aghu,
         timeout_ms=15000,
     )
+
+    if resultado.status == "sessao_ativa":
+        print("Sessao ja estava ativa.")
+    elif resultado.status == "sucesso":
+        print("Login efetuado com sucesso.")
+    else:
+        print(f"Falha de autenticacao: {resultado.mensagem}")
+
     exigir_login_valido(resultado)
     return resultado
 
@@ -544,6 +670,8 @@ def trocar_aba_aghux(
     *,
     url_aghu: str = AGHU_URL,
 ) -> Page:
+    print("[Clean State] Fechando aba atual e abrindo nova aba limpa.")
+
     try:
         page_atual.close()
     except Exception:
@@ -551,6 +679,7 @@ def trocar_aba_aghux(
 
     nova_page = context.new_page()
     nova_page.goto(url_aghu)
+    print(f"Ambiente acessado: {nova_page.url}")
 
     resultado = autenticar_aghu_page(
         page=nova_page,
@@ -559,6 +688,14 @@ def trocar_aba_aghux(
         url_login=url_aghu,
         timeout_ms=15000,
     )
+
+    if resultado.status == "sessao_ativa":
+        print("Sessao reaproveitada na nova aba.")
+    elif resultado.status == "sucesso":
+        print("Login efetuado na nova aba.")
+    else:
+        print(f"Falha ao autenticar nova aba: {resultado.mensagem}")
+
     exigir_login_valido(resultado)
 
     return nova_page
@@ -572,6 +709,7 @@ def navegar_ate_cadastro_usuario(
     *,
     url_aghu: str = AGHU_URL,
 ) -> tuple[Page, FrameLocator]:
+    print("Navegando ate o modulo de Cadastro de Usuario...")
     page = page_atual
 
     for tentativa in range(2):
@@ -590,6 +728,7 @@ def navegar_ate_cadastro_usuario(
 
         except Exception:
             if tentativa == 0:
+                print("Falha ao navegar no menu. Acionando Clean State...")
                 page = trocar_aba_aghux(
                     context=context,
                     page_atual=page,
@@ -654,9 +793,11 @@ def importar_usuario(
 
     login = usuario.login
 
+    print(f"Pesquisando usuario no AGHUX: {login}")
     estado_pesquisa, _ = _pesquisar_usuario_importado(janela_sistema, login)
 
     if estado_pesquisa == "encontrado":
+        print("Usuario ja estava importado no AGHUX.")
         return _resultado(
             usuario,
             STATUS_JA_IMPORTADO,
@@ -664,12 +805,14 @@ def importar_usuario(
         )
 
     if estado_pesquisa == "indefinido":
+        print("Pesquisa inicial sem retorno conclusivo.")
         return _resultado(
             usuario,
             STATUS_ERRO,
             "Pesquisa inicial nao retornou estado conclusivo.",
         )
 
+    print("Usuario ainda nao importado. Abrindo importacao...")
     _abrir_importacao_usuario(janela_sistema)
     estado_identity, linha_identity = _pesquisar_usuario_identity(
         janela_sistema,
@@ -677,22 +820,27 @@ def importar_usuario(
     )
 
     if estado_identity != "encontrado" or linha_identity is None:
+        print("Usuario nao localizado no Identity Manager.")
         return _resultado(
             usuario,
             STATUS_NAO_ENCONTRADO,
             "Usuario nao localizado para importacao no Identity Manager.",
         )
 
+    print("Usuario localizado no Identity Manager. Adicionando...")
     _clicar_adicionar_identity(linha_identity)
     _preencher_cadastro_usuario(janela_sistema, usuario)
     estado_gravacao, mensagem = _gravar_cadastro_usuario(janela_sistema)
 
     if estado_gravacao == "sucesso":
+        print("Cadastro finalizado com sucesso.")
         return _resultado(usuario, STATUS_IMPORTADO, mensagem)
 
     if estado_gravacao == "duplicado":
+        print("AGHUX informou usuario duplicado/ja importado.")
         return _resultado(usuario, STATUS_JA_IMPORTADO, mensagem)
 
+    print(f"Erro retornado pelo AGHUX: {mensagem}")
     return _resultado(usuario, STATUS_ERRO, mensagem)
 
 
@@ -705,18 +853,36 @@ def processar_usuarios(
     senha: str,
     *,
     url_aghu: str = AGHU_URL,
+    indices_originais: list[int] | None = None,
+    total_usuarios: int | None = None,
 ) -> list[ResultadoImportacao]:
     resultados: list[ResultadoImportacao] = []
     page = page_inicial
     janela_sistema = janela_sistema_inicial
+    total_linhas = total_usuarios if total_usuarios is not None else len(usuarios)
 
-    for usuario in usuarios:
+    for posicao, usuario in enumerate(usuarios):
+        indice_linha = (
+            indices_originais[posicao]
+            if indices_originais is not None and posicao < len(indices_originais)
+            else posicao
+        )
         usuario, resultado_validacao = _preparar_usuario_importacao(usuario)
 
         if resultado_validacao is not None:
+            _registrar_linha_ignorada(
+                indice_linha=indice_linha,
+                total_linhas=total_linhas,
+                resultado=resultado_validacao,
+            )
             resultados.append(resultado_validacao)
             continue
 
+        _registrar_inicio_linha(
+            indice_linha=indice_linha,
+            total_linhas=total_linhas,
+            usuario=usuario,
+        )
         resultado_linha: ResultadoImportacao | None = None
 
         for tentativa in range(2):
@@ -733,6 +899,10 @@ def processar_usuarios(
                 break
             except Exception as exc:
                 if tentativa == 0:
+                    print(
+                        "Falha tecnica durante a importacao. "
+                        "Tentando novamente em nova aba..."
+                    )
                     page = trocar_aba_aghux(
                         context=context,
                         page_atual=page,
@@ -754,6 +924,7 @@ def processar_usuarios(
                     STATUS_ERRO,
                     f"Falha tecnica durante a importacao: {exc}",
                 )
+                print(f"Falha tecnica definitiva: {exc}")
 
         if resultado_linha is None:
             resultado_linha = _resultado(
@@ -762,6 +933,10 @@ def processar_usuarios(
                 "Falha tecnica durante a importacao.",
             )
 
+        print(
+            f"Anotando no diario: [{resultado_linha.status}] "
+            f"{resultado_linha.detalhes}"
+        )
         resultados.append(resultado_linha)
 
     return resultados
@@ -853,6 +1028,9 @@ def executar_importacao_usuarios(
     *,
     url_aghu: str = AGHU_URL,
     mostrar_browser: bool = True,
+    mostrar_console: bool = True,
+    diretorio_logs: str | os.PathLike | None = None,
+    gerar_csv_log: bool = True,
 ) -> list[ResultadoImportacao]:
     if not usuario_rede or not senha:
         raise ValueError("Preencha usuario de rede e senha.")
@@ -860,22 +1038,57 @@ def executar_importacao_usuarios(
     if not url_aghu:
         raise ValueError("Informe o ambiente do AGHU.")
 
-    resultados: list[ResultadoImportacao | None] = []
-    indices_usuarios_validos = []
-    usuarios_validos = []
+    with _controle_saida_terminal(mostrar_console):
+        return _executar_importacao_usuarios_com_saida_configurada(
+            usuarios=usuarios,
+            usuario_rede=usuario_rede,
+            senha=senha,
+            url_aghu=url_aghu,
+            mostrar_browser=mostrar_browser,
+            diretorio_logs=diretorio_logs,
+            gerar_csv_log=gerar_csv_log,
+        )
 
-    for indice, usuario in enumerate(usuarios):
+
+def _executar_importacao_usuarios_com_saida_configurada(
+    usuarios: list[UsuarioImportacao],
+    usuario_rede: str,
+    senha: str,
+    *,
+    url_aghu: str,
+    mostrar_browser: bool,
+    diretorio_logs: str | os.PathLike | None,
+    gerar_csv_log: bool,
+) -> list[ResultadoImportacao]:
+
+    resultados_prevalidacao: list[ResultadoImportacao | None] = []
+    usuarios_validos = []
+    total_usuarios = len(usuarios)
+
+    for usuario in usuarios:
         usuario_normalizado, resultado_validacao = _preparar_usuario_importacao(
             usuario
         )
-        resultados.append(resultado_validacao)
+        resultados_prevalidacao.append(resultado_validacao)
 
         if resultado_validacao is None:
-            indices_usuarios_validos.append(indice)
             usuarios_validos.append(usuario_normalizado)
 
     if not usuarios_validos:
-        return [resultado for resultado in resultados if resultado is not None]
+        for indice, resultado in enumerate(resultados_prevalidacao):
+            if resultado is not None:
+                _registrar_linha_ignorada(
+                    indice_linha=indice,
+                    total_linhas=total_usuarios,
+                    resultado=resultado,
+                )
+
+        return _finalizar_resultados_importacao(
+            resultados=resultados_prevalidacao,
+            usuario_rede=usuario_rede,
+            diretorio_logs=diretorio_logs,
+            gerar_csv_log=gerar_csv_log,
+        )
 
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(
@@ -887,6 +1100,7 @@ def executar_importacao_usuarios(
 
         try:
             page.goto(url_aghu)
+            print(f"Ambiente acessado: {page.url}")
             fazer_login(page, usuario_rede, senha, url_aghu=url_aghu)
             page, janela_sistema = navegar_ate_cadastro_usuario(
                 context=context,
@@ -899,19 +1113,19 @@ def executar_importacao_usuarios(
                 context=context,
                 page_inicial=page,
                 janela_sistema_inicial=janela_sistema,
-                usuarios=usuarios_validos,
+                usuarios=usuarios,
                 usuario_rede=usuario_rede,
                 senha=senha,
                 url_aghu=url_aghu,
+                total_usuarios=total_usuarios,
             )
 
-            for indice, resultado in zip(
-                indices_usuarios_validos,
-                resultados_processados,
-            ):
-                resultados[indice] = resultado
-
-            return [resultado for resultado in resultados if resultado is not None]
+            return _finalizar_resultados_importacao(
+                resultados=resultados_processados,
+                usuario_rede=usuario_rede,
+                diretorio_logs=diretorio_logs,
+                gerar_csv_log=gerar_csv_log,
+            )
         finally:
             browser.close()
 
@@ -925,6 +1139,8 @@ def executar_importacao_individual(
     *,
     url_aghu: str = AGHU_URL,
     mostrar_browser: bool = True,
+    mostrar_console: bool = True,
+    diretorio_logs: str | os.PathLike | None = None,
 ) -> ResultadoImportacao:
     resultados = executar_importacao_usuarios(
         usuarios=[
@@ -938,6 +1154,8 @@ def executar_importacao_individual(
         senha=senha,
         url_aghu=url_aghu,
         mostrar_browser=mostrar_browser,
+        mostrar_console=mostrar_console,
+        diretorio_logs=diretorio_logs,
     )
 
     return resultados[0]
@@ -951,6 +1169,8 @@ def executar_importacao_lote(
     *,
     url_aghu: str = AGHU_URL,
     mostrar_browser: bool = True,
+    mostrar_console: bool = True,
+    diretorio_logs: str | os.PathLike | None = None,
 ) -> tuple[list[ResultadoImportacao], Path]:
     usuarios = ler_planilha_usuarios(caminho_planilha)
     resultados = executar_importacao_usuarios(
@@ -959,6 +1179,8 @@ def executar_importacao_lote(
         senha=senha,
         url_aghu=url_aghu,
         mostrar_browser=mostrar_browser,
+        mostrar_console=mostrar_console,
+        diretorio_logs=diretorio_logs,
     )
     relatorio = salvar_relatorio_resultados(resultados, caminho_relatorio)
 

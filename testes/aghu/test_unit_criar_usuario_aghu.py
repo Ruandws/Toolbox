@@ -4,6 +4,7 @@
 
 import pytest
 
+import criar_usuario_aghu as aghu
 from criar_usuario_aghu import (
     COLUNAS_OBRIGATORIAS_PLANILHA,
     STATUS_ERRO,
@@ -206,6 +207,40 @@ class TestValidacaoAntesDoBrowser:
         assert len(resultados) == 1
         assert resultados[0].status == STATUS_IGNORADO
         assert "E-mail invalido" in resultados[0].detalhes
+
+    def test_executar_importacao_sem_console_nao_imprime_e_gera_csv(
+        self,
+        monkeypatch,
+        capsys,
+        tmp_path,
+    ):
+        monkeypatch.setattr(aghu, "esconder_console_windows", lambda: None)
+
+        resultados = aghu.executar_importacao_usuarios(
+            usuarios=[
+                UsuarioImportacao(
+                    login="joao.silva",
+                    nome_completo="Joao Silva",
+                    email="email-invalido",
+                )
+            ],
+            usuario_rede="usuario.rede",
+            senha="senha",
+            mostrar_console=False,
+            diretorio_logs=tmp_path,
+        )
+
+        saida = capsys.readouterr()
+        arquivos_csv = list(tmp_path.glob("log_resultado_*.csv"))
+
+        assert saida.out == ""
+        assert saida.err == ""
+        assert len(resultados) == 1
+        assert resultados[0].status == STATUS_IGNORADO
+        assert len(arquivos_csv) == 1
+        assert "Atualizado por: usuario.rede" in arquivos_csv[0].read_text(
+            encoding="utf-8-sig"
+        )
 
 
 # ---------------------------------------------------------------------------

@@ -106,6 +106,7 @@ def app_fake():
     app.em_execucao = False
     app.var_ambiente = FakeStringVar(ui.AMBIENTE_PRODUCAO)
     app.var_tipo_execucao = FakeStringVar(ui.TIPO_INDIVIDUAL)
+    app.var_console = FakeStringVar(True)
     app.entry_usuario_rede = FakeEntry()
     app.entry_senha = FakeEntry()
     app.entry_login_individual = FakeEntry()
@@ -115,6 +116,7 @@ def app_fake():
     app.entry_relatorio_lote = FakeEntry()
     app.button_executar = FakeWidget()
     app.segment_tipo_execucao = FakeSegment()
+    app.checkbox_console = FakeWidget()
     app.button_planilha_lote = FakeWidget()
     app.button_relatorio_lote = FakeWidget()
     app.label_status = FakeWidget()
@@ -356,6 +358,7 @@ def test_bloquear_e_liberar_execucao_alteram_estados(app_fake):
     assert app_fake.button_executar.configuracoes["state"] == "disabled"
     assert app_fake.button_executar.configuracoes["text"] == "Executando..."
     assert app_fake.segment_tipo_execucao.configuracoes["state"] == "disabled"
+    assert app_fake.checkbox_console.configuracoes["state"] == "disabled"
     assert app_fake.button_planilha_lote.configuracoes["state"] == "disabled"
     assert app_fake.button_relatorio_lote.configuracoes["state"] == "disabled"
 
@@ -365,6 +368,7 @@ def test_bloquear_e_liberar_execucao_alteram_estados(app_fake):
     assert app_fake.button_executar.configuracoes["state"] == "normal"
     assert app_fake.button_executar.configuracoes["text"] == "Executar importação"
     assert app_fake.segment_tipo_execucao.configuracoes["state"] == "normal"
+    assert app_fake.checkbox_console.configuracoes["state"] == "normal"
     assert app_fake.button_planilha_lote.configuracoes["state"] == "normal"
     assert app_fake.button_relatorio_lote.configuracoes["state"] == "normal"
 
@@ -428,7 +432,15 @@ def test_iniciar_execucao_individual_inicia_thread_com_dados_da_tela(
     assert thread.iniciada is True
     assert thread.daemon is True
     assert thread.target == app_fake._executar_individual_thread
-    assert thread.args == ("usuario", "senha", "login", "Nome", "email@x.com", ui.AGHU_URL)
+    assert thread.args == (
+        "usuario",
+        "senha",
+        "login",
+        "Nome",
+        "email@x.com",
+        ui.AGHU_URL,
+        True,
+    )
     assert (
         app_fake.label_status.configuracoes["text"]
         == "Executando importação individual..."
@@ -484,6 +496,7 @@ def test_iniciar_execucao_lote_gera_relatorio_padrao_e_inicia_thread(
         "usuarios.xlsx",
         "relatorio_gerado.xlsx",
         ui.AGHU_URL,
+        True,
     )
 
 
@@ -529,6 +542,7 @@ def test_executar_individual_thread_agenda_finalizacao_em_sucesso(
         "Nome",
         "email@x.com",
         "url",
+        True,
     )
 
     delay, func, args = chamadas[0]
@@ -557,6 +571,7 @@ def test_executar_individual_thread_agenda_finalizacao_em_erro(
         "Nome",
         "email@x.com",
         "url",
+        True,
     )
 
     assert chamadas[0][2] == ("Erro: falha", "red")
@@ -581,6 +596,7 @@ def test_executar_lote_thread_agenda_finalizacao_com_resumo(app_fake, monkeypatc
         "usuarios.xlsx",
         "relatorio.xlsx",
         "url",
+        True,
     )
 
     assert chamadas[0][0] == 0

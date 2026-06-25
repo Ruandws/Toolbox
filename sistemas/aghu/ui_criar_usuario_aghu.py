@@ -60,6 +60,7 @@ class AghuImportUserApp(ctk.CTk):
 
         self.var_ambiente = tk.StringVar(value=AMBIENTE_HOMOLOGACAO)
         self.var_tipo_execucao = tk.StringVar(value=TIPO_INDIVIDUAL)
+        self.var_console = tk.BooleanVar(value=True)
         self.em_execucao = False
 
         self.label_title = ctk.CTkLabel(
@@ -84,6 +85,7 @@ class AghuImportUserApp(ctk.CTk):
         self.frame_lote = self._criar_secao_execucao("Execução em Lote")
 
         self._criar_campos_acesso()
+        self._criar_opcoes_execucao()
         self._criar_seletor_tipo_execucao()
         self._criar_campos_individual()
         self._criar_campos_lote()
@@ -261,6 +263,21 @@ class AghuImportUserApp(ctk.CTk):
 
         self._atualizar_alerta_ambiente(self.var_ambiente.get())
 
+    def _criar_opcoes_execucao(self) -> None:
+        self.checkbox_console = ctk.CTkCheckBox(
+            self.frame_acesso,
+            text="Exibir Terminal de processos (logs)",
+            variable=self.var_console,
+        )
+        self.checkbox_console.grid(
+            row=5,
+            column=1,
+            columnspan=2,
+            padx=14,
+            pady=(8, 14),
+            sticky="w",
+        )
+
     def _criar_campos_individual(self) -> None:
         self.entry_login_individual = self._criar_linha_entry(
             self.frame_individual,
@@ -423,6 +440,7 @@ class AghuImportUserApp(ctk.CTk):
         self.em_execucao = True
         self.button_executar.configure(state="disabled", text=texto_botao)
         self.segment_tipo_execucao.configure(state="disabled")
+        self.checkbox_console.configure(state="disabled")
         self.button_planilha_lote.configure(state="disabled")
         self.button_relatorio_lote.configure(state="disabled")
 
@@ -431,6 +449,7 @@ class AghuImportUserApp(ctk.CTk):
         self.em_execucao = False
         self.button_executar.configure(state="normal", text="Executar importação")
         self.segment_tipo_execucao.configure(state="normal")
+        self.checkbox_console.configure(state="normal")
         self.button_planilha_lote.configure(state="normal")
         self.button_relatorio_lote.configure(state="normal")
 
@@ -443,6 +462,7 @@ class AghuImportUserApp(ctk.CTk):
             login = self.entry_login_individual.get()
             nome_completo = self.entry_nome_individual.get()
             email = self.entry_email_individual.get()
+            mostrar_console = bool(self.var_console.get())
         except Exception as exc:
             self._mostrar_status(f"Erro: {exc}", "red")
             return
@@ -452,7 +472,15 @@ class AghuImportUserApp(ctk.CTk):
 
         thread = threading.Thread(
             target=self._executar_individual_thread,
-            args=(usuario_rede, senha, login, nome_completo, email, url_aghu),
+            args=(
+                usuario_rede,
+                senha,
+                login,
+                nome_completo,
+                email,
+                url_aghu,
+                mostrar_console,
+            ),
             daemon=True,
         )
         thread.start()
@@ -465,6 +493,7 @@ class AghuImportUserApp(ctk.CTk):
         nome_completo: str,
         email: str,
         url_aghu: str,
+        mostrar_console: bool,
     ) -> None:
         try:
             resultado = executar_importacao_individual(
@@ -475,6 +504,7 @@ class AghuImportUserApp(ctk.CTk):
                 email=email,
                 url_aghu=url_aghu,
                 mostrar_browser=True,
+                mostrar_console=mostrar_console,
                 diretorio_logs=LOGS_DIR,
             )
             mensagem = f"{resultado.login}: {resultado.status} - {resultado.detalhes}"
@@ -490,6 +520,7 @@ class AghuImportUserApp(ctk.CTk):
             usuario_rede, senha, url_aghu = self._credenciais_e_url()
             caminho_planilha = self.entry_planilha_lote.get().strip()
             caminho_relatorio = self.entry_relatorio_lote.get().strip()
+            mostrar_console = bool(self.var_console.get())
 
             if not caminho_planilha:
                 raise ValueError("Informe a planilha .xlsx de lote.")
@@ -509,7 +540,14 @@ class AghuImportUserApp(ctk.CTk):
 
         thread = threading.Thread(
             target=self._executar_lote_thread,
-            args=(usuario_rede, senha, caminho_planilha, caminho_relatorio, url_aghu),
+            args=(
+                usuario_rede,
+                senha,
+                caminho_planilha,
+                caminho_relatorio,
+                url_aghu,
+                mostrar_console,
+            ),
             daemon=True,
         )
         thread.start()
@@ -521,6 +559,7 @@ class AghuImportUserApp(ctk.CTk):
         caminho_planilha: str,
         caminho_relatorio: str,
         url_aghu: str,
+        mostrar_console: bool,
     ) -> None:
         try:
             resultados, relatorio = executar_importacao_lote(
@@ -530,6 +569,7 @@ class AghuImportUserApp(ctk.CTk):
                 caminho_relatorio=caminho_relatorio,
                 url_aghu=url_aghu,
                 mostrar_browser=True,
+                mostrar_console=mostrar_console,
                 diretorio_logs=LOGS_DIR,
             )
             resumo = self._resumir_resultados(resultados)
