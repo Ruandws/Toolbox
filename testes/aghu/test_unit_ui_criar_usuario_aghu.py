@@ -250,7 +250,7 @@ def test_on_ambiente_changed_nao_exibe_alerta_modal_em_homologacao(
     assert chamadas == []
 
 
-def test_validar_opcoes_visibilidade_do_browser_religa_browser_quando_tudo_oculto(
+def test_validar_opcoes_visibilidade_religa_browser_quando_tudo_oculto(
     app_fake,
     monkeypatch,
 ):
@@ -263,14 +263,14 @@ def test_validar_opcoes_visibilidade_do_browser_religa_browser_quando_tudo_ocult
         lambda *args, **kwargs: chamadas.append((args, kwargs)),
     )
 
-    ui.AghuImportUserApp._validar_opcoes_visibilidade_do_browser(app_fake)
+    ui.AghuImportUserApp._validar_opcoes_visibilidade(app_fake, app_fake.var_browser)
 
     assert app_fake.var_browser.get() is True
     assert app_fake.var_console.get() is False
     assert len(chamadas) == 1
 
 
-def test_validar_opcoes_visibilidade_do_console_religa_console_quando_tudo_oculto(
+def test_validar_opcoes_visibilidade_religa_console_quando_tudo_oculto(
     app_fake,
     monkeypatch,
 ):
@@ -283,7 +283,7 @@ def test_validar_opcoes_visibilidade_do_console_religa_console_quando_tudo_ocult
         lambda *args, **kwargs: chamadas.append((args, kwargs)),
     )
 
-    ui.AghuImportUserApp._validar_opcoes_visibilidade_do_console(app_fake)
+    ui.AghuImportUserApp._validar_opcoes_visibilidade(app_fake, app_fake.var_console)
 
     assert app_fake.var_browser.get() is False
     assert app_fake.var_console.get() is True

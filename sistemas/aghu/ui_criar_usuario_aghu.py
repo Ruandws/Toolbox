@@ -269,7 +269,7 @@ class AghuImportUserApp(ctk.CTk):
             self.frame_acesso,
             text="Exibir Navegador (Modo Visual)",
             variable=self.var_browser,
-            command=self._validar_opcoes_visibilidade_do_browser,
+            command=lambda: self._validar_opcoes_visibilidade(self.var_browser),
         )
         self.checkbox_browser.grid(
             row=5,
@@ -284,7 +284,7 @@ class AghuImportUserApp(ctk.CTk):
             self.frame_acesso,
             text="Exibir Terminal de processos (logs)",
             variable=self.var_console,
-            command=self._validar_opcoes_visibilidade_do_console,
+            command=lambda: self._validar_opcoes_visibilidade(self.var_console),
         )
         self.checkbox_console.grid(
             row=6,
@@ -295,17 +295,9 @@ class AghuImportUserApp(ctk.CTk):
             sticky="w",
         )
 
-    def _validar_opcoes_visibilidade_do_browser(self) -> None:
+    def _validar_opcoes_visibilidade(self, variavel_alvo: tk.BooleanVar) -> None:
         if not self.var_browser.get() and not self.var_console.get():
-            self.var_browser.set(True)
-            messagebox.showwarning(
-                "Acao bloqueada",
-                "Para evitar processos invisiveis, mantenha o navegador ou o terminal ativo.",
-            )
-
-    def _validar_opcoes_visibilidade_do_console(self) -> None:
-        if not self.var_console.get() and not self.var_browser.get():
-            self.var_console.set(True)
+            variavel_alvo.set(True)
             messagebox.showwarning(
                 "Acao bloqueada",
                 "Para evitar processos invisiveis, mantenha o navegador ou o terminal ativo.",
