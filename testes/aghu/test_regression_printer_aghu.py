@@ -1,6 +1,5 @@
 import builtins
 
-import pandas as pd
 import pytest
 
 import PrinterAGHU as printer_aghu
@@ -22,19 +21,16 @@ def dados_planilha():
 
 def test_regressao_processar_computadores_ignora_linha_com_campo_obrigatorio_vazio(
     monkeypatch,
+    tmp_xlsx,
+    tmp_path,
 ):
-    planilha = pd.DataFrame(
-        [
-            {
-                "HostPC": "pc-01",
-                "IPPC": "",
-                "HostPrinter": "fila-impressora",
-                "IPPrinter": "10.0.0.20",
-                "PrinterClass": "PDF",
-            }
-        ]
+    caminho_planilha = tmp_xlsx(
+        "entrada.xlsx",
+        ["HostPC", "IPPC", "HostPrinter", "IPPrinter", "PrinterClass"],
+        [["pc-01", "", "fila-impressora", "10.0.0.20", "PDF"]],
     )
     logs_recebidos = []
+    caminho_relatorio = tmp_path / "relatorio.xlsx"
     monkeypatch.setattr(
         printer_aghu,
         "_processar_linha_com_retentativas",
@@ -44,25 +40,30 @@ def test_regressao_processar_computadores_ignora_linha_com_campo_obrigatorio_vaz
     )
     monkeypatch.setattr(
         printer_aghu,
-        "_gerar_csv_logs",
-        lambda logs_do_diario, usuario_str, diretorio_logs: logs_recebidos.extend(
+        "build_report_path",
+        lambda report_directory, source_spreadsheet_path: caminho_relatorio,
+    )
+    monkeypatch.setattr(
+        printer_aghu,
+        "_gerar_relatorio_xlsx",
+        lambda logs_do_diario, source_spreadsheet_path, report_path: logs_recebidos.extend(
             logs_do_diario
         )
-        or "relatorio.csv",
+        or str(report_path),
     )
 
     caminho = printer_aghu.processar_computadores(
         context=object(),
         page_inicial=object(),
         janela_sistema_inicial=object(),
-        planilha=planilha,
+        caminho_planilha=str(caminho_planilha),
         usuario_str="operador",
         senha_str="senha",
-        diretorio_logs=None,
+        report_directory=str(tmp_path),
         url_aghu="https://aghu.example",
     )
 
-    assert caminho == "relatorio.csv"
+    assert caminho == str(caminho_relatorio)
     assert logs_recebidos == [
         {
             "HostPC": "pc-01",

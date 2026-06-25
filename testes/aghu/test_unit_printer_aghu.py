@@ -1,8 +1,9 @@
 import builtins
-from pathlib import Path
+from datetime import datetime
 
 import pandas as pd
 import pytest
+from openpyxl import load_workbook
 
 import PrinterAGHU as printer_aghu
 
@@ -175,7 +176,7 @@ def test_criar_log_linha_monta_colunas_do_relatorio():
     }
 
 
-def test_gerar_csv_logs_escreve_cabecalho_de_auditoria(tmp_path, monkeypatch):
+def test_gerar_relatorio_xlsx_escreve_layout(tmp_path, monkeypatch):
     monkeypatch.setattr(builtins, "print", lambda *args, **kwargs: None)
     logs = [
         {
@@ -188,18 +189,72 @@ def test_gerar_csv_logs_escreve_cabecalho_de_auditoria(tmp_path, monkeypatch):
             "Detalhes": "ok",
         }
     ]
+    caminho_entrada = tmp_path / "entrada.xlsx"
+    caminho_relatorio = tmp_path / "relatorio.xlsx"
 
-    caminho_csv = printer_aghu._gerar_csv_logs(
+    caminho = printer_aghu._gerar_relatorio_xlsx(
         logs_do_diario=logs,
-        usuario_str="operador",
-        diretorio_logs=tmp_path,
+        source_spreadsheet_path=str(caminho_entrada),
+        report_path=caminho_relatorio,
     )
 
-    conteudo = pd.read_csv(caminho_csv, sep=";", skiprows=1, encoding="utf-8-sig")
-    texto = Path(caminho_csv).read_text(encoding="utf-8-sig")
+    workbook = load_workbook(caminho_relatorio)
+    worksheet = workbook.active
 
-    assert texto.startswith("Atualizado por: operador\n")
-    assert conteudo.iloc[0].to_dict() == logs[0]
+    assert caminho == str(caminho_relatorio)
+    assert worksheet.title == "Relatorio"
+    assert [cell.value for cell in worksheet[1]] == list(
+        printer_aghu.COLUNAS_RELATORIO
+    )
+    assert [cell.value for cell in worksheet[2]] == [
+        logs[0][header]
+        for header in printer_aghu.COLUNAS_RELATORIO
+    ]
+    assert worksheet.freeze_panes == "A2"
+    assert worksheet.auto_filter.ref == "A1:G2"
+
+
+def test_ler_planilha_normaliza_aliases_e_ignora_linhas_vazias(tmp_xlsx):
+    caminho = tmp_xlsx(
+        "entrada.xlsx",
+        [
+            "Host PC",
+            "IP do PC",
+            "Fila da Impressora",
+            "IP da Impressora",
+            "Classe de Impressao",
+        ],
+        [
+            ["pc-01", "10.0.0.10", "fila-impressora", "10.0.0.20", "PDF"],
+            [None, None, None, None, None],
+        ],
+    )
+
+    assert printer_aghu.ler_planilha(str(caminho)) == [
+        {
+            "HostPC": "pc-01",
+            "IPPC": "10.0.0.10",
+            "HostPrinter": "fila-impressora",
+            "IPPrinter": "10.0.0.20",
+            "PrinterClass": "PDF",
+        }
+    ]
+
+
+def test_build_report_path_previne_sobrescrita(tmp_path):
+    now = datetime(2026, 6, 25, 12, 46, 0)
+    primeiro = tmp_path / "Resultado_25_06_26_12h46m00.xlsx"
+    segundo = tmp_path / "Resultado_25_06_26_12h46m00_2.xlsx"
+    primeiro.touch()
+    segundo.touch()
+
+    caminho = printer_aghu.build_report_path(
+        str(tmp_path),
+        "entrada.xlsx",
+        now,
+    )
+
+    assert caminho == tmp_path / "Resultado_25_06_26_12h46m00_3.xlsx"
 
 
 def test_processar_linha_reexecuta_apos_cadastrar_impressora(monkeypatch):

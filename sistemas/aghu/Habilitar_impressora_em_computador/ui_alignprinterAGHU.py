@@ -2,24 +2,24 @@ import ctypes
 import os
 import sys
 import threading
-from datetime import datetime
 from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, messagebox
 
 import customtkinter as ctk
-import pandas as pd
-from openpyxl.styles import Alignment, Font, PatternFill
-from openpyxl.utils import get_column_letter
 from playwright.sync_api import sync_playwright
 
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 
-from PrinterAGHU import fazer_login, navegar_ate_modulo, processar_computadores
+from PrinterAGHU import (
+    fazer_login,
+    navegar_ate_modulo,
+    processar_computadores,
+    validate_spreadsheet_extension,
+)
 from autenticador import AGHU_URL, AGHU_URL_HOMOLOGACAO
 
 BASE_DIR = Path(__file__).resolve().parent
-LOGS_DIR = BASE_DIR / "logs"
 AMBIENTE_PRODUCAO = "Produção"
 AMBIENTE_HOMOLOGACAO = "Homologação"
 URLS_AMBIENTE_AGHU = {
@@ -41,133 +41,13 @@ def esconder_console_windows() -> None:
         ctypes.windll.user32.ShowWindow(hwnd, 0)
 
 
-def ler_planilha_entrada(caminho_planilha: str) -> pd.DataFrame:
-    caminho = Path(caminho_planilha)
-
-    if not caminho.exists():
-        raise FileNotFoundError(f"Planilha de entrada não encontrada: {caminho}")
-
-    extensao = caminho.suffix.lower()
-
-    if extensao in {".xlsx", ".xlsm"}:
-        df = pd.read_excel(caminho, dtype=str, engine="openpyxl")
-    elif extensao == ".csv":
-        try:
-            df = pd.read_csv(caminho, sep=";", dtype=str, encoding="utf-8-sig")
-        except UnicodeDecodeError:
-            df = pd.read_csv(caminho, sep=";", dtype=str, encoding="latin1")
-    else:
-        raise ValueError("Formato inválido. Use .xlsx, .xlsm ou .csv.")
-
-    df.columns = df.columns.str.strip()
-    df = df.fillna("")
-
-    colunas_obrigatorias = ["IPPC", "HostPrinter", "PrinterClass"]
-    colunas_faltantes = [
-        coluna for coluna in colunas_obrigatorias if coluna not in df.columns
-    ]
-
-    if colunas_faltantes:
-        raise ValueError(
-            "Planilha inválida. Colunas obrigatórias ausentes: "
-            + ", ".join(colunas_faltantes)
-        )
-
-    return df
-
-
-def normalizar_saida_xlsx(caminho_saida: str) -> Path:
-    caminho = Path(caminho_saida).expanduser()
-
-    if not caminho.suffix:
-        caminho = caminho.with_suffix(".xlsx")
-
-    if caminho.suffix.lower() != ".xlsx":
-        raise ValueError("A planilha de saída deve ser um arquivo .xlsx.")
-
-    caminho.parent.mkdir(parents=True, exist_ok=True)
-    return caminho
-
-
-def localizar_csv_relatorio_gerado(inicio_execucao: float) -> Path:
-    arquivos = list(LOGS_DIR.glob("log_resultado_*.csv"))
-
-    arquivos_recentes = [
-        arquivo
-        for arquivo in arquivos
-        if arquivo.stat().st_mtime >= inicio_execucao - 2
-    ]
-
-    if arquivos_recentes:
-        return max(arquivos_recentes, key=lambda arquivo: arquivo.stat().st_mtime)
-
-    if arquivos:
-        return max(arquivos, key=lambda arquivo: arquivo.stat().st_mtime)
-
-    raise FileNotFoundError("Nenhum relatório CSV foi gerado na pasta logs.")
-
-
-def converter_csv_relatorio_para_xlsx(caminho_csv: Path, caminho_xlsx: Path) -> None:
-    with caminho_csv.open("r", encoding="utf-8-sig") as arquivo:
-        linha_auditoria = arquivo.readline().strip()
-
-    df_relatorio = pd.read_csv(
-        caminho_csv,
-        sep=";",
-        dtype=str,
-        encoding="utf-8-sig",
-        skiprows=1,
-    ).fillna("")
-
-    with pd.ExcelWriter(caminho_xlsx, engine="openpyxl") as writer:
-        df_relatorio.to_excel(
-            writer,
-            index=False,
-            sheet_name="Relatório",
-            startrow=3,
-        )
-
-        worksheet = writer.sheets["Relatório"]
-
-        worksheet["A1"] = linha_auditoria or "Atualizado por:"
-        worksheet["A2"] = f"Gerado em: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}"
-        worksheet["A1"].font = Font(bold=True)
-        worksheet["A2"].font = Font(italic=True)
-
-        header_row = 4
-        first_data_row = 5
-        max_row = max(worksheet.max_row, first_data_row)
-        max_col = max(worksheet.max_column, 1)
-        last_col_letter = get_column_letter(max_col)
-
-        worksheet.freeze_panes = "A5"
-        worksheet.auto_filter.ref = f"A{header_row}:{last_col_letter}{max_row}"
-
-        header_fill = PatternFill("solid", fgColor="D9EAF7")
-
-        for cell in worksheet[header_row]:
-            cell.font = Font(bold=True)
-            cell.fill = header_fill
-            cell.alignment = Alignment(horizontal="center", vertical="center")
-
-        for column_index in range(1, max_col + 1):
-            column_letter = get_column_letter(column_index)
-            max_length = 0
-
-            for cell in worksheet[column_letter]:
-                valor = "" if cell.value is None else str(cell.value)
-                max_length = max(max_length, len(valor))
-
-            worksheet.column_dimensions[column_letter].width = min(max_length + 2, 60)
-
-
 def executar_automacao_aghu(
     usuario: str,
     senha: str,
     mostrar_console: bool,
     mostrar_browser: bool,
     caminho_planilha_entrada: str,
-    caminho_planilha_saida: str,
+    diretorio_relatorio: str,
     url_aghu: str = AGHU_URL,
 ) -> str:
     if not usuario or not senha:
@@ -180,12 +60,6 @@ def executar_automacao_aghu(
         esconder_console_windows()
 
     os.chdir(BASE_DIR)
-
-    planilha = ler_planilha_entrada(caminho_planilha_entrada)
-    caminho_saida = normalizar_saida_xlsx(caminho_planilha_saida)
-    LOGS_DIR.mkdir(parents=True, exist_ok=True)
-
-    inicio_execucao = datetime.now().timestamp()
 
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(
@@ -208,22 +82,20 @@ def executar_automacao_aghu(
                 url_aghu=url_aghu,
             )
 
-            processar_computadores(
+            caminho_relatorio = processar_computadores(
                 context,
                 page,
                 janela_sistema,
-                planilha,
+                caminho_planilha_entrada,
                 usuario,
                 senha,
+                diretorio_relatorio,
                 url_aghu=url_aghu,
             )
         finally:
             browser.close()
 
-    caminho_csv = localizar_csv_relatorio_gerado(inicio_execucao)
-    converter_csv_relatorio_para_xlsx(caminho_csv, caminho_saida)
-
-    return f"Processo concluído. Relatório salvo em: {caminho_saida}"
+    return f"Processo concluido. Relatorio salvo em: {caminho_relatorio}"
 
 
 class AghuPrinterApp(ctk.CTk):
@@ -411,7 +283,7 @@ class AghuPrinterApp(ctk.CTk):
 
         self.entry_spreadsheet_in = ctk.CTkEntry(
             self.frame_inputs,
-            placeholder_text="Arquivo .xlsx, .xlsm ou .csv",
+            placeholder_text="Arquivo .xlsx",
         )
         self.entry_spreadsheet_in.grid(
             row=6,
@@ -429,11 +301,11 @@ class AghuPrinterApp(ctk.CTk):
         )
         self.button_select_spreadsheet_in.grid(row=6, column=2, padx=12, pady=10)
 
-        self.label_spreadsheet_out = ctk.CTkLabel(
+        self.label_report_dir = ctk.CTkLabel(
             self.frame_inputs,
-            text="Planilha saída:",
+            text="Pasta relatorio:",
         )
-        self.label_spreadsheet_out.grid(
+        self.label_report_dir.grid(
             row=7,
             column=0,
             padx=12,
@@ -441,11 +313,11 @@ class AghuPrinterApp(ctk.CTk):
             sticky="e",
         )
 
-        self.entry_spreadsheet_out = ctk.CTkEntry(
+        self.entry_report_dir = ctk.CTkEntry(
             self.frame_inputs,
-            placeholder_text="Arquivo .xlsx do relatório",
+            placeholder_text="Pasta onde o relatorio XLSX sera salvo",
         )
-        self.entry_spreadsheet_out.grid(
+        self.entry_report_dir.grid(
             row=7,
             column=1,
             padx=12,
@@ -453,13 +325,13 @@ class AghuPrinterApp(ctk.CTk):
             sticky="ew",
         )
 
-        self.button_select_spreadsheet_out = ctk.CTkButton(
+        self.button_select_report_dir = ctk.CTkButton(
             self.frame_inputs,
             text="Selecionar",
             width=110,
-            command=self.select_output_spreadsheet,
+            command=self.select_report_directory,
         )
-        self.button_select_spreadsheet_out.grid(
+        self.button_select_report_dir.grid(
             row=7,
             column=2,
             padx=12,
@@ -486,9 +358,7 @@ class AghuPrinterApp(ctk.CTk):
         file_path = filedialog.askopenfilename(
             title="Selecione a planilha de entrada",
             filetypes=(
-                ("Planilhas", "*.xlsx *.xlsm *.csv"),
-                ("Excel", "*.xlsx *.xlsm"),
-                ("CSV", "*.csv"),
+                ("Planilhas", "*.xlsx"),
             ),
         )
 
@@ -496,31 +366,23 @@ class AghuPrinterApp(ctk.CTk):
             self.entry_spreadsheet_in.delete(0, "end")
             self.entry_spreadsheet_in.insert(0, file_path)
 
-            if not self.entry_spreadsheet_out.get().strip():
-                default_output = Path(file_path).with_name(
-                    f"relatorio_aghu_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
-                )
-                self.entry_spreadsheet_out.insert(0, str(default_output))
+            if not self.entry_report_dir.get().strip():
+                self.entry_report_dir.insert(0, str(Path(file_path).parent))
 
-    def select_output_spreadsheet(self) -> None:
-        default_name = f"relatorio_aghu_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
-
-        file_path = filedialog.asksaveasfilename(
-            title="Salvar relatório como",
-            defaultextension=".xlsx",
-            initialfile=default_name,
-            filetypes=(("Excel", "*.xlsx"),),
+    def select_report_directory(self) -> None:
+        directory = filedialog.askdirectory(
+            title="Selecione a pasta de relatorio",
         )
 
-        if file_path:
-            self.entry_spreadsheet_out.delete(0, "end")
-            self.entry_spreadsheet_out.insert(0, file_path)
+        if directory:
+            self.entry_report_dir.delete(0, "end")
+            self.entry_report_dir.insert(0, directory)
 
     def start_automation(self) -> None:
         usuario = self.entry_user.get().strip()
         senha = self.entry_password.get().strip()
         caminho_entrada = self.entry_spreadsheet_in.get().strip()
-        caminho_saida = self.entry_spreadsheet_out.get().strip()
+        diretorio_relatorio = self.entry_report_dir.get().strip()
         mostrar_console = bool(self.var_console.get())
         mostrar_browser = bool(self.var_browser.get())
         ambiente = self.var_ambiente.get()
@@ -534,12 +396,16 @@ class AghuPrinterApp(ctk.CTk):
             self.show_status("Erro: informe a planilha de entrada.", "red")
             return
 
-        if not caminho_saida:
-            self.show_status("Erro: informe a planilha de saída do relatório.", "red")
+        if not diretorio_relatorio:
+            self.show_status("Erro: informe a pasta de relatorio.", "red")
             return
 
         try:
-            normalizar_saida_xlsx(caminho_saida)
+            validate_spreadsheet_extension(caminho_entrada)
+            if not Path(diretorio_relatorio).expanduser().is_dir():
+                raise NotADirectoryError(
+                    f"A pasta de relatorio nao existe: {diretorio_relatorio}"
+                )
         except Exception as exc:
             self.show_status(f"Erro: {exc}", "red")
             return
@@ -555,7 +421,7 @@ class AghuPrinterApp(ctk.CTk):
                 mostrar_console,
                 mostrar_browser,
                 caminho_entrada,
-                caminho_saida,
+                diretorio_relatorio,
                 url_aghu,
             ),
             daemon=True,
@@ -569,7 +435,7 @@ class AghuPrinterApp(ctk.CTk):
         mostrar_console: bool,
         mostrar_browser: bool,
         caminho_entrada: str,
-        caminho_saida: str,
+        diretorio_relatorio: str,
         url_aghu: str,
     ) -> None:
         try:
@@ -579,7 +445,7 @@ class AghuPrinterApp(ctk.CTk):
                 mostrar_console=mostrar_console,
                 mostrar_browser=mostrar_browser,
                 caminho_planilha_entrada=caminho_entrada,
-                caminho_planilha_saida=caminho_saida,
+                diretorio_relatorio=diretorio_relatorio,
                 url_aghu=url_aghu,
             )
             self.after(0, self.finish_automation, result_msg, "green")

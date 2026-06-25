@@ -2,13 +2,17 @@ import os
 import re
 import sys
 import time
+import unicodedata
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
 
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 
-import pandas as pd
+from openpyxl import Workbook, load_workbook
+from openpyxl.utils import get_column_letter
+from openpyxl.worksheet.worksheet import Worksheet
 from playwright.sync_api import BrowserContext, Page
 
 #Imports de classes utilitárias públicas.
@@ -25,6 +29,8 @@ from AddPrinterAGHU import (
 
 
 BASE_DIR = Path(__file__).resolve().parent
+SUPPORTED_EXTENSIONS = (".xlsx",)
+Row = Dict[str, Any]
 
 # ==========================================
 # CAMINHOS DO PROCEDIMENTO
@@ -38,6 +44,60 @@ CAMINHO_MENU_IMPRESSORA_POR_COMPUTADOR = (
     "Impressora por Computador",
 )
 COLUNAS_OBRIGATORIAS_PLANILHA = ["IPPC", "HostPrinter", "PrinterClass"]
+COLUNAS_RELATORIO = (
+    "HostPC",
+    "IPPC",
+    "HostPrinter",
+    "IPPrinter",
+    "PrinterClass",
+    "Status",
+    "Detalhes",
+)
+ALIASES_COLUNAS_PLANILHA = {
+    "HostPC": (
+        "HostPC",
+        "Host PC",
+        "Computador",
+        "Nome Computador",
+        "Nome do Computador",
+    ),
+    "IPPC": (
+        "IPPC",
+        "IP PC",
+        "IP do PC",
+        "IP Computador",
+        "IP do Computador",
+        "Endereco IP PC",
+        "Endereco IP do PC",
+    ),
+    "HostPrinter": (
+        "HostPrinter",
+        "Host Printer",
+        "Impressora",
+        "Fila",
+        "Fila Impressora",
+        "Fila da Impressora",
+        "Nome Impressora",
+        "Nome da Impressora",
+    ),
+    "IPPrinter": (
+        "IPPrinter",
+        "IP Printer",
+        "IP da Impressora",
+        "IP Impressora",
+        "Endereco IP Impressora",
+        "Endereco IP da Impressora",
+    ),
+    "PrinterClass": (
+        "PrinterClass",
+        "Printer Class",
+        "Classe",
+        "Classe Impressao",
+        "Classe de Impressao",
+        "Tipo",
+        "Tipo CUPS",
+    ),
+}
 CARACTERES_DE_VALOR = r"A-Za-z0-9_.-"
 TABELA_COMPUTADOR_IMPRESSORA_SELECTOR = (
     '[id="tabelaComputadorImpressora:resultList_data"]'
@@ -50,6 +110,13 @@ MAX_TENTATIVAS_AUTENTICAR_NOVA_ABA = 3
 INTERVALO_RETRY_AUTENTICAR_NOVA_ABA_SEGUNDOS = 1
 MAX_TENTATIVAS_PROCESSAMENTO_LINHA = 3
 MAX_TENTATIVAS_ESTOQUE = 3
+
+# Layout XLSX
+XLSX_HEADER_ROW = 1
+XLSX_FREEZE_PANES_CELL = "A2"
+XLSX_MIN_COLUMN_WIDTH = 12
+XLSX_MAX_COLUMN_WIDTH = 60
+XLSX_COLUMN_PADDING = 2
 
 
 @dataclass(frozen=True)
@@ -385,55 +452,343 @@ def _limpar_estado_formulario(janela_sistema, page: Page | None = None) -> None:
         pass
 
 def _valor_planilha_em_branco(valor: object) -> bool:
+    if valor is None:
+        return True
+
     try:
-        if pd.isna(valor):
+        if valor != valor:
             return True
-    except (TypeError, ValueError):
+    except Exception:
         pass
 
     return str(valor).strip() == ""
 
 
-def _campos_obrigatorios_planilha_em_branco(linha: pd.Series) -> list[str]:
+def _campos_obrigatorios_planilha_em_branco(
+    linha: Mapping[str, Any],
+) -> list[str]:
     return [
         coluna
         for coluna in COLUNAS_OBRIGATORIAS_PLANILHA
         if _valor_planilha_em_branco(linha.get(coluna, ""))
-    ]     
-
-def ler_planilha(caminho_arquivo: str) -> pd.DataFrame:
-    caminho = Path(caminho_arquivo)
-
-    if not caminho.exists():
-        raise FileNotFoundError(f"Planilha não encontrada: {caminho}")
-
-    extensao = caminho.suffix.lower()
-
-    if extensao in {".xlsx", ".xlsm"}:
-        df = pd.read_excel(caminho, dtype=str, engine="openpyxl")
-    elif extensao == ".csv":
-        try:
-            df = pd.read_csv(caminho, sep=";", dtype=str, encoding="utf-8-sig")
-        except UnicodeDecodeError:
-            df = pd.read_csv(caminho, sep=";", dtype=str, encoding="latin1")
-    else:
-        raise ValueError("Formato inválido. Use .xlsx, .xlsm ou .csv.")
-
-    df.columns = df.columns.str.strip()
-    df = df.fillna("")
-
-    colunas_obrigatorias = COLUNAS_OBRIGATORIAS_PLANILHA
-    colunas_faltantes = [
-        coluna for coluna in colunas_obrigatorias if coluna not in df.columns
     ]
 
-    if colunas_faltantes:
+
+def normalize_column_name(value: Any) -> str:
+    text = "" if value is None else str(value).strip()
+    text = unicodedata.normalize("NFKD", text)
+    text = "".join(
+        char for char in text
+        if not unicodedata.combining(char)
+    )
+    return re.sub(r"\s+", " ", text).casefold()
+
+
+def validate_spreadsheet_extension(spreadsheet_path: str) -> str:
+    extension = Path(spreadsheet_path).suffix.lower()
+
+    if extension not in SUPPORTED_EXTENSIONS:
+        supported = ", ".join(SUPPORTED_EXTENSIONS)
         raise ValueError(
-            "Planilha inválida. Colunas obrigatórias ausentes: "
-            + ", ".join(colunas_faltantes)
+            f"Formato de planilha nao suportado: {extension}. "
+            f"Use apenas: {supported}."
         )
 
-    return df
+    return extension
+
+
+def generate_report_filename(
+    extension: str,
+    now: Optional[datetime] = None,
+) -> str:
+    reference_date = now or datetime.now()
+    clean_extension = extension.lower().strip()
+
+    if not clean_extension.startswith("."):
+        clean_extension = f".{clean_extension}"
+
+    timestamp = reference_date.strftime("%d_%m_%y_%Hh%Mm%S")
+    return f"Resultado_{timestamp}{clean_extension}"
+
+
+def get_available_report_path(report_path: Path) -> Path:
+    if not report_path.exists():
+        return report_path
+
+    counter = 2
+    parent = report_path.parent
+    stem = report_path.stem
+    suffix = report_path.suffix
+
+    while True:
+        candidate = parent / f"{stem}_{counter}{suffix}"
+
+        if not candidate.exists():
+            return candidate
+
+        counter += 1
+
+
+def build_report_path(
+    report_directory: str,
+    source_spreadsheet_path: str,
+    now: Optional[datetime] = None,
+) -> Path:
+    report_dir = Path(report_directory).expanduser()
+
+    if not report_dir.exists():
+        raise FileNotFoundError(
+            f"A pasta de relatorio nao existe: {report_dir}"
+        )
+
+    if not report_dir.is_dir():
+        raise NotADirectoryError(
+            f"O caminho de relatorio nao e uma pasta: {report_dir}"
+        )
+
+    extension = validate_spreadsheet_extension(source_spreadsheet_path)
+    report_filename = generate_report_filename(extension, now)
+    return get_available_report_path(report_dir / report_filename)
+
+
+def read_spreadsheet(spreadsheet_path: str) -> Tuple[list[str], list[Row]]:
+    source_path = Path(spreadsheet_path).expanduser()
+
+    if not source_path.exists():
+        raise FileNotFoundError(f"Planilha nao encontrada: {source_path}")
+
+    validate_spreadsheet_extension(str(source_path))
+    return read_xlsx(source_path)
+
+
+def read_xlsx(source_path: Path) -> Tuple[list[str], list[Row]]:
+    workbook = load_workbook(source_path, data_only=True)
+    worksheet = workbook.active
+
+    if worksheet is None:
+        raise ValueError("A planilha nao possui aba ativa.")
+
+    first_row = next(
+        worksheet.iter_rows(min_row=1, max_row=1),
+        None,
+    )
+
+    if first_row is None:
+        raise ValueError("A planilha XLSX esta vazia.")
+
+    raw_headers = [cell.value for cell in first_row]
+    headers = make_unique_headers(raw_headers)
+    rows: list[Row] = []
+
+    for raw_row in worksheet.iter_rows(min_row=2, values_only=True):
+        if is_empty_row(raw_row):
+            continue
+
+        rows.append(build_row(headers, raw_row))
+
+    return headers, rows
+
+
+def make_unique_headers(raw_headers: Sequence[Any]) -> list[str]:
+    if not raw_headers:
+        raise ValueError("A planilha nao possui cabecalho.")
+
+    headers: list[str] = []
+    seen: dict[str, int] = {}
+
+    for index, raw_header in enumerate(raw_headers, start=1):
+        header = "" if raw_header is None else str(raw_header).strip()
+
+        if not header:
+            header = f"coluna_{index}"
+
+        if header in seen:
+            seen[header] += 1
+            header = f"{header}_{seen[header]}"
+        else:
+            seen[header] = 1
+
+        headers.append(header)
+
+    return headers
+
+
+def build_row(headers: Sequence[str], raw_row: Sequence[Any]) -> Row:
+    row: Row = {}
+
+    for index, header in enumerate(headers):
+        row[header] = raw_row[index] if index < len(raw_row) else ""
+
+    return row
+
+
+def is_empty_row(raw_row: Sequence[Any]) -> bool:
+    return all(_valor_planilha_em_branco(value) for value in raw_row)
+
+
+def identify_column_by_alias(
+    headers: Sequence[str],
+    aliases: Sequence[str],
+    friendly_name: str,
+) -> str:
+    candidates = {
+        normalize_column_name(alias)
+        for alias in aliases
+    }
+
+    for header in headers:
+        if normalize_column_name(header) in candidates:
+            return header
+
+    expected_columns = ", ".join(aliases)
+    raise ValueError(
+        f"Coluna obrigatoria nao encontrada para {friendly_name}. "
+        f"A planilha deve conter uma destas colunas: {expected_columns}."
+    )
+
+
+def identify_spreadsheet_columns(headers: Sequence[str]) -> dict[str, str]:
+    column_map: dict[str, str] = {}
+
+    for canonical_name in COLUNAS_OBRIGATORIAS_PLANILHA:
+        column_map[canonical_name] = identify_column_by_alias(
+            headers,
+            ALIASES_COLUNAS_PLANILHA[canonical_name],
+            canonical_name,
+        )
+
+    for canonical_name in ("HostPC", "IPPrinter"):
+        try:
+            column_map[canonical_name] = identify_column_by_alias(
+                headers,
+                ALIASES_COLUNAS_PLANILHA[canonical_name],
+                canonical_name,
+            )
+        except ValueError:
+            continue
+
+    return column_map
+
+
+def normalize_spreadsheet_cell(value: Any) -> Any:
+    if _valor_planilha_em_branco(value):
+        return ""
+
+    return value
+
+
+def build_spreadsheet_row(
+    source_row: Mapping[str, Any],
+    column_map: Mapping[str, str],
+) -> Row:
+    row: Row = {}
+
+    for canonical_name in (
+        "HostPC",
+        "IPPC",
+        "HostPrinter",
+        "IPPrinter",
+        "PrinterClass",
+    ):
+        source_header = column_map.get(canonical_name)
+        row[canonical_name] = (
+            normalize_spreadsheet_cell(source_row.get(source_header, ""))
+            if source_header is not None
+            else ""
+        )
+
+    return row
+
+
+def ler_planilha(caminho_arquivo: str) -> list[Row]:
+    headers, source_rows = read_spreadsheet(caminho_arquivo)
+    column_map = identify_spreadsheet_columns(headers)
+
+    return [
+        build_spreadsheet_row(source_row, column_map)
+        for source_row in source_rows
+    ]
+
+
+def get_report_headers() -> list[str]:
+    return list(COLUNAS_RELATORIO)
+
+
+def write_report(
+    source_spreadsheet_path: str,
+    report_path: Path,
+    rows: Sequence[Mapping[str, Any]],
+) -> None:
+    validate_spreadsheet_extension(source_spreadsheet_path)
+    write_xlsx_report(report_path, get_report_headers(), rows)
+
+
+def write_xlsx_report(
+    report_path: Path,
+    headers: Sequence[str],
+    rows: Sequence[Mapping[str, Any]],
+) -> None:
+    workbook = Workbook()
+    worksheet = workbook.active
+
+    if worksheet is None:
+        raise ValueError("A planilha nao possui aba ativa.")
+
+    worksheet.title = "Relatorio"
+    worksheet.append(list(headers))
+
+    for row in rows:
+        worksheet.append([
+            row.get(header, "")
+            for header in headers
+        ])
+
+    apply_xlsx_report_layout(worksheet)
+    workbook.save(report_path)
+
+
+def apply_xlsx_report_layout(worksheet: Worksheet) -> None:
+    if worksheet.max_row < XLSX_HEADER_ROW or worksheet.max_column < 1:
+        return
+
+    worksheet.freeze_panes = XLSX_FREEZE_PANES_CELL
+    worksheet.auto_filter.ref = build_xlsx_filter_range(worksheet)
+    autofit_xlsx_columns(worksheet)
+
+
+def build_xlsx_filter_range(worksheet: Worksheet) -> str:
+    last_column = get_column_letter(worksheet.max_column)
+    return f"A{XLSX_HEADER_ROW}:{last_column}{worksheet.max_row}"
+
+
+def autofit_xlsx_columns(worksheet: Worksheet) -> None:
+    for column_cells in worksheet.columns:
+        if not column_cells:
+            continue
+
+        col_idx = column_cells[0].column
+
+        if not isinstance(col_idx, int):
+            continue
+
+        column_letter = get_column_letter(col_idx)
+        max_length = max(
+            get_xlsx_cell_text_length(cell.value)
+            for cell in column_cells
+        )
+        width = max_length + XLSX_COLUMN_PADDING
+        worksheet.column_dimensions[column_letter].width = min(
+            max(width, XLSX_MIN_COLUMN_WIDTH),
+            XLSX_MAX_COLUMN_WIDTH,
+        )
+
+
+def get_xlsx_cell_text_length(value: Any) -> int:
+    if value is None:
+        return 0
+
+    lines = str(value).splitlines() or [""]
+    return max(len(line) for line in lines)
 
 
 def fazer_login(
@@ -608,7 +963,7 @@ def navegar_ate_modulo(
     raise RuntimeError("Falha ao navegar até o módulo de Impressora por Computador.")
 
 
-def _extrair_dados_linha_planilha(linha: pd.Series) -> DadosLinhaPlanilha:
+def _extrair_dados_linha_planilha(linha: Mapping[str, Any]) -> DadosLinhaPlanilha:
     return DadosLinhaPlanilha(
         ip_pc=str(linha["IPPC"]).strip(),
         impressora_alvo=str(linha["HostPrinter"]).strip(),
@@ -621,10 +976,10 @@ def _numero_linha_planilha(index: object) -> int:
 
 
 def _criar_log_linha(
-    linha: pd.Series,
+    linha: Mapping[str, Any],
     dados: DadosLinhaPlanilha,
     resultado: ResultadoLinha,
-) -> dict:
+) -> Row:
     return {
         "HostPC": linha.get("HostPC", ""),
         "IPPC": dados.ip_pc,
@@ -1363,31 +1718,15 @@ def _processar_linha_com_retentativas(
     return resultado, page, janela_sistema
 
 
-def _gerar_csv_logs(
-    logs_do_diario: list[dict],
-    usuario_str: str,
-    diretorio_logs: str | os.PathLike | None,
+def _gerar_relatorio_xlsx(
+    logs_do_diario: Sequence[Mapping[str, Any]],
+    source_spreadsheet_path: str,
+    report_path: Path,
 ) -> str:
-    print("\n🏁 Fim da leitura! Construindo a estante de arquivos...")
-    df_logs = pd.DataFrame(logs_do_diario)
-    pasta_logs = Path(diretorio_logs) if diretorio_logs else BASE_DIR / "logs"
-    pasta_logs.mkdir(parents=True, exist_ok=True)
-    data_hora_atual = datetime.now().strftime("%Y%m%d_%H%M%S")
-    nome_arquivo_log = pasta_logs / f"log_resultado_{data_hora_atual}.csv"
-
-    with nome_arquivo_log.open("w", encoding="utf-8-sig") as f:
-        f.write(f"Atualizado por: {usuario_str}\n")
-
-    df_logs.to_csv(
-        nome_arquivo_log,
-        index=False,
-        sep=";",
-        encoding="utf-8-sig",
-        mode="a",
-    )
-
-    print(f"📊 Relatório gerado com sucesso: {nome_arquivo_log}")
-    return str(nome_arquivo_log)
+    print("\nFim da leitura! Gerando relatorio XLSX...")
+    write_report(source_spreadsheet_path, report_path, logs_do_diario)
+    print(f"Relatorio gerado com sucesso: {report_path}")
+    return str(report_path)
 
 # ==========================================
 # CAPÍTULO 3: O CÉREBRO MAESTRO
@@ -1396,18 +1735,20 @@ def processar_computadores(
     context: BrowserContext,
     page_inicial: Page,
     janela_sistema_inicial,
-    planilha: pd.DataFrame,
+    caminho_planilha: str,
     usuario_str: str,
     senha_str: str,
-    diretorio_logs: str | os.PathLike | None = None,
+    report_directory: str | os.PathLike,
     url_aghu: str = AGHU_URL,
 ) -> str:
     logs_do_diario = []
     page = page_inicial
     janela_sistema = janela_sistema_inicial
+    planilha = ler_planilha(caminho_planilha)
+    report_path = build_report_path(str(report_directory), caminho_planilha)
     total_linhas = len(planilha)
 
-    for index, linha in planilha.iterrows():
+    for index, linha in enumerate(planilha):
         dados = _extrair_dados_linha_planilha(linha)
         campos_em_branco = _campos_obrigatorios_planilha_em_branco(linha)
 
@@ -1439,8 +1780,8 @@ def processar_computadores(
         print(f"📝 Anotando no diário: [{resultado.status}] {resultado.detalhes}")
         logs_do_diario.append(_criar_log_linha(linha, dados, resultado))
 
-    return _gerar_csv_logs(
+    return _gerar_relatorio_xlsx(
         logs_do_diario=logs_do_diario,
-        usuario_str=usuario_str,
-        diretorio_logs=diretorio_logs,
+        source_spreadsheet_path=caminho_planilha,
+        report_path=report_path,
     )
