@@ -5,6 +5,7 @@
 
 from criar_usuario_aghu import (
     COLUNAS_OBRIGATORIAS_PLANILHA,
+    STATUS_ERRO,
     UsuarioImportacao,
     _normalizar_login,
     _normalizar_texto,
@@ -12,6 +13,8 @@ from criar_usuario_aghu import (
     _valor_em_branco,
     ler_planilha_usuarios,
 )
+
+import criar_usuario_aghu as aghu
 
 
 class TestRegressaoNormalizacao:
@@ -113,3 +116,135 @@ class TestRegressaoPlanilha:
         usuarios = ler_planilha_usuarios(str(caminho))
 
         assert usuarios[0].login == " joao.silva "
+
+
+class JanelaFake:
+    def locator(self, _seletor):
+        return object()
+
+
+class WidgetCarregamentoFake:
+    def __init__(self, visibilidades):
+        self.visibilidades = list(visibilidades)
+
+    @property
+    def first(self):
+        return self
+
+    def get_by_text(self, _texto):
+        return self
+
+    def wait_for(self, state, timeout):
+        assert state == "visible"
+        assert timeout > 0
+
+    def is_visible(self, timeout):
+        assert timeout > 0
+
+        if not self.visibilidades:
+            return False
+
+        return self.visibilidades.pop(0)
+
+
+class JanelaComWidgetFake:
+    def __init__(self, visibilidades):
+        self.widget = WidgetCarregamentoFake(visibilidades)
+
+    def get_by_label(self, label):
+        assert label == "Carregando"
+        return self.widget
+
+    def locator(self, _seletor):
+        return object()
+
+
+class TestRegressaoConsultaLenta:
+    def test_aguarda_widget_carregando_sumir_antes_de_ler_resultado(self):
+        janela = JanelaComWidgetFake([True, True, False])
+
+        assert aghu._aguardar_ciclo_carregamento_consulta(
+            janela,
+            timeout_ms=2000,
+            deteccao_ms=100,
+        ) is True
+
+    def test_pesquisa_inicial_nao_confirma_vazio_antes_de_resultado_real(
+        self,
+        monkeypatch,
+    ):
+        linha_encontrada = object()
+        chamadas = {"total": 0}
+
+        def localizar_login(*_args, **_kwargs):
+            chamadas["total"] += 1
+            if chamadas["total"] >= 4:
+                return linha_encontrada
+
+            return None
+
+        monkeypatch.setattr(aghu, "_existe_carregamento_visivel", lambda _janela: False)
+        monkeypatch.setattr(aghu, "_linha_tabela_por_login", localizar_login)
+        monkeypatch.setattr(aghu, "_linha_vazia_visivel", lambda _linhas: True)
+
+        estado, linha = aghu._aguardar_resultado_pesquisa_usuario(
+            JanelaFake(),
+            "JOAO.SILVA",
+            timeout_ms=2000,
+            estabilidade_resultado_ms=100,
+        )
+
+        assert estado == "encontrado"
+        assert linha is linha_encontrada
+
+    def test_identity_nao_confirma_vazio_antes_de_resultado_real(self, monkeypatch):
+        linha_encontrada = object()
+        chamadas = {"total": 0}
+
+        def localizar_texto(*_args, **_kwargs):
+            chamadas["total"] += 1
+            if chamadas["total"] >= 4:
+                return linha_encontrada
+
+            return None
+
+        monkeypatch.setattr(aghu, "_existe_carregamento_visivel", lambda _janela: False)
+        monkeypatch.setattr(aghu, "_linha_tabela_por_texto_visivel", localizar_texto)
+        monkeypatch.setattr(aghu, "_linha_vazia_visivel", lambda _linhas: True)
+
+        estado, linha = aghu._aguardar_resultado_identity(
+            JanelaFake(),
+            "JOAO.SILVA",
+            timeout_ms=2000,
+            estabilidade_resultado_ms=100,
+        )
+
+        assert estado == "encontrado"
+        assert linha is linha_encontrada
+
+    def test_identity_indefinido_retorna_erro_em_vez_de_nao_encontrado(
+        self,
+        monkeypatch,
+    ):
+        usuario = UsuarioImportacao(
+            login="joao.silva",
+            nome_completo="Joao Silva",
+            email="joao@email.com",
+        )
+
+        monkeypatch.setattr(
+            aghu,
+            "_pesquisar_usuario_importado",
+            lambda *_args, **_kwargs: ("nao_encontrado", None),
+        )
+        monkeypatch.setattr(aghu, "_abrir_importacao_usuario", lambda *_args: None)
+        monkeypatch.setattr(
+            aghu,
+            "_pesquisar_usuario_identity",
+            lambda *_args, **_kwargs: ("indefinido", None),
+        )
+
+        resultado = aghu.importar_usuario(object(), usuario)
+
+        assert resultado.status == STATUS_ERRO
+        assert "Identity Manager nao retornou estado conclusivo" in resultado.detalhes

@@ -54,6 +54,9 @@ SELECTOR_TABELA_IDENTITY = (
     '[id="tabelaUsuariosIdentityManager:resultList_data"] > tr'
 )
 TEXTO_NENHUM_REGISTRO = "Nenhum registro encontrado!"
+TEMPO_MAXIMO_CONSULTA_USUARIO_MS = 90000
+TEMPO_DETECCAO_WIDGET_CARREGAMENTO_MS = 2000
+TEMPO_ESTABILIDADE_RESULTADO_MS = 250
 
 
 def esconder_console_windows() -> None:
@@ -352,15 +355,77 @@ def _linha_vazia_visivel(linhas: Locator) -> bool:
     return False
 
 
-def _aguardar_resultado_pesquisa_usuario(
+def _widget_carregamento_consulta(janela_sistema: FrameLocator) -> Locator:
+    return janela_sistema.get_by_label("Carregando").get_by_text("Aguarde...").first
+
+
+def _existe_carregamento_visivel(janela_sistema: FrameLocator) -> bool:
+    try:
+        return _widget_carregamento_consulta(janela_sistema).is_visible(timeout=100)
+    except Exception:
+        return False
+
+
+def _aguardar_ciclo_carregamento_consulta(
     janela_sistema: FrameLocator,
-    login: str,
-    timeout_ms: int = 10000,
-) -> tuple[str, Locator | None]:
-    linhas = janela_sistema.locator(SELECTOR_TABELA_USUARIOS)
+    *,
+    timeout_ms: int = TEMPO_MAXIMO_CONSULTA_USUARIO_MS,
+    deteccao_ms: int = TEMPO_DETECCAO_WIDGET_CARREGAMENTO_MS,
+) -> bool:
+    widget_carregamento = _widget_carregamento_consulta(janela_sistema)
+
+    try:
+        widget_carregamento.wait_for(state="visible", timeout=deteccao_ms)
+    except PlaywrightTimeoutError:
+        return not _existe_carregamento_visivel(janela_sistema)
+
     fim = time.monotonic() + (timeout_ms / 1000)
 
     while time.monotonic() < fim:
+        if not _existe_carregamento_visivel(janela_sistema):
+            return True
+
+        time.sleep(0.15)
+
+    raise PlaywrightTimeoutError(
+        "Consulta do AGHUX permaneceu em carregamento alem do tempo limite."
+    )
+
+
+def _pode_confirmar_resultado_sem_carregamento(
+    *,
+    estado_desde: float,
+    consulta_concluida: bool,
+    estabilidade_resultado_ms: int,
+) -> bool:
+    tempo_estavel_ms = (time.monotonic() - estado_desde) * 1000
+
+    return consulta_concluida and tempo_estavel_ms >= estabilidade_resultado_ms
+
+
+def _aguardar_resultado_pesquisa_usuario(
+    janela_sistema: FrameLocator,
+    login: str,
+    timeout_ms: int = TEMPO_MAXIMO_CONSULTA_USUARIO_MS,
+    estabilidade_resultado_ms: int = TEMPO_ESTABILIDADE_RESULTADO_MS,
+    consulta_concluida: bool = False,
+) -> tuple[str, Locator | None]:
+    linhas = janela_sistema.locator(SELECTOR_TABELA_USUARIOS)
+    inicio = time.monotonic()
+    fim = inicio + (timeout_ms / 1000)
+    estado_pendente: str | None = None
+    estado_desde = inicio
+    carregamento_observado = False
+
+    while time.monotonic() < fim:
+        carregando = _existe_carregamento_visivel(janela_sistema)
+
+        if carregando:
+            carregamento_observado = True
+            consulta_concluida = False
+        elif carregamento_observado:
+            consulta_concluida = True
+
         linha = _linha_tabela_por_login(
             linhas=linhas,
             login=login,
@@ -370,14 +435,33 @@ def _aguardar_resultado_pesquisa_usuario(
         if linha is not None:
             return "encontrado", linha
 
-        if _linha_vazia_visivel(linhas):
-            return "nao_encontrado", None
+        estado_atual: str | None = None
 
-        try:
-            if linhas.count() > 0 and linhas.first.is_visible(timeout=250):
-                return "sem_login_exato", None
-        except Exception:
-            pass
+        if _linha_vazia_visivel(linhas):
+            estado_atual = "nao_encontrado"
+        else:
+            try:
+                if linhas.count() > 0 and linhas.first.is_visible(timeout=250):
+                    estado_atual = "sem_login_exato"
+            except Exception:
+                pass
+
+        if carregando:
+            estado_pendente = None
+            estado_desde = time.monotonic()
+        elif estado_atual is not None:
+            if estado_atual != estado_pendente:
+                estado_pendente = estado_atual
+                estado_desde = time.monotonic()
+            elif _pode_confirmar_resultado_sem_carregamento(
+                estado_desde=estado_desde,
+                consulta_concluida=consulta_concluida,
+                estabilidade_resultado_ms=estabilidade_resultado_ms,
+            ):
+                return estado_atual, None
+        else:
+            estado_pendente = None
+            estado_desde = time.monotonic()
 
         time.sleep(0.15)
 
@@ -387,12 +471,25 @@ def _aguardar_resultado_pesquisa_usuario(
 def _aguardar_resultado_identity(
     janela_sistema: FrameLocator,
     login: str,
-    timeout_ms: int = 10000,
+    timeout_ms: int = TEMPO_MAXIMO_CONSULTA_USUARIO_MS,
+    estabilidade_resultado_ms: int = TEMPO_ESTABILIDADE_RESULTADO_MS,
+    consulta_concluida: bool = False,
 ) -> tuple[str, Locator | None]:
     linhas = janela_sistema.locator(SELECTOR_TABELA_IDENTITY)
-    fim = time.monotonic() + (timeout_ms / 1000)
+    inicio = time.monotonic()
+    fim = inicio + (timeout_ms / 1000)
+    vazio_desde: float | None = None
+    carregamento_observado = False
 
     while time.monotonic() < fim:
+        carregando = _existe_carregamento_visivel(janela_sistema)
+
+        if carregando:
+            carregamento_observado = True
+            consulta_concluida = False
+        elif carregamento_observado:
+            consulta_concluida = True
+
         linha = _linha_tabela_por_texto_visivel(
             linhas=linhas,
             texto=login,
@@ -402,8 +499,19 @@ def _aguardar_resultado_identity(
         if linha is not None:
             return "encontrado", linha
 
-        if _linha_vazia_visivel(linhas):
-            return "nao_encontrado", None
+        if carregando:
+            vazio_desde = None
+        elif _linha_vazia_visivel(linhas):
+            if vazio_desde is None:
+                vazio_desde = time.monotonic()
+            elif _pode_confirmar_resultado_sem_carregamento(
+                estado_desde=vazio_desde,
+                consulta_concluida=consulta_concluida,
+                estabilidade_resultado_ms=estabilidade_resultado_ms,
+            ):
+                return "nao_encontrado", None
+        else:
+            vazio_desde = None
 
         time.sleep(0.15)
 
@@ -420,7 +528,12 @@ def _pesquisar_usuario_importado(
     campo_login.fill(login)
 
     _clicar_botao(janela_sistema, "Pesquisar")
-    return _aguardar_resultado_pesquisa_usuario(janela_sistema, login)
+    consulta_concluida = _aguardar_ciclo_carregamento_consulta(janela_sistema)
+    return _aguardar_resultado_pesquisa_usuario(
+        janela_sistema,
+        login,
+        consulta_concluida=consulta_concluida,
+    )
 
 
 def _pesquisar_usuario_identity(
@@ -433,7 +546,12 @@ def _pesquisar_usuario_identity(
     campo_login.fill(login)
 
     _clicar_botao(janela_sistema, "Pesquisar")
-    return _aguardar_resultado_identity(janela_sistema, login)
+    consulta_concluida = _aguardar_ciclo_carregamento_consulta(janela_sistema)
+    return _aguardar_resultado_identity(
+        janela_sistema,
+        login,
+        consulta_concluida=consulta_concluida,
+    )
 
 
 def _abrir_importacao_usuario(janela_sistema: FrameLocator) -> None:
@@ -818,6 +936,14 @@ def importar_usuario(
         janela_sistema,
         login,
     )
+
+    if estado_identity == "indefinido":
+        print("Pesquisa no Identity Manager sem retorno conclusivo.")
+        return _resultado(
+            usuario,
+            STATUS_ERRO,
+            "Pesquisa no Identity Manager nao retornou estado conclusivo.",
+        )
 
     if estado_identity != "encontrado" or linha_identity is None:
         print("Usuario nao localizado no Identity Manager.")
