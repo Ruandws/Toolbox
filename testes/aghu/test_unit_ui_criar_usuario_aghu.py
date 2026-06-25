@@ -106,6 +106,7 @@ def app_fake():
     app.em_execucao = False
     app.var_ambiente = FakeStringVar(ui.AMBIENTE_PRODUCAO)
     app.var_tipo_execucao = FakeStringVar(ui.TIPO_INDIVIDUAL)
+    app.var_browser = FakeStringVar(True)
     app.var_console = FakeStringVar(True)
     app.entry_usuario_rede = FakeEntry()
     app.entry_senha = FakeEntry()
@@ -116,6 +117,7 @@ def app_fake():
     app.entry_relatorio_lote = FakeEntry()
     app.button_executar = FakeWidget()
     app.segment_tipo_execucao = FakeSegment()
+    app.checkbox_browser = FakeWidget()
     app.checkbox_console = FakeWidget()
     app.button_planilha_lote = FakeWidget()
     app.button_relatorio_lote = FakeWidget()
@@ -248,6 +250,46 @@ def test_on_ambiente_changed_nao_exibe_alerta_modal_em_homologacao(
     assert chamadas == []
 
 
+def test_validar_opcoes_visibilidade_do_browser_religa_browser_quando_tudo_oculto(
+    app_fake,
+    monkeypatch,
+):
+    chamadas = []
+    app_fake.var_browser.set(False)
+    app_fake.var_console.set(False)
+    monkeypatch.setattr(
+        ui.messagebox,
+        "showwarning",
+        lambda *args, **kwargs: chamadas.append((args, kwargs)),
+    )
+
+    ui.AghuImportUserApp._validar_opcoes_visibilidade_do_browser(app_fake)
+
+    assert app_fake.var_browser.get() is True
+    assert app_fake.var_console.get() is False
+    assert len(chamadas) == 1
+
+
+def test_validar_opcoes_visibilidade_do_console_religa_console_quando_tudo_oculto(
+    app_fake,
+    monkeypatch,
+):
+    chamadas = []
+    app_fake.var_browser.set(False)
+    app_fake.var_console.set(False)
+    monkeypatch.setattr(
+        ui.messagebox,
+        "showwarning",
+        lambda *args, **kwargs: chamadas.append((args, kwargs)),
+    )
+
+    ui.AghuImportUserApp._validar_opcoes_visibilidade_do_console(app_fake)
+
+    assert app_fake.var_browser.get() is False
+    assert app_fake.var_console.get() is True
+    assert len(chamadas) == 1
+
+
 def test_credenciais_e_url_retorna_dados_normalizados(app_fake):
     app_fake.entry_usuario_rede.valor = " usuario.rede "
     app_fake.entry_senha.valor = " senha com espaco "
@@ -358,6 +400,7 @@ def test_bloquear_e_liberar_execucao_alteram_estados(app_fake):
     assert app_fake.button_executar.configuracoes["state"] == "disabled"
     assert app_fake.button_executar.configuracoes["text"] == "Executando..."
     assert app_fake.segment_tipo_execucao.configuracoes["state"] == "disabled"
+    assert app_fake.checkbox_browser.configuracoes["state"] == "disabled"
     assert app_fake.checkbox_console.configuracoes["state"] == "disabled"
     assert app_fake.button_planilha_lote.configuracoes["state"] == "disabled"
     assert app_fake.button_relatorio_lote.configuracoes["state"] == "disabled"
@@ -368,6 +411,7 @@ def test_bloquear_e_liberar_execucao_alteram_estados(app_fake):
     assert app_fake.button_executar.configuracoes["state"] == "normal"
     assert app_fake.button_executar.configuracoes["text"] == "Executar importação"
     assert app_fake.segment_tipo_execucao.configuracoes["state"] == "normal"
+    assert app_fake.checkbox_browser.configuracoes["state"] == "normal"
     assert app_fake.checkbox_console.configuracoes["state"] == "normal"
     assert app_fake.button_planilha_lote.configuracoes["state"] == "normal"
     assert app_fake.button_relatorio_lote.configuracoes["state"] == "normal"
@@ -440,6 +484,7 @@ def test_iniciar_execucao_individual_inicia_thread_com_dados_da_tela(
         "email@x.com",
         ui.AGHU_URL,
         True,
+        True,
     )
     assert (
         app_fake.label_status.configuracoes["text"]
@@ -497,6 +542,7 @@ def test_iniciar_execucao_lote_gera_relatorio_padrao_e_inicia_thread(
         "relatorio_gerado.xlsx",
         ui.AGHU_URL,
         True,
+        True,
     )
 
 
@@ -527,11 +573,17 @@ def test_executar_individual_thread_agenda_finalizacao_em_sucesso(
 ):
     resultado = ResultadoImportacao("login", "Nome", "email@x.com", STATUS_IMPORTADO, "OK")
     chamadas = []
+    capturados = {}
     app_fake.after = lambda delay, func, *args: chamadas.append((delay, func, args))
+
+    def executar_fake(**kwargs):
+        capturados.update(kwargs)
+        return resultado
+
     monkeypatch.setattr(
         ui,
         "executar_importacao_individual",
-        lambda **kwargs: resultado,
+        executar_fake,
     )
 
     ui.AghuImportUserApp._executar_individual_thread(
@@ -542,6 +594,7 @@ def test_executar_individual_thread_agenda_finalizacao_em_sucesso(
         "Nome",
         "email@x.com",
         "url",
+        False,
         True,
     )
 
@@ -549,6 +602,8 @@ def test_executar_individual_thread_agenda_finalizacao_em_sucesso(
     assert delay == 0
     assert func == app_fake._finalizar_execucao
     assert args == ("login: importado - OK", "green")
+    assert capturados["mostrar_browser"] is False
+    assert capturados["mostrar_console"] is True
 
 
 def test_executar_individual_thread_agenda_finalizacao_em_erro(
@@ -572,6 +627,7 @@ def test_executar_individual_thread_agenda_finalizacao_em_erro(
         "email@x.com",
         "url",
         True,
+        True,
     )
 
     assert chamadas[0][2] == ("Erro: falha", "red")
@@ -582,11 +638,17 @@ def test_executar_lote_thread_agenda_finalizacao_com_resumo(app_fake, monkeypatc
         ResultadoImportacao("login", "Nome", "email@x.com", STATUS_IMPORTADO, "OK")
     ]
     chamadas = []
+    capturados = {}
     app_fake.after = lambda delay, func, *args: chamadas.append((delay, func, args))
+
+    def executar_fake(**kwargs):
+        capturados.update(kwargs)
+        return resultados, Path("relatorio.xlsx")
+
     monkeypatch.setattr(
         ui,
         "executar_importacao_lote",
-        lambda **kwargs: (resultados, Path("relatorio.xlsx")),
+        executar_fake,
     )
 
     ui.AghuImportUserApp._executar_lote_thread(
@@ -596,11 +658,14 @@ def test_executar_lote_thread_agenda_finalizacao_com_resumo(app_fake, monkeypatc
         "usuarios.xlsx",
         "relatorio.xlsx",
         "url",
+        False,
         True,
     )
 
     assert chamadas[0][0] == 0
     assert chamadas[0][1] == app_fake._finalizar_execucao
+    assert capturados["mostrar_browser"] is False
+    assert capturados["mostrar_console"] is True
     assert chamadas[0][2] == (
         "Lote concluído. Total: 1. "
         "Importados: 1. "

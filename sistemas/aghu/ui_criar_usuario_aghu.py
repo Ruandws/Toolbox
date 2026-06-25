@@ -60,6 +60,7 @@ class AghuImportUserApp(ctk.CTk):
 
         self.var_ambiente = tk.StringVar(value=AMBIENTE_HOMOLOGACAO)
         self.var_tipo_execucao = tk.StringVar(value=TIPO_INDIVIDUAL)
+        self.var_browser = tk.BooleanVar(value=True)
         self.var_console = tk.BooleanVar(value=True)
         self.em_execucao = False
 
@@ -264,19 +265,51 @@ class AghuImportUserApp(ctk.CTk):
         self._atualizar_alerta_ambiente(self.var_ambiente.get())
 
     def _criar_opcoes_execucao(self) -> None:
-        self.checkbox_console = ctk.CTkCheckBox(
+        self.checkbox_browser = ctk.CTkCheckBox(
             self.frame_acesso,
-            text="Exibir Terminal de processos (logs)",
-            variable=self.var_console,
+            text="Exibir Navegador (Modo Visual)",
+            variable=self.var_browser,
+            command=self._validar_opcoes_visibilidade_do_browser,
         )
-        self.checkbox_console.grid(
+        self.checkbox_browser.grid(
             row=5,
             column=1,
             columnspan=2,
             padx=14,
-            pady=(8, 14),
+            pady=(8, 6),
             sticky="w",
         )
+
+        self.checkbox_console = ctk.CTkCheckBox(
+            self.frame_acesso,
+            text="Exibir Terminal de processos (logs)",
+            variable=self.var_console,
+            command=self._validar_opcoes_visibilidade_do_console,
+        )
+        self.checkbox_console.grid(
+            row=6,
+            column=1,
+            columnspan=2,
+            padx=14,
+            pady=(6, 14),
+            sticky="w",
+        )
+
+    def _validar_opcoes_visibilidade_do_browser(self) -> None:
+        if not self.var_browser.get() and not self.var_console.get():
+            self.var_browser.set(True)
+            messagebox.showwarning(
+                "Acao bloqueada",
+                "Para evitar processos invisiveis, mantenha o navegador ou o terminal ativo.",
+            )
+
+    def _validar_opcoes_visibilidade_do_console(self) -> None:
+        if not self.var_console.get() and not self.var_browser.get():
+            self.var_console.set(True)
+            messagebox.showwarning(
+                "Acao bloqueada",
+                "Para evitar processos invisiveis, mantenha o navegador ou o terminal ativo.",
+            )
 
     def _criar_campos_individual(self) -> None:
         self.entry_login_individual = self._criar_linha_entry(
@@ -440,6 +473,7 @@ class AghuImportUserApp(ctk.CTk):
         self.em_execucao = True
         self.button_executar.configure(state="disabled", text=texto_botao)
         self.segment_tipo_execucao.configure(state="disabled")
+        self.checkbox_browser.configure(state="disabled")
         self.checkbox_console.configure(state="disabled")
         self.button_planilha_lote.configure(state="disabled")
         self.button_relatorio_lote.configure(state="disabled")
@@ -449,6 +483,7 @@ class AghuImportUserApp(ctk.CTk):
         self.em_execucao = False
         self.button_executar.configure(state="normal", text="Executar importação")
         self.segment_tipo_execucao.configure(state="normal")
+        self.checkbox_browser.configure(state="normal")
         self.checkbox_console.configure(state="normal")
         self.button_planilha_lote.configure(state="normal")
         self.button_relatorio_lote.configure(state="normal")
@@ -462,6 +497,7 @@ class AghuImportUserApp(ctk.CTk):
             login = self.entry_login_individual.get()
             nome_completo = self.entry_nome_individual.get()
             email = self.entry_email_individual.get()
+            mostrar_browser = bool(self.var_browser.get())
             mostrar_console = bool(self.var_console.get())
         except Exception as exc:
             self._mostrar_status(f"Erro: {exc}", "red")
@@ -479,6 +515,7 @@ class AghuImportUserApp(ctk.CTk):
                 nome_completo,
                 email,
                 url_aghu,
+                mostrar_browser,
                 mostrar_console,
             ),
             daemon=True,
@@ -493,6 +530,7 @@ class AghuImportUserApp(ctk.CTk):
         nome_completo: str,
         email: str,
         url_aghu: str,
+        mostrar_browser: bool,
         mostrar_console: bool,
     ) -> None:
         try:
@@ -503,7 +541,7 @@ class AghuImportUserApp(ctk.CTk):
                 nome_completo=nome_completo,
                 email=email,
                 url_aghu=url_aghu,
-                mostrar_browser=True,
+                mostrar_browser=mostrar_browser,
                 mostrar_console=mostrar_console,
                 diretorio_logs=LOGS_DIR,
             )
@@ -520,6 +558,7 @@ class AghuImportUserApp(ctk.CTk):
             usuario_rede, senha, url_aghu = self._credenciais_e_url()
             caminho_planilha = self.entry_planilha_lote.get().strip()
             caminho_relatorio = self.entry_relatorio_lote.get().strip()
+            mostrar_browser = bool(self.var_browser.get())
             mostrar_console = bool(self.var_console.get())
 
             if not caminho_planilha:
@@ -546,6 +585,7 @@ class AghuImportUserApp(ctk.CTk):
                 caminho_planilha,
                 caminho_relatorio,
                 url_aghu,
+                mostrar_browser,
                 mostrar_console,
             ),
             daemon=True,
@@ -559,6 +599,7 @@ class AghuImportUserApp(ctk.CTk):
         caminho_planilha: str,
         caminho_relatorio: str,
         url_aghu: str,
+        mostrar_browser: bool,
         mostrar_console: bool,
     ) -> None:
         try:
@@ -568,7 +609,7 @@ class AghuImportUserApp(ctk.CTk):
                 caminho_planilha=caminho_planilha,
                 caminho_relatorio=caminho_relatorio,
                 url_aghu=url_aghu,
-                mostrar_browser=True,
+                mostrar_browser=mostrar_browser,
                 mostrar_console=mostrar_console,
                 diretorio_logs=LOGS_DIR,
             )
