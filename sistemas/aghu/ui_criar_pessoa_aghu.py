@@ -551,6 +551,7 @@ class AghuCadastroPessoaApp(ctk.CTk):
 
     def _credenciais_e_url(self) -> tuple[str, str, str]:
         usuario_rede = self.entry_usuario_rede.get().strip()
+        # Senhas podem conter espacos significativos; nao normalizar com strip().
         senha = self.entry_senha.get()
         url_aghu = obter_url_ambiente_aghu(self.var_ambiente.get())
 
@@ -571,8 +572,6 @@ class AghuCadastroPessoaApp(ctk.CTk):
             raise ValueError("Selecione o sexo: Masculino ou Feminino.")
 
         dados["sexo"] = sexo
-
-        return CadastroPessoaEntrada(**dados)
 
         return CadastroPessoaEntrada(**dados)
 

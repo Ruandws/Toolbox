@@ -18,30 +18,7 @@ from cadastro_pessoa_aghu import (
     ler_planilha_cadastros,
     salvar_relatorio_resultados,
 )
-
-
-def pessoa_valida(**sobrescritas):
-    dados = {
-        "nome_pessoa": "Joao Silva",
-        "nome_mae": "Maria Silva",
-        "sexo": "Masculino",
-        "data_nascimento": "01/01/1990",
-        "nacionalidade": "Brasileira",
-        "naturalidade": "Brasilia/DF",
-        "rg": "123456",
-        "orgao_emissor": "SSP",
-        "uf_rg": "DF",
-        "cpf": "123.456.789-01",
-        "ddd": "61",
-        "telefone_celular": "999999999",
-        "cep_cadastrado": "70000-000",
-        "logradouro_nao_cadastrado": "Rua A",
-        "bairro_nao_cadastrado": "Centro",
-        "cep_nao_cadastrado": "71000-000",
-        "municipio_nao_cadastrado": "Brasilia",
-    }
-    dados.update(sobrescritas)
-    return CadastroPessoaEntrada(**dados)
+from testes.aghu.fixtures_cadastro_pessoa import FakeContext, pessoa_valida
 
 
 class TestNormalizacao:
@@ -623,22 +600,6 @@ class TestMaestro:
 
         assert resultados[0].status == STATUS_ERRO
         assert "Falha tecnica definitiva" in resultados[0].detalhes
-
-
-class FakePage:
-    def __init__(self):
-        self.goto_url = None
-
-    def goto(self, url):
-        self.goto_url = url
-
-
-class FakeContext:
-    def __init__(self):
-        self.page = FakePage()
-
-    def new_page(self):
-        return self.page
 
 
 class FakeBrowser:

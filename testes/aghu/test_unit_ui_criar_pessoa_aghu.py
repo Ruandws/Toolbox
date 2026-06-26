@@ -98,6 +98,11 @@ class FixedDatetime:
 CAMINHO_TMP_TESTE = Path("C:/Extrator2/testes/aghu")
 
 
+@pytest.fixture(autouse=True)
+def limpar_threads_fake():
+    FakeThread.criadas = []
+
+
 @pytest.fixture()
 def app_fake():
     app = object.__new__(ui.AghuCadastroPessoaApp)
@@ -362,6 +367,17 @@ def test_credenciais_e_url_retorna_dados_normalizados(app_fake):
     assert url == ui.AGHU_URL_HOMOLOGACAO
 
 
+def test_credenciais_e_url_aceita_senha_composta_por_espacos(app_fake):
+    app_fake.entry_usuario_rede.valor = "usuario.rede"
+    app_fake.entry_senha.valor = "   "
+
+    usuario, senha, url = ui.AghuCadastroPessoaApp._credenciais_e_url(app_fake)
+
+    assert usuario == "usuario.rede"
+    assert senha == "   "
+    assert url == ui.AGHU_URL
+
+
 @pytest.mark.parametrize(
     ("usuario", "senha"),
     [
@@ -529,7 +545,6 @@ def test_iniciar_execucao_individual_nao_faz_nada_se_ja_em_execucao(
 ):
     app_fake.em_execucao = True
     monkeypatch.setattr(ui.threading, "Thread", FakeThread)
-    FakeThread.criadas = []
 
     ui.AghuCadastroPessoaApp.iniciar_execucao_individual(app_fake)
 
@@ -547,7 +562,6 @@ def test_iniciar_execucao_individual_inicia_thread_com_dados_da_tela(
     app_fake,
     monkeypatch,
 ):
-    FakeThread.criadas = []
     monkeypatch.setattr(ui.threading, "Thread", FakeThread)
     app_fake.entry_usuario_rede.valor = " usuario "
     app_fake.entry_senha.valor = "senha"
@@ -635,7 +649,6 @@ def test_iniciar_execucao_lote_gera_relatorio_padrao_e_inicia_thread(
     app_fake,
     monkeypatch,
 ):
-    FakeThread.criadas = []
     monkeypatch.setattr(ui.threading, "Thread", FakeThread)
     monkeypatch.setattr(
         ui,
