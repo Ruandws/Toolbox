@@ -11,6 +11,11 @@ import pytest
 _RAIZ_PROJETO = Path(__file__).resolve().parent.parent
 _SISTEMAS = _RAIZ_PROJETO / "sistemas"
 
+# Registra a raiz de sistemas para módulos públicos diretamente nesse diretório.
+_caminho_sistemas = str(_SISTEMAS)
+if _caminho_sistemas not in sys.path:
+    sys.path.insert(0, _caminho_sistemas)
+
 # Registra cada subdiretório de sistemas no sys.path.
 for _subdir in sorted(_SISTEMAS.iterdir()):
     if _subdir.is_dir() and not _subdir.name.startswith((".", "_")):
