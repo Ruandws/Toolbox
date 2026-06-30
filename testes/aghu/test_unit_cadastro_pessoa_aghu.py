@@ -57,6 +57,27 @@ class TestNormalizacao:
         assert normalizada.nome_pessoa == "Joao   Silva"
         assert normalizada.cpf == "12345678901"
 
+    @pytest.mark.parametrize(
+        ("valor", "esperado"),
+        [
+            ("Brasilia", "Brasília"),
+            ("Brasília/DF", "Brasília"),
+            ("Distrito Federal", "Brasília"),
+            ("Brasilia - Distrito Federal", "Brasília"),
+            ("Goiania", "Goiania"),
+            ("", ""),
+        ],
+    )
+    def test_normalizar_naturalidade_converte_aliases_do_aghu(self, valor, esperado):
+        assert aghu.normalizar_naturalidade(valor) == esperado
+
+    def test_normalizar_entrada_converte_naturalidade_antes_do_browser(self):
+        entrada = pessoa_valida(naturalidade="  Brasilia/DF  ")
+
+        normalizada = aghu.normalizar_entrada(entrada)
+
+        assert normalizada.naturalidade == "Brasília"
+
 
 class TestValidacao:
     def test_entrada_valida_nao_retorna_erros(self):

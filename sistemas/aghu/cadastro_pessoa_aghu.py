@@ -190,6 +190,26 @@ def normalizar_nacionalidade(valor: object) -> str:
     return texto
 
 
+ALIASES_NATURALIDADE_AGHU = {
+    "brasilia": "Brasília",
+    "brasilia df": "Brasília",
+    "brasilia distrito federal": "Brasília",
+    "distrito federal": "Brasília",
+    "distrito federal df": "Brasília",
+}
+
+
+def _chave_alias_naturalidade(valor: object) -> str:
+    texto = _remover_acentos(texto_planilha(valor)).casefold()
+    texto = re.sub(r"[^a-z0-9]+", " ", texto)
+    return re.sub(r"\s+", " ", texto).strip()
+
+
+def normalizar_naturalidade(valor: object) -> str:
+    texto = texto_planilha(valor)
+    return ALIASES_NATURALIDADE_AGHU.get(_chave_alias_naturalidade(texto), texto)
+
+
 def normalizar_data_nascimento(valor: object) -> str:
     if _valor_em_branco(valor):
         return ""
@@ -254,6 +274,7 @@ def normalizar_entrada(entrada: CadastroPessoaEntrada) -> CadastroPessoaEntrada:
     dados = {campo: texto_planilha(getattr(entrada, campo)) for campo in ALIASES_COLUNAS}
     dados["data_nascimento"] = normalizar_data_nascimento(dados["data_nascimento"])
     dados["nacionalidade"] = normalizar_nacionalidade(dados["nacionalidade"])
+    dados["naturalidade"] = normalizar_naturalidade(dados["naturalidade"])
     dados["cpf"] = apenas_digitos(dados["cpf"])
     return CadastroPessoaEntrada(**dados)
 
