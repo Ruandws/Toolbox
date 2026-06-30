@@ -2,6 +2,7 @@ import ctypes
 import os
 import re
 import time
+import unicodedata
 from contextlib import contextmanager, redirect_stderr, redirect_stdout
 from dataclasses import dataclass
 from datetime import date, datetime
@@ -172,6 +173,23 @@ def texto_planilha(valor: object) -> str:
     return str(valor).strip()
 
 
+def _remover_acentos(texto: str) -> str:
+    normalizado = unicodedata.normalize("NFKD", texto)
+    return "".join(
+        caractere
+        for caractere in normalizado
+        if not unicodedata.combining(caractere)
+    )
+
+
+def normalizar_nacionalidade(valor: object) -> str:
+    texto = texto_planilha(valor)
+    if _remover_acentos(texto).casefold().startswith("bra"):
+        return "Brasileiro"
+
+    return texto
+
+
 def normalizar_data_nascimento(valor: object) -> str:
     if _valor_em_branco(valor):
         return ""
@@ -235,6 +253,7 @@ def cpf_confere(valor_atual: object, cpf_esperado: str) -> bool:
 def normalizar_entrada(entrada: CadastroPessoaEntrada) -> CadastroPessoaEntrada:
     dados = {campo: texto_planilha(getattr(entrada, campo)) for campo in ALIASES_COLUNAS}
     dados["data_nascimento"] = normalizar_data_nascimento(dados["data_nascimento"])
+    dados["nacionalidade"] = normalizar_nacionalidade(dados["nacionalidade"])
     dados["cpf"] = apenas_digitos(dados["cpf"])
     return CadastroPessoaEntrada(**dados)
 

@@ -43,7 +43,7 @@ CAMPOS_PESSOA = (
     ("nome_mae", "Nome da Mãe:", "Nome completo da mãe"),
     ("sexo", "Sexo:", "Masculino ou Feminino"),
     ("data_nascimento", "Data de Nascimento:", "dd/mm/aaaa"),
-    ("nacionalidade", "Nacionalidade:", "Ex.: Brasileira"),
+    ("nacionalidade", "Nacionalidade:", "Ex.: Brasileiro"),
     ("naturalidade", "Naturalidade:", "Município/UF ou texto do AGHU"),
     ("rg", "Nro identidade:", "RG"),
     ("orgao_emissor", "Órgão Emissor:", "Ex.: SSP"),

@@ -7,7 +7,7 @@ from cadastro_pessoa_aghu import (
     CadastroPessoaEntrada,
     FluxoResultado,
     ResultadoCadastroPessoa,
-    STATUS_ATUALIZADO,
+    STATUS_MANTIDO,
     STATUS_CONFERIR_MANUAL,
     STATUS_CRIADO,
     STATUS_ERRO,
@@ -442,21 +442,14 @@ class TestPessoaFlow:
         assert aghu.PessoaFlow._normalizar_sexo("feminino") == "Feminino"
         assert aghu.PessoaFlow._normalizar_sexo("outro") == "Ignorado"
 
-    def test_processar_atualiza_quando_cpf_encontrado(self, monkeypatch):
+    def test_processar_retorna_mantido_quando_cpf_encontrado(self, monkeypatch):
         flow = aghu.PessoaFlow(object())
         linha = object()
-        chamadas = []
         monkeypatch.setattr(flow, "pesquisar_por_cpf", lambda cpf: ("encontrado", linha))
-        monkeypatch.setattr(aghu, "clicar_acao", lambda alvo, nomes: chamadas.append((alvo, nomes)))
-        monkeypatch.setattr(flow, "_preencher_formulario", lambda entrada: chamadas.append(("preencher", entrada.cpf)))
-        monkeypatch.setattr(flow, "_gravar_pessoa", lambda: ("sucesso", "alterada"))
-        monkeypatch.setattr(flow, "_retornar_para_pesquisa", lambda: chamadas.append("voltar"))
 
         resultado = flow.processar(pessoa_valida())
 
-        assert resultado == FluxoResultado(STATUS_ATUALIZADO, "alterada")
-        assert (linha, ("Editar",)) in chamadas
-        assert "voltar" in chamadas
+        assert resultado == FluxoResultado(STATUS_MANTIDO, "Cadastro ja existente para o CPF informado. Nenhuma alteracao realizada.")
 
     def test_processar_cria_quando_cpf_nao_encontrado(self, monkeypatch):
         flow = aghu.PessoaFlow(object())
