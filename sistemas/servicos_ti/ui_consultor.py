@@ -1,5 +1,5 @@
 import threading
-from tkinter import filedialog
+from tkinter import BooleanVar, filedialog
 import customtkinter as ctk
 from consultor_sti import prepare_search_value, run_automation, run_batch_automation
 
@@ -16,6 +16,7 @@ class ExtratorApp(ctk.CTk):
         self.title("Extrator - Interface Visual")
         self.geometry("720x650")
         self.grid_columnconfigure(0, weight=1)
+        self.collect_email_var = BooleanVar(value=False)
 
         self.label_title = ctk.CTkLabel(
             self,
@@ -104,12 +105,24 @@ class ExtratorApp(ctk.CTk):
         self.combo_search_type.grid(
             row=2,
             column=1,
-            columnspan=2,
             padx=10,
             pady=10,
             sticky="ew",
         )
         self.combo_search_type.set("CPF")
+
+        self.checkbox_collect_email = ctk.CTkCheckBox(
+            self.frame_inputs,
+            text="Coletar e-mail",
+            variable=self.collect_email_var,
+        )
+        self.checkbox_collect_email.grid(
+            row=2,
+            column=2,
+            padx=10,
+            pady=10,
+            sticky="w",
+        )
 
     # Cria campos de pesquisa única.
     def create_single_search_fields(self):
@@ -293,6 +306,7 @@ class ExtratorApp(ctk.CTk):
         search_value = self.entry_search.get().strip()
         spreadsheet_path = self.entry_spreadsheet.get().strip()
         report_directory = self.entry_report_dir.get().strip()
+        collect_email = self.collect_email_var.get()
 
         if not login or not password:
             self.show_status(
@@ -318,6 +332,7 @@ class ExtratorApp(ctk.CTk):
                 search_type,
                 spreadsheet_path,
                 report_directory,
+                collect_email,
             )
             status_text = "Iniciando automação em lote..."
         
@@ -344,6 +359,7 @@ class ExtratorApp(ctk.CTk):
                 password,
                 search_type,
                 clean_search_value,
+                collect_email,
             )
             status_text = "Iniciando automação individual..."
 

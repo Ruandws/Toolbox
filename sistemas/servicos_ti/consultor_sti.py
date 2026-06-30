@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
+from urllib.parse import quote
 
 from openpyxl import Workbook, load_workbook
 from openpyxl.utils import get_column_letter
@@ -14,6 +15,7 @@ from playwright.sync_api import sync_playwright
 
 LOGIN_URL = "https://servicosti.ebserh.gov.br/#/login"
 SEARCH_USERS_URL = "https://servicosti.ebserh.gov.br/#/pesquisa-usuarios"
+USER_URL_TEMPLATE = "https://servicosti.ebserh.gov.br/#/usuarios/{user_login}"
 
 SUPPORTED_EXTENSIONS = (".xlsx",)
 
@@ -23,6 +25,7 @@ SEARCH_TYPE_FULL_NAME = "nome completo"
 CPF_DIGITS_LENGTH = 11
 
 REPORT_COLUMN_FULL_NAME = "Nome Completo"
+REPORT_COLUMN_EMAIL = "E-mail"
 REPORT_COLUMN_USER = "usuário"
 REPORT_COLUMN_STATUS = "Relatório"
 
@@ -57,6 +60,10 @@ SEARCH_RESULT_ROW_SELECTOR = (
 SEARCH_RESPONSE_TIMEOUT_MS = 5000
 SEARCH_LOADING_APPEAR_TIMEOUT_MS = 1500
 SEARCH_LOADING_FINISH_TIMEOUT_MS = 10000
+
+EMAIL_TEXTBOX_INDEX = 3
+EMAIL_FIELD_TIMEOUT_MS = 10000
+USER_URL_SAFE_CHARS = "._@-'"
 
 LOGIN_BUTTON_TEXT = "Entrar"
 LOGIN_PASSWORD_SELECTOR = 'input[type="password"]'
@@ -100,6 +107,7 @@ class SearchResult:
     message: str
     full_name: str = ""
     user_login: str = ""
+    email: str = ""
 
 
 # -----------------------------
@@ -303,24 +311,36 @@ def is_empty_row(raw_row: Sequence[Any]) -> bool:
 
 
 # Obtém cabeçalhos do relatório.  
-def get_report_headers(search_type: str) -> List[str]:
+def get_report_headers(
+    search_type: str,
+    collect_email: bool = False,
+) -> List[str]:
     normalized_search_type = normalize_search_type(search_type)
 
     if normalized_search_type == SEARCH_TYPE_CPF:
-        return [
+        headers = [
             REPORT_COLUMN_FULL_NAME,
             REPORT_COLUMN_USER,
-            REPORT_COLUMN_STATUS,
+        ]
+    else:
+        headers = [
+            REPORT_COLUMN_USER,
         ]
 
-    return [
-        REPORT_COLUMN_USER,
-        REPORT_COLUMN_STATUS,
-    ]
+    if collect_email:
+        headers.append(REPORT_COLUMN_EMAIL)
+
+    headers.append(REPORT_COLUMN_STATUS)
+
+    return headers
 
 
 # Constrói linha do relatório.  
-def build_report_row(search_type: str, result: SearchResult) -> Row:
+def build_report_row(
+    search_type: str,
+    result: SearchResult,
+    collect_email: bool = False,
+) -> Row:
     
     report_row: Row = {
         REPORT_COLUMN_USER: result.user_login,
@@ -329,6 +349,9 @@ def build_report_row(search_type: str, result: SearchResult) -> Row:
 
     if normalize_search_type(search_type) == SEARCH_TYPE_CPF:
         report_row[REPORT_COLUMN_FULL_NAME] = result.full_name
+
+    if collect_email:
+        report_row[REPORT_COLUMN_EMAIL] = result.email
 
     return report_row
 
@@ -339,9 +362,10 @@ def write_report(
     report_path: Path,
     search_type: str,
     rows: Sequence[Row],
+    collect_email: bool = False,
 ) -> None:
     validate_spreadsheet_extension(source_spreadsheet_path)
-    report_headers = get_report_headers(search_type)
+    report_headers = get_report_headers(search_type, collect_email)
 
     write_xlsx_report(report_path, report_headers, rows)
 
@@ -627,6 +651,22 @@ def open_search_users_page(page) -> None:
     wait_for_search_users_page_ready(page)
 
 
+def build_user_url(user_login: str) -> str:
+    encoded_user_login = quote(
+        user_login,
+        safe=USER_URL_SAFE_CHARS,
+    )
+
+    return USER_URL_TEMPLATE.format(user_login=encoded_user_login)
+
+
+def open_user_page(page, user_login: str) -> None:
+    page.goto(
+        build_user_url(user_login),
+        wait_until="domcontentloaded",
+    )
+
+
 # -----------------------------
 # Locators e Esperas de Pesquisa
 # -----------------------------
@@ -667,6 +707,26 @@ def get_no_user_found_locator(page):
 # Obtém locator das linhas válidas de usuário.
 def get_search_result_rows_locator(page):
     return page.locator(SEARCH_RESULT_ROW_SELECTOR)
+
+
+def get_email_input_locator(page):
+    return page.get_by_role("textbox").nth(EMAIL_TEXTBOX_INDEX)
+
+
+def collect_email_for_result(page, result: SearchResult) -> SearchResult:
+    if result.message != "Usuário encontrado" or not result.user_login:
+        return result
+
+    open_user_page(page, result.user_login)
+
+    email_input = get_email_input_locator(page)
+    email_input.wait_for(
+        state="visible",
+        timeout=EMAIL_FIELD_TIMEOUT_MS,
+    )
+    result.email = email_input.input_value().strip()
+
+    return result
 
 
 # Aguarda o ciclo de carregamento da pesquisa.
@@ -723,6 +783,7 @@ def search_user(
     page,
     search_type: str,
     search_value: Any,
+    collect_email: bool = False,
 ) -> SearchResult:
     clean_value = prepare_search_value(search_type, search_value)
 
@@ -730,6 +791,7 @@ def search_user(
         page,
         search_type,
         clean_value,
+        collect_email,
     )
 
 # Pesquisa o usuário usando valor já validado/normalizado.
@@ -737,6 +799,7 @@ def search_user_prepared_value(
     page,
     search_type: str,
     prepared_search_value: str,
+    collect_email: bool = False,
 ) -> SearchResult:
     normalized_search_type = normalize_search_type(search_type)
     clean_value = "" if prepared_search_value is None else str(
@@ -769,7 +832,12 @@ def search_user_prepared_value(
         if count > 1:
             return SearchResult(message="Mais de um usuário encontrado")
 
-        return extract_single_result(rows.first, normalized_search_type)
+        result = extract_single_result(rows.first, normalized_search_type)
+
+        if collect_email:
+            result = collect_email_for_result(page, result)
+
+        return result
     except PlaywrightTimeoutError:
         return SearchResult(message=NO_USER_FOUND_MESSAGE)
 
@@ -779,16 +847,20 @@ def format_single_result(result: SearchResult, search_type: str) -> str:
     if result.message != "Usuário encontrado":
         return result.message
 
+    email_line = f"\nE-mail: {result.email}" if result.email else ""
+
     if normalize_search_type(search_type) == SEARCH_TYPE_CPF:
         return (
             "Usuário encontrado!\n"
             f"Nome Completo: {result.full_name}\n"
             f"Usuário: {result.user_login}"
+            f"{email_line}"
         )
 
     return (
         "Usuário encontrado!\n"
         f"Usuário: {result.user_login}"
+        f"{email_line}"
     )
 
 
@@ -802,6 +874,7 @@ def run_automation(
     password: str,
     search_type: str,
     search_value: str,
+    collect_email: bool = False,
 ) -> str:
     normalized_search_type = normalize_search_type(search_type)
     clean_search_value = prepare_search_value(
@@ -821,6 +894,7 @@ def run_automation(
                 page,
                 normalized_search_type,
                 clean_search_value,
+                collect_email,
             )
             return format_single_result(result, normalized_search_type)
         finally:
@@ -834,6 +908,7 @@ def run_batch_automation(
     search_type: str,
     spreadsheet_path: str,
     report_directory: str,
+    collect_email: bool = False,
 ) -> str:
     normalized_search_type = normalize_search_type(search_type)
     headers, source_rows = read_spreadsheet(spreadsheet_path)
@@ -851,6 +926,9 @@ def run_batch_automation(
             open_search_users_page(page)
 
             for source_row in source_rows:
+                if collect_email:
+                    open_search_users_page(page)
+
                 search_value = source_row.get(search_column, "")
 
                 try:
@@ -861,7 +939,11 @@ def run_batch_automation(
                 except ValueError as exc:
                     result = SearchResult(message=f"Erro: {str(exc)}")
                     report_rows.append(
-                        build_report_row(normalized_search_type, result)
+                        build_report_row(
+                            normalized_search_type,
+                            result,
+                            collect_email,
+                        )
                     )
                     continue
 
@@ -870,12 +952,17 @@ def run_batch_automation(
                         page,
                         normalized_search_type,
                         clean_search_value,
+                        collect_email,
                     )
                 except Exception as exc:
                     result = SearchResult(message=f"Erro: {str(exc)}")
 
                 report_rows.append(
-                    build_report_row(normalized_search_type, result)
+                    build_report_row(
+                        normalized_search_type,
+                        result,
+                        collect_email,
+                    )
                 )
         finally:
             context.close()
@@ -886,6 +973,7 @@ def run_batch_automation(
         report_path,
         normalized_search_type,
         report_rows,
+        collect_email,
     )
 
     return (
