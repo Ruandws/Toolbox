@@ -674,18 +674,10 @@ class PessoaFlow:
             )
 
         if estado == "encontrado" and linha is not None:
-            clicar_acao(linha, ("Editar",))
-            self._preencher_formulario(entrada)
-            status_gravacao, mensagem = self._gravar_pessoa()
-            self._retornar_para_pesquisa()
-
-            if status_gravacao == "sucesso":
-                return FluxoResultado(STATUS_ATUALIZADO, mensagem)
-
-            if status_gravacao == "indefinido":
-                return FluxoResultado(STATUS_CONFERIR_MANUAL, mensagem)
-
-            return FluxoResultado(STATUS_ERRO, mensagem)
+            return FluxoResultado(
+                STATUS_MANTIDO,
+                "Cadastro ja existente para o CPF informado. Nenhuma alteracao realizada.",
+            )
 
         if estado != "nao_encontrado":
             return FluxoResultado(
