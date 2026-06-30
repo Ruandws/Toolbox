@@ -4,7 +4,7 @@ import re
 import time
 from contextlib import contextmanager, redirect_stderr, redirect_stdout
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 from typing import Iterator, Literal
 
@@ -64,19 +64,19 @@ COLUNAS_OBRIGATORIAS_PESSOA = (
 )
 
 ALIASES_COLUNAS = {
-    "nome_pessoa": ("Nome da Pessoa", "Nome Pessoa", "Nome"),
-    "nome_mae": ("Nome da Mãe", "Nome Mae", "Nome da Mae"),
-    "sexo": ("Sexo",),
-    "data_nascimento": ("Data de Nascimento", "Nascimento"),
-    "nacionalidade": ("Nacionalidade",),
-    "naturalidade": ("Naturalidade",),
-    "rg": ("Nro identidade", "Nro Identidade", "RG", "Identidade"),
+    "nome_pessoa": ("Nome da Pessoa", "Nome Pessoa", "Nome", "Nome Completo", "nome completo", "Nome completo"),
+    "nome_mae": ("Nome da Mãe", "Nome Mae", "Nome da Mae", "Nome da mãe"),
+    "sexo": ("Sexo", "sexo"),
+    "data_nascimento": ("Data de Nascimento", "Data de nascimento", "Nascimento"),
+    "nacionalidade": ("Nacionalidade", "nacionalidade"),
+    "naturalidade": ("Naturalidade", "naturalidade"),
+    "rg": ("Nro identidade", "Nro Identidade", "RG", "rg", "Identidade"),
     "orgao_emissor": ("Órgão Emissor", "Orgao Emissor"),
-    "uf_rg": ("UF", "UF RG", "UF Identidade"),
-    "cpf": ("CPF",),
-    "ddd": ("DDD",),
-    "telefone_celular": ("Telefone Celular", "Celular"),
-    "cep_cadastrado": ("CEP Cadastrado", "CEP"),
+    "uf_rg": ("UF", "uf", "U.F", "u.f", "UF RG"),
+    "cpf": ("CPF", "cpf"),
+    "ddd": ("DDD", "ddd"),
+    "telefone_celular": ("Telefone Celular", "Celular", "Telefone", "Telefone (Cel.)"),
+    "cep_cadastrado": ("CEP Cadastrado", "CEP", "cep"),
     "logradouro_nao_cadastrado": ("Logradouro", "Logradouro Não Cadastrado", "Logradouro Nao Cadastrado"),
     "bairro_nao_cadastrado": ("Bairro", "Bairro Não Cadastrado", "Bairro Nao Cadastrado"),
     "cep_nao_cadastrado": ("CEP Não Cadastrado", "CEP Nao Cadastrado"),
@@ -172,6 +172,58 @@ def texto_planilha(valor: object) -> str:
     return str(valor).strip()
 
 
+def normalizar_data_nascimento(valor: object) -> str:
+    if _valor_em_branco(valor):
+        return ""
+
+    if isinstance(valor, datetime):
+        return valor.strftime("%d/%m/%Y")
+
+    if isinstance(valor, date):
+        return valor.strftime("%d/%m/%Y")
+
+    texto = texto_planilha(valor)
+    texto_data = texto.split()[0]
+
+    formatos = (
+        "%d/%m/%Y",
+        "%d-%m-%Y",
+        "%Y-%m-%d",
+        "%Y/%m/%d",
+        "%d/%m/%y",
+        "%d-%m-%y",
+    )
+    for formato in formatos:
+        try:
+            return datetime.strptime(texto_data, formato).strftime("%d/%m/%Y")
+        except ValueError:
+            pass
+
+    digitos = apenas_digitos(texto)
+    if len(digitos) == 7:
+        digitos = "0" + digitos
+
+    if _data_nascimento_valida(digitos):
+        return datetime.strptime(digitos, "%d%m%Y").strftime("%d/%m/%Y")
+
+    return texto
+
+
+def _data_nascimento_valida(valor: str) -> bool:
+    texto = texto_planilha(valor)
+    digitos = apenas_digitos(texto)
+
+    if not re.fullmatch(r"\d{8}", digitos or ""):
+        return False
+
+    try:
+        data = datetime.strptime(digitos, "%d%m%Y")
+    except ValueError:
+        return False
+
+    return data.strftime("%d%m%Y") == digitos
+
+
 def apenas_digitos(valor: object) -> str:
     return re.sub(r"\D+", "", str(valor or ""))
 
@@ -182,6 +234,7 @@ def cpf_confere(valor_atual: object, cpf_esperado: str) -> bool:
 
 def normalizar_entrada(entrada: CadastroPessoaEntrada) -> CadastroPessoaEntrada:
     dados = {campo: texto_planilha(getattr(entrada, campo)) for campo in ALIASES_COLUNAS}
+    dados["data_nascimento"] = normalizar_data_nascimento(dados["data_nascimento"])
     dados["cpf"] = apenas_digitos(dados["cpf"])
     return CadastroPessoaEntrada(**dados)
 
@@ -204,6 +257,9 @@ def validar_entrada(entrada: CadastroPessoaEntrada) -> list[str]:
 
     if entrada.cpf and len(apenas_digitos(entrada.cpf)) != 11:
         erros.append("Pessoa: CPF deve conter 11 digitos.")
+
+    if entrada.data_nascimento and not _data_nascimento_valida(entrada.data_nascimento):
+        erros.append("Pessoa: Data de Nascimento deve estar em uma data valida no formato dd/mm/aaaa.")
 
     return erros
 
