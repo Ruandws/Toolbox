@@ -271,6 +271,15 @@ class TestSearchResult:
         headers = get_report_headers("nome completo")
         assert "Nome Completo" not in headers
 
+    def test_report_headers_com_email(self):
+        headers = get_report_headers("cpf", collect_email=True)
+        assert headers == [
+            "Nome Completo",
+            "usuário",
+            "E-mail",
+            "Relatório",
+        ]
+
     def test_build_report_row_cpf(self):
         result = SearchResult(
             message="Usuário encontrado",
@@ -279,6 +288,15 @@ class TestSearchResult:
         )
         row = build_report_row("cpf", result)
         assert row["Nome Completo"] == "João"
+
+    def test_build_report_row_com_email(self):
+        result = SearchResult(
+            message="Usuário encontrado",
+            user_login="ana.maria",
+            email="ana.maria@hubrasil.gov.br",
+        )
+        row = build_report_row("nome completo", result, collect_email=True)
+        assert row["E-mail"] == "ana.maria@hubrasil.gov.br"
 
     def test_format_single_result_nao_encontrado(self):
         result = SearchResult(message=NO_USER_FOUND_MESSAGE)
@@ -293,3 +311,12 @@ class TestSearchResult:
         texto = format_single_result(result, "cpf")
         assert "Ana Maria" in texto
         assert "ana.maria" in texto
+
+    def test_format_single_result_com_email(self):
+        result = SearchResult(
+            message="Usuário encontrado",
+            user_login="ana.maria",
+            email="ana.maria@hubrasil.gov.br",
+        )
+        texto = format_single_result(result, "nome completo")
+        assert "ana.maria@hubrasil.gov.br" in texto
