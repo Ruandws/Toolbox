@@ -31,9 +31,7 @@ URLS_AMBIENTE_AGHU = {
 
 SEXO_MASCULINO = "Masculino"
 SEXO_FEMININO = "Feminino"
-SEXO_SELECIONE = "Selecione"
 OPCOES_SEXO = (SEXO_MASCULINO, SEXO_FEMININO)
-OPCOES_SEXO_UI = (SEXO_SELECIONE, *OPCOES_SEXO)
 
 BASE_DIR = Path(__file__).resolve().parent
 LOGS_DIR = BASE_DIR / "logs"
@@ -454,7 +452,7 @@ class AghuCadastroPessoaApp(ctk.CTk):
 
         segment = ctk.CTkSegmentedButton(
             frame,
-            values=list(OPCOES_SEXO_UI),
+            values=list(OPCOES_SEXO),
             variable=self.var_sexo,
             command=self._atualizar_visual_sexo,
             height=34,
@@ -464,10 +462,9 @@ class AghuCadastroPessoaApp(ctk.CTk):
             unselected_hover_color=("#C9C9C9", "#3D3D3D"),
         )
         segment.grid(row=row, column=1, columnspan=2, padx=14, pady=6, sticky="ew")
-        segment.set(SEXO_SELECIONE)
-        self.var_sexo.set("")
+        segment.set("")
 
-        self._atualizar_visual_segmented_button(segment, SEXO_SELECIONE)
+        self._atualizar_visual_segmented_button(segment, "")
 
         return segment
 
@@ -476,11 +473,7 @@ class AghuCadastroPessoaApp(ctk.CTk):
         if self.segment_sexo is None:
             return
 
-        valor_visual = sexo
-        if sexo == SEXO_SELECIONE:
-            self.var_sexo.set("")
-
-        self._atualizar_visual_segmented_button(self.segment_sexo, valor_visual)
+        self._atualizar_visual_segmented_button(self.segment_sexo, sexo)
 
 
     def _atualizar_visual_segmented_button(

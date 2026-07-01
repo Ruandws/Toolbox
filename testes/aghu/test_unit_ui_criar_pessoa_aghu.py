@@ -122,7 +122,7 @@ def app_fake():
     }
     app.button_executar = FakeWidget()
     app.segment_tipo_execucao = FakeSegment([ui.TIPO_INDIVIDUAL, ui.TIPO_LOTE])
-    app.segment_sexo = FakeSegment(list(ui.OPCOES_SEXO_UI))
+    app.segment_sexo = FakeSegment(list(ui.OPCOES_SEXO))
     app.checkbox_browser = FakeWidget()
     app.checkbox_console = FakeWidget()
     app.option_ambiente = FakeWidget()
@@ -245,19 +245,6 @@ def test_atualizar_visual_sexo_ignora_segmento_ausente(app_fake):
     app_fake.segment_sexo = None
 
     ui.AghuCadastroPessoaApp._atualizar_visual_sexo(app_fake, ui.SEXO_FEMININO)
-
-
-def test_atualizar_visual_sexo_selecione_mantem_valor_vazio(app_fake):
-    app_fake.var_sexo.set(ui.SEXO_SELECIONE)
-
-    ui.AghuCadastroPessoaApp._atualizar_visual_sexo(app_fake, ui.SEXO_SELECIONE)
-
-    assert app_fake.var_sexo.get() == ""
-    assert (
-        app_fake.segment_sexo._buttons_dict[ui.SEXO_SELECIONE]
-        .configuracoes["text_color"]
-        == "white"
-    )
 
 
 def test_atualizar_visual_segmented_button_destaca_valor_selecionado(app_fake):
@@ -431,10 +418,9 @@ def test_cadastro_individual_rejeita_sexo_invalido(app_fake):
         ui.AghuCadastroPessoaApp._cadastro_individual(app_fake)
 
 
-@pytest.mark.parametrize("sexo", ["", ui.SEXO_SELECIONE])
-def test_cadastro_individual_exige_escolha_explicita_de_sexo(app_fake, sexo):
+def test_cadastro_individual_exige_escolha_explicita_de_sexo(app_fake):
     preencher_cadastro_individual(app_fake)
-    app_fake.var_sexo.set(sexo)
+    app_fake.var_sexo.set("")
 
     with pytest.raises(ValueError, match="Selecione o sexo"):
         ui.AghuCadastroPessoaApp._cadastro_individual(app_fake)
@@ -588,6 +574,7 @@ def test_iniciar_execucao_individual_inicia_thread_com_dados_da_tela(
     app_fake.entry_senha.valor = "senha"
     preencher_cadastro_individual(app_fake)
 
+    app_fake.var_sexo.set(ui.SEXO_MASCULINO)
     ui.AghuCadastroPessoaApp.iniciar_execucao_individual(app_fake)
 
     thread = FakeThread.criadas[0]
