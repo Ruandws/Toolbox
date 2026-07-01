@@ -1,0 +1,928 @@
+metadata:
+  nome: regras_perfis_aghu
+  origem: Mapeamento de Perfis - HUB Wiki
+  data_revisao: '2026-06-26'
+  total_tabelas: 14
+  total_regras: 68
+tabelas:
+- ordem: 1
+  escopo: PERFIS CRÍTICOS. ATENÇÃO!
+  quantidade_regras: 3
+- ordem: 2
+  escopo: Perfis Solicitar Exames para Paciente Externo (RT-PCR)
+  quantidade_regras: 1
+- ordem: 3
+  escopo: Módulo Ambulatório
+  quantidade_regras: 1
+- ordem: 4
+  escopo: Módulo Suprimentos
+  quantidade_regras: 1
+- ordem: 5
+  escopo: Perfis Básicos Unidade do Sistema Urinário (USUR)
+  quantidade_regras: 1
+- ordem: 6
+  escopo: Perfis Módulo Cirurgia/PDT
+  quantidade_regras: 8
+- ordem: 7
+  escopo: Perfis Básicos Unidade de Diagnóstico por Imagem (UDI)
+  quantidade_regras: 7
+- ordem: 8
+  escopo: Perfis Básicos Unidade de Laboratório de Análises Clínicas (ULAC)
+  quantidade_regras: 6
+- ordem: 9
+  escopo: Perfis Básicos Agência Transfusional - Unidade de Hemoterapia e Hematologia (UHH)
+  quantidade_regras: 4
+- ordem: 10
+  escopo: Perfis Básicos Unidade de Anatomia Patológica (UAPAT)
+  quantidade_regras: 4
+- ordem: 11
+  escopo: Perfis Básicos
+  quantidade_regras: 12
+- ordem: 12
+  escopo: Perfis Alunos
+  quantidade_regras: 7
+- ordem: 13
+  escopo: Perfis Residentes
+  quantidade_regras: 5
+- ordem: 14
+  escopo: Perfis Básicos Módulo Cirurgias/PDT Centro de Hemodinâmica (UDE)
+  quantidade_regras: 8
+regras:
+- escopo: PERFIS CRÍTICOS. ATENÇÃO!
+  categoria: Ninguém
+  perfis_conceder: []
+  perfis_bloqueados:
+  - ADM01
+  - ADM02
+  - ADM02.06
+  - ADM02.07
+  - ADM03.07
+  - ADM04
+  - ADM05
+  - ADM06
+  - ADM07
+  - ADM09
+  - ESP05
+  - EVOLUCAO
+  - SUPER
+  perfis_validacao_ura: []
+  observacoes:
+  - Regra revisada conforme Wiki em 2026-06-26
+  - 'Perfis críticos: não conceder para nenhuma categoria.'
+- escopo: PERFIS CRÍTICOS. ATENÇÃO!
+  categoria: Apenas funcionários da Unidade de Regulação Assistencial (URA) ou Setor de Contratualização e Regulação (STCOR)
+  perfis_conceder: []
+  perfis_bloqueados: []
+  perfis_validacao_ura:
+  - EXT.ADM02
+  - ADM03
+  - EXT.CAD.PACIENTE
+  observacoes:
+  - Regra revisada conforme Wiki em 2026-06-26
+  - Conceder apenas a funcionários da URA ou STCOR.
+- escopo: PERFIS CRÍTICOS. ATENÇÃO!
+  categoria: Apenas funcionário AUTORIZADOS VIA SEI pela Unidade de Regulação Assistencial (URA) ou Setor de Contratualização
+    e Regulação (STCOR)
+  perfis_conceder: []
+  perfis_bloqueados: []
+  perfis_validacao_ura:
+  - ADM02.02
+  - EXT.CAD.PACIENTE
+  observacoes:
+  - Regra revisada conforme Wiki em 2026-06-26
+  - Conceder apenas a funcionários autorizados via SEI pela URA ou STCOR.
+- escopo: Perfis Solicitar Exames para Paciente Externo (RT-PCR)
+  categoria: Qualquer categoria
+  perfis_conceder:
+  - EXT.EXAMES.EXTERNOS
+  perfis_bloqueados: []
+  perfis_validacao_ura: []
+  observacoes:
+  - Regra revisada conforme Wiki em 2026-06-26
+- escopo: Módulo Ambulatório
+  categoria: Qualquer categoria
+  perfis_conceder:
+  - EXT.ARQUIVOSAGENDAS
+  perfis_bloqueados: []
+  perfis_validacao_ura: []
+  observacoes:
+  - Regra revisada conforme Wiki em 2026-06-26
+  - Perfil para habilitar os botões de exportar arquivos das agendas. Módulo ambulatório > Pesquisas > Gerar Arquivos das
+    Agendas
+- escopo: Módulo Suprimentos
+  categoria: Qualquer categoria
+  perfis_conceder:
+  - EXT.SUP.CONSULTAS
+  perfis_bloqueados: []
+  perfis_validacao_ura: []
+  observacoes:
+  - Regra revisada conforme Wiki em 2026-06-26
+  - Acesso ao menu de consultas do módulo Suprimentos. Estoque. Estoque Geral, movimentos do material, estatísticas de consumo,
+    estoque almoxarifado.
+- escopo: Perfis Básicos Unidade do Sistema Urinário (USUR)
+  categoria: Psicólogo, Psicólogos Residentes, Assistente Social, Assistente Social Residente
+  perfis_conceder:
+  - MULT01
+  - OPS07
+  - ADM02.02
+  - EXT.POL
+  - EXT.CENSO
+  - EXT.ADMASS
+  - RM01
+  perfis_bloqueados: []
+  perfis_validacao_ura: []
+  observacoes:
+  - Regra revisada conforme Wiki em 2026-06-26
+- escopo: Perfis Módulo Cirurgia/PDT
+  categoria: Medicina
+  perfis_conceder:
+  - MED01
+  - MED04
+  - EXT.MED04
+  - EXT.CENSO
+  - EXT.POL
+  - EXT.ADMASS
+  - RM01
+  perfis_bloqueados: []
+  perfis_validacao_ura: []
+  observacoes:
+  - Regra revisada conforme Wiki em 2026-06-26
+  - Cadastro de especialidade 2CG como cirurgião e cadastro do profissional na unidade cirúrgica
+- escopo: Perfis Módulo Cirurgia/PDT
+  categoria: Medicina Anestesiologista
+  perfis_conceder:
+  - MED01
+  - MED04
+  - EXT.MED04
+  - EXT.CENSO
+  - EXT.POL
+  - EXT.ADMASS
+  - RM01
+  perfis_bloqueados: []
+  perfis_validacao_ura: []
+  observacoes:
+  - Regra revisada conforme Wiki em 2026-06-26
+  - Cadastro de especialidade 2AN como cirurgião e cadastro do profissional na unidade cirúrgica
+- escopo: Perfis Módulo Cirurgia/PDT
+  categoria: Cirurgião Dentista / Bucomaxilo
+  perfis_conceder:
+  - OPS01
+  - MULT01
+  - MED04
+  - EXT.MED04
+  - EXT.CENSO
+  - EXT.POL
+  - EXT.ADMASS
+  - RM01
+  perfis_bloqueados: []
+  perfis_validacao_ura: []
+  observacoes:
+  - Regra revisada conforme Wiki em 2026-06-26
+  - Cadastro de especialidade 2BM como cirurgião e cadastro do profissional na unidade cirúrgica
+- escopo: Perfis Módulo Cirurgia/PDT
+  categoria: Enfermagem
+  perfis_conceder:
+  - ENF01
+  - ENF07
+  - EXT.CENSO
+  - EXT.POL
+  - RM01
+  - EXT.ADMASS
+  perfis_bloqueados: []
+  perfis_validacao_ura: []
+  observacoes:
+  - Regra revisada conforme Wiki em 2026-06-26
+  - Cadastro do profissional na unidade cirúrgica
+  - 'Perfis duplicados na tabela original removidos nesta regra: RM01'
+- escopo: Perfis Módulo Cirurgia/PDT
+  categoria: Técnico/Auxiliar de Enfermagem
+  perfis_conceder:
+  - ENF05
+  - ENF08
+  - EXT.COLETA
+  - EXT.CENSO
+  - EXT.POL
+  - RM01
+  perfis_bloqueados: []
+  perfis_validacao_ura: []
+  observacoes:
+  - Regra revisada conforme Wiki em 2026-06-26
+  - Inclusão na unidade cirúrgica
+- escopo: Perfis Módulo Cirurgia/PDT
+  categoria: Assistente Administrativo / Recepcionista
+  perfis_conceder:
+  - ADM04
+  perfis_bloqueados: []
+  perfis_validacao_ura: []
+  observacoes:
+  - Regra revisada conforme Wiki em 2026-06-26
+- escopo: Perfis Módulo Cirurgia/PDT
+  categoria: Responsáveis por cadastros no módulo Cirurgia/PDT (Apenas funcionário AUTORIZADOS VIA SEI pelo Setor de Contratualização
+    e Regulação (STCOR))
+  perfis_conceder:
+  - CAD18
+  - EXT.CAD18
+  perfis_bloqueados: []
+  perfis_validacao_ura: []
+  observacoes:
+  - Regra revisada conforme Wiki em 2026-06-26
+- escopo: Perfis Módulo Cirurgia/PDT
+  categoria: Outros Cargos
+  perfis_conceder:
+  - ADM04.3
+  perfis_bloqueados: []
+  perfis_validacao_ura: []
+  observacoes:
+  - Regra revisada conforme Wiki em 2026-06-26
+  - Deve ser analisado para cada caso
+  - Hotelaria
+- escopo: Perfis Básicos Unidade de Diagnóstico por Imagem (UDI)
+  categoria: Médico Radiologista / Staff
+  perfis_conceder:
+  - MED01
+  - EXT.CENSO
+  - EXT.POL
+  - ADM25
+  - RM01
+  perfis_bloqueados: []
+  perfis_validacao_ura: []
+  observacoes:
+  - Regra revisada conforme Wiki em 2026-06-26
+- escopo: Perfis Básicos Unidade de Diagnóstico por Imagem (UDI)
+  categoria: Médico Residente
+  perfis_conceder:
+  - MED02
+  - MED04
+  - EXT.MED04
+  - EXT.CENSO
+  - EXT.POL
+  - ADM25.1
+  - RM01
+  perfis_bloqueados: []
+  perfis_validacao_ura: []
+  observacoes:
+  - Regra revisada conforme Wiki em 2026-06-26
+- escopo: Perfis Básicos Unidade de Diagnóstico por Imagem (UDI)
+  categoria: Enfermagem
+  perfis_conceder:
+  - ENF01
+  - EXT.CENSO
+  - EXT.POL
+  - RM01
+  - CAD08.4
+  - ADM25.02
+  perfis_bloqueados: []
+  perfis_validacao_ura: []
+  observacoes:
+  - Regra revisada conforme Wiki em 2026-06-26
+- escopo: Perfis Básicos Unidade de Diagnóstico por Imagem (UDI)
+  categoria: Técnico de Enfermagem / Auxiliar de Enfermagem
+  perfis_conceder:
+  - ENF05
+  - EXT.COLETA
+  - EXT.CENSO
+  - EXT.POL
+  - ADM25.02
+  - RM01
+  perfis_bloqueados: []
+  perfis_validacao_ura: []
+  observacoes:
+  - Regra revisada conforme Wiki em 2026-06-26
+- escopo: Perfis Básicos Unidade de Diagnóstico por Imagem (UDI)
+  categoria: Técnico de Radiologia
+  perfis_conceder:
+  - OPS10
+  - EXT.CENSO
+  - EXT.POL
+  - ADM25.02
+  - RM01
+  perfis_bloqueados: []
+  perfis_validacao_ura: []
+  observacoes:
+  - Regra revisada conforme Wiki em 2026-06-26
+- escopo: Perfis Básicos Unidade de Diagnóstico por Imagem (UDI)
+  categoria: Assistente Administrativo / Recepcionista
+  perfis_conceder:
+  - EXT.POL
+  - CAD08.4
+  - ADM25.02
+  perfis_bloqueados: []
+  perfis_validacao_ura: []
+  observacoes:
+  - Regra revisada conforme Wiki em 2026-06-26
+- escopo: Perfis Básicos Unidade de Diagnóstico por Imagem (UDI)
+  categoria: Supervisor
+  perfis_conceder:
+  - ADM25
+  perfis_bloqueados: []
+  perfis_validacao_ura: []
+  observacoes:
+  - Regra revisada conforme Wiki em 2026-06-26
+  - Perfil do cargo e
+- escopo: Perfis Básicos Unidade de Laboratório de Análises Clínicas (ULAC)
+  categoria: Atendente de Consultório
+  perfis_conceder:
+  - CAD08.4
+  - ADM25.02
+  - EXT.POL
+  perfis_bloqueados: []
+  perfis_validacao_ura: []
+  observacoes:
+  - Regra revisada conforme Wiki em 2026-06-26
+- escopo: Perfis Básicos Unidade de Laboratório de Análises Clínicas (ULAC)
+  categoria: Auxiliar Operacional
+  perfis_conceder:
+  - RM01
+  perfis_bloqueados: []
+  perfis_validacao_ura: []
+  observacoes:
+  - Regra revisada conforme Wiki em 2026-06-26
+- escopo: Perfis Básicos Unidade de Laboratório de Análises Clínicas (ULAC)
+  categoria: Bioquímico, Biomédico
+  perfis_conceder:
+  - ADM25
+  - OPS06
+  - EXT.CENSO
+  - EXT.POL
+  - RM01
+  perfis_bloqueados: []
+  perfis_validacao_ura: []
+  observacoes:
+  - Regra revisada conforme Wiki em 2026-06-26
+- escopo: Perfis Básicos Unidade de Laboratório de Análises Clínicas (ULAC)
+  categoria: Farmacêutico
+  perfis_conceder:
+  - ADM25
+  - OPS06
+  - OPS08
+  - EXT.CENSO
+  - EXT.POL
+  - RM01
+  perfis_bloqueados: []
+  perfis_validacao_ura: []
+  observacoes:
+  - Regra revisada conforme Wiki em 2026-06-26
+- escopo: Perfis Básicos Unidade de Laboratório de Análises Clínicas (ULAC)
+  categoria: Assistente Administrativo, Auxiliar de Enfermagem, Técnico de Enfermagem, Auxiliar de Laboratório, Técnico de
+    Laboratório
+  perfis_conceder:
+  - EXT.EXM.LAB
+  - EXT.CENSO
+  - EXT.POL
+  - RM01
+  perfis_bloqueados: []
+  perfis_validacao_ura: []
+  observacoes:
+  - Regra revisada conforme Wiki em 2026-06-26
+- escopo: Perfis Básicos Unidade de Laboratório de Análises Clínicas (ULAC)
+  categoria: Supervisor
+  perfis_conceder:
+  - ADM25
+  - ADM12
+  - CAD08
+  - CAD08.2
+  - EXT.EXM.LAB
+  perfis_bloqueados: []
+  perfis_validacao_ura: []
+  observacoes:
+  - Regra revisada conforme Wiki em 2026-06-26
+  - Perfil do cargo
+- escopo: Perfis Básicos Agência Transfusional - Unidade de Hemoterapia e Hematologia (UHH)
+  categoria: Técnico de Laboratório
+  perfis_conceder:
+  - EXT.COLETA
+  - ADM25.02
+  - OPS10
+  - RM01
+  perfis_bloqueados: []
+  perfis_validacao_ura: []
+  observacoes:
+  - Regra revisada conforme Wiki em 2026-06-26
+- escopo: Perfis Básicos Agência Transfusional - Unidade de Hemoterapia e Hematologia (UHH)
+  categoria: Farmacêutico, Biólogo
+  perfis_conceder:
+  - EXT.COLETA
+  - OPS06
+  - RM01
+  perfis_bloqueados: []
+  perfis_validacao_ura: []
+  observacoes:
+  - Regra revisada conforme Wiki em 2026-06-26
+- escopo: Perfis Básicos Agência Transfusional - Unidade de Hemoterapia e Hematologia (UHH)
+  categoria: Enfermeiro
+  perfis_conceder:
+  - ENF01
+  - OPS10
+  perfis_bloqueados: []
+  perfis_validacao_ura: []
+  observacoes:
+  - Regra revisada conforme Wiki em 2026-06-26
+- escopo: Perfis Básicos Agência Transfusional - Unidade de Hemoterapia e Hematologia (UHH)
+  categoria: Médico Hematologista
+  perfis_conceder:
+  - MED01
+  - OPS06
+  - RM01
+  perfis_bloqueados: []
+  perfis_validacao_ura: []
+  observacoes:
+  - Regra revisada conforme Wiki em 2026-06-26
+- escopo: Perfis Básicos Unidade de Anatomia Patológica (UAPAT)
+  categoria: Médico Patologista
+  perfis_conceder:
+  - MED01
+  - MED03
+  - MED12
+  - EXT.CENSO
+  - EXT.POL
+  - EXT.ADMASS
+  - RM01
+  perfis_bloqueados: []
+  perfis_validacao_ura: []
+  observacoes:
+  - Regra revisada conforme Wiki em 2026-06-26
+  - Cadastrar o profissional no módulo patologia
+- escopo: Perfis Básicos Unidade de Anatomia Patológica (UAPAT)
+  categoria: Médico Residente em Patologia
+  perfis_conceder:
+  - MED01.2
+  - ADM25.1
+  - MED03
+  - MED12.1
+  - EXT.CENSO
+  - EXT.POL
+  - EXT.ADMASS
+  - RM01
+  perfis_bloqueados: []
+  perfis_validacao_ura: []
+  observacoes:
+  - Regra revisada conforme Wiki em 2026-06-26
+  - Cadastrar o profissional no módulo patologia
+- escopo: Perfis Básicos Unidade de Anatomia Patológica (UAPAT)
+  categoria: Técnicos
+  perfis_conceder:
+  - OPS23
+  - OPS06
+  - ADM25.1
+  - EXT.CENSO
+  - EXT.POL
+  - RM01
+  perfis_bloqueados: []
+  perfis_validacao_ura: []
+  observacoes:
+  - Regra revisada conforme Wiki em 2026-06-26
+  - Cadastrar o profissional no módulo patologia
+- escopo: Perfis Básicos Unidade de Anatomia Patológica (UAPAT)
+  categoria: Assistente Administrativo
+  perfis_conceder:
+  - CAD08
+  - CAD15
+  - ADM05
+  - ADM25.02
+  - RM01
+  perfis_bloqueados: []
+  perfis_validacao_ura: []
+  observacoes:
+  - Regra revisada conforme Wiki em 2026-06-26
+- escopo: Perfis Básicos
+  categoria: Medicina Geral
+  perfis_conceder:
+  - MED01
+  - EXT.CENSO
+  - EXT.POL
+  - EXT.ADMASS
+  - EXT.EXM.EXTERNO
+  - RM01
+  perfis_bloqueados: []
+  perfis_validacao_ura: []
+  observacoes:
+  - Regra revisada conforme Wiki em 2026-06-26
+- escopo: Perfis Básicos
+  categoria: Enfermagem
+  perfis_conceder:
+  - ENF01
+  - EXT.CENSO
+  - EXT.POL
+  - EXT.ADMASS
+  - RM01
+  perfis_bloqueados: []
+  perfis_validacao_ura: []
+  observacoes:
+  - Regra revisada conforme Wiki em 2026-06-26
+- escopo: Perfis Básicos
+  categoria: Técnico/Auxiliar de Enfermagem
+  perfis_conceder:
+  - ENF05
+  - EXT.COLETA
+  - EXT.CENSO
+  - EXT.POL
+  - EXT.ADMASS
+  - RM01
+  perfis_bloqueados: []
+  perfis_validacao_ura: []
+  observacoes:
+  - Regra revisada conforme Wiki em 2026-06-26
+- escopo: Perfis Básicos
+  categoria: Multiprofissional
+  perfis_conceder:
+  - MULT01
+  - EXT.CENSO
+  - EXT.POL
+  - EXT.ADMASS
+  - RM01
+  perfis_bloqueados: []
+  perfis_validacao_ura: []
+  observacoes:
+  - Regra revisada conforme Wiki em 2026-06-26
+  - OPS específico do cargo
+- escopo: Perfis Básicos
+  categoria: Odontólogo
+  perfis_conceder:
+  - OPS01
+  - MULT01
+  - EXT.CENSO
+  - EXT.POL
+  - EXT.ADMASS
+  perfis_bloqueados: []
+  perfis_validacao_ura: []
+  observacoes:
+  - Regra revisada conforme Wiki em 2026-06-26
+- escopo: Perfis Básicos
+  categoria: Nutricionista
+  perfis_conceder:
+  - OPS04
+  - MULT01
+  - EXT.CENSO
+  - EXT.POL
+  - EXT.ADMASS
+  - RM01
+  perfis_bloqueados: []
+  perfis_validacao_ura: []
+  observacoes:
+  - Regra revisada conforme Wiki em 2026-06-26
+- escopo: Perfis Básicos
+  categoria: Farmacêutico - Farmácia Escola
+  perfis_conceder:
+  - OPS08
+  - MULT01
+  - EXT.CENSO
+  - EXT.POL
+  - EXT.ADMASS
+  - RM01
+  perfis_bloqueados: []
+  perfis_validacao_ura: []
+  observacoes:
+  - Regra revisada conforme Wiki em 2026-06-26
+- escopo: Perfis Básicos
+  categoria: Farmacêutico - Almoxarifado
+  perfis_conceder:
+  - EXT.FARMACIA
+  - ADM26
+  - RM01
+  - CAD04
+  - EXT.POL
+  - ADM23
+  - EXT.CENSO
+  - ADM22
+  - CAD10
+  - ADM29
+  - ADM32
+  - OPS08
+  - ADM03
+  perfis_bloqueados: []
+  perfis_validacao_ura: []
+  observacoes:
+  - Regra revisada conforme Wiki em 2026-06-26
+  - 'Perfis duplicados na tabela original removidos nesta regra: RM01'
+- escopo: Perfis Básicos
+  categoria: Técnicos e Auxiliares de Farmácia
+  perfis_conceder:
+  - OPS09
+  - EXT.FARMACIA
+  - ADM26
+  - RM01
+  - CAD04
+  - EXT.POL
+  - ADM23
+  - EXT.CENSO
+  - ADM22
+  - CAD10
+  - ADM29
+  - ADM32
+  - ADM03
+  perfis_bloqueados: []
+  perfis_validacao_ura: []
+  observacoes:
+  - Regra revisada conforme Wiki em 2026-06-26
+- escopo: Perfis Básicos
+  categoria: Biomedicina
+  perfis_conceder:
+  - CAD08
+  - OPS06
+  - EXT.POL
+  - RM01
+  perfis_bloqueados: []
+  perfis_validacao_ura: []
+  observacoes:
+  - Regra revisada conforme Wiki em 2026-06-26
+- escopo: Perfis Básicos
+  categoria: Carregador - Central de Kits
+  perfis_conceder:
+  - ADM34
+  - RM01
+  perfis_bloqueados: []
+  perfis_validacao_ura: []
+  observacoes:
+  - Regra revisada conforme Wiki em 2026-06-26
+- escopo: Perfis Básicos
+  categoria: Pesquisador
+  perfis_conceder:
+  - EXT.PESQUISADOR
+  - EXT.POL
+  - RM01
+  perfis_bloqueados: []
+  perfis_validacao_ura: []
+  observacoes:
+  - Regra revisada conforme Wiki em 2026-06-26
+- escopo: Perfis Alunos
+  categoria: Aluno Médico
+  perfis_conceder:
+  - MED02
+  - EXT.CENSO
+  - EXT.POL
+  - EXT.ADMASS
+  - RM01
+  perfis_bloqueados: []
+  perfis_validacao_ura: []
+  observacoes:
+  - Regra revisada conforme Wiki em 2026-06-26
+- escopo: Perfis Alunos
+  categoria: Aluno Médico (Autorizado a atuar em Unidades Cirúrgicas)
+  perfis_conceder:
+  - MED02
+  - ADM04.01
+  - EXT.CENSO
+  - EXT.POL
+  - EXT.ADMASS
+  - RM01
+  perfis_bloqueados: []
+  perfis_validacao_ura: []
+  observacoes:
+  - Regra revisada conforme Wiki em 2026-06-26
+- escopo: Perfis Alunos
+  categoria: Aluno Enfermagem
+  perfis_conceder:
+  - ENF02
+  - EXT.CENSO
+  - EXT.POL
+  - EXT.ADMASS
+  - RM01
+  perfis_bloqueados: []
+  perfis_validacao_ura: []
+  observacoes:
+  - Regra revisada conforme Wiki em 2026-06-26
+- escopo: Perfis Alunos
+  categoria: Aluno Técnico Enfermagem
+  perfis_conceder:
+  - ENF06
+  - EXT.CENSO
+  - EXT.POL
+  - EXT.ADMASS
+  - RM01
+  perfis_bloqueados: []
+  perfis_validacao_ura: []
+  observacoes:
+  - Regra revisada conforme Wiki em 2026-06-26
+- escopo: Perfis Alunos
+  categoria: Aluno Serviço Social, Psicologia, Fonoaudiologia, Pedagogia, Terapia Ocupacional e Educação Física
+  perfis_conceder:
+  - OPS02
+  - MULT01
+  - EXT.CENSO
+  - EXT.POL
+  - EXT.ADMASS
+  - RM01
+  perfis_bloqueados: []
+  perfis_validacao_ura: []
+  observacoes:
+  - Regra revisada conforme Wiki em 2026-06-26
+- escopo: Perfis Alunos
+  categoria: Aluno Farmácia, Nutrição, Odontologia, Fisioterapia
+  perfis_conceder:
+  - OPS03
+  - MULT01
+  - EXT.CENSO
+  - EXT.POL
+  - EXT.ADMASS
+  - RM01
+  perfis_bloqueados: []
+  perfis_validacao_ura: []
+  observacoes:
+  - Regra revisada conforme Wiki em 2026-06-26
+- escopo: Perfis Alunos
+  categoria: Aluno Saúde Coletiva
+  perfis_conceder:
+  - EXT.CENSO
+  - EXT.POL
+  - RM01
+  perfis_bloqueados: []
+  perfis_validacao_ura: []
+  observacoes:
+  - Regra revisada conforme Wiki em 2026-06-26
+- escopo: Perfis Residentes
+  categoria: Residente Médico
+  perfis_conceder:
+  - MED01
+  - MED04
+  - EXT.MED04
+  - EXT.CENSO
+  - EXT.POL
+  - ADM25.01
+  - EXT.ADMASS
+  - EXT.EXM.EXTERNO
+  - RM01
+  perfis_bloqueados: []
+  perfis_validacao_ura: []
+  observacoes:
+  - Regra revisada conforme Wiki em 2026-06-26
+  - Cadastro de especialidade 2CG como cirurgião e ambulatório e inclusão em todas unidades cirúrgicas (MENOS O Centro de
+    Cirurgia Bucomaxilofacial)
+- escopo: Perfis Residentes
+  categoria: Residente Odontólogo
+  perfis_conceder:
+  - OPS01
+  - MULT01
+  - MED04
+  - EXT.MED04
+  - EXT.CENSO
+  - EXT.POL
+  - EXT.ADMASS
+  - RM01
+  perfis_bloqueados: []
+  perfis_validacao_ura: []
+  observacoes:
+  - Regra revisada conforme Wiki em 2026-06-26
+  - Cadastro de especialidade 2BM como cirurgião e inclusão na unidade Centro de Cirurgia Bucomaxilofacial
+- escopo: Perfis Residentes
+  categoria: Residente Enfermagem
+  perfis_conceder:
+  - ENF01
+  - ENF07
+  - EXT.CENSO
+  - EXT.POL
+  - RM01
+  - CAD08.4
+  - ADM25.02
+  - EXT.ADMASS
+  perfis_bloqueados: []
+  perfis_validacao_ura: []
+  observacoes:
+  - Regra revisada conforme Wiki em 2026-06-26
+- escopo: Perfis Residentes
+  categoria: 'Residente Multiprofissional: Assistente Social, Psicólogo, Biólogo, Fonoaudiólogo, Fisioterapeuta'
+  perfis_conceder:
+  - MULT01
+  - EXT.CENSO
+  - EXT.POL
+  - EXT.ADMASS
+  - RM01
+  perfis_bloqueados: []
+  perfis_validacao_ura: []
+  observacoes:
+  - Regra revisada conforme Wiki em 2026-06-26
+- escopo: Perfis Residentes
+  categoria: Residente Farmácia
+  perfis_conceder:
+  - EXT.FARMACIA
+  - ADM26
+  - RM01
+  - CAD04
+  - EXT.POL
+  - ADM23
+  - EXT.CENSO
+  - ADM22
+  - CAD.10
+  - ADM29
+  - ADM32
+  - OPS08
+  - ADM03
+  perfis_bloqueados: []
+  perfis_validacao_ura: []
+  observacoes:
+  - Regra revisada conforme Wiki em 2026-06-26
+- escopo: Perfis Básicos Módulo Cirurgias/PDT Centro de Hemodinâmica (UDE)
+  categoria: Chefia (UDE)
+  perfis_conceder:
+  - ADM08
+  - EXT.CIR.RELATORIOS
+  perfis_bloqueados: []
+  perfis_validacao_ura: []
+  observacoes:
+  - Regra revisada conforme Wiki em 2026-06-26
+- escopo: Perfis Básicos Módulo Cirurgias/PDT Centro de Hemodinâmica (UDE)
+  categoria: Diversos (UDE)
+  perfis_conceder:
+  - CAD19
+  - CAD16
+  perfis_bloqueados: []
+  perfis_validacao_ura: []
+  observacoes:
+  - Regra revisada conforme Wiki em 2026-06-26
+- escopo: Perfis Básicos Módulo Cirurgias/PDT Centro de Hemodinâmica (UDE)
+  categoria: Técnico de Enfermagem (UDE)
+  perfis_conceder:
+  - ADM04
+  - ENF05
+  - ENF08
+  - EXT.COLETA
+  - EXT.CENSO
+  - EXT.POL
+  - EXT.CIR.PLANEJAMENTO
+  - EXT.CIR.STATUS
+  - RM01
+  perfis_bloqueados: []
+  perfis_validacao_ura: []
+  observacoes:
+  - Regra revisada conforme Wiki em 2026-06-26
+  - Cadastro do profissional na unidade funcional 90 - Centro de Hemodinâmica como a função Técnico em Enfermagem
+- escopo: Perfis Básicos Módulo Cirurgias/PDT Centro de Hemodinâmica (UDE)
+  categoria: Técnico de Enfermagem (Centro de Hemodinâmica)
+  perfis_conceder:
+  - ADM04
+  - ENF05
+  - ENF08
+  - EXT.COLETA
+  - EXT.CENSO
+  - EXT.POL
+  - EXT.CIR.PLANEJAMENTO
+  - EXT.CIR.STATUS
+  - RM01
+  perfis_bloqueados: []
+  perfis_validacao_ura: []
+  observacoes:
+  - Regra revisada conforme Wiki em 2026-06-26
+  - Cadastro do profissional na unidade funcional 90 - Centro de Hemodinâmica como a função Técnico em Enfermagem
+- escopo: Perfis Básicos Módulo Cirurgias/PDT Centro de Hemodinâmica (UDE)
+  categoria: Enfermagem (UDE)
+  perfis_conceder:
+  - ADM04
+  - ADM02.02
+  - ENF01
+  - ENF07
+  - RM01
+  - EXT.CENSO
+  - EXT.POL
+  - EXT.ADMASS
+  - EXT.CIR.PLANEJAMENTO
+  - EXT.CIR.STATUS
+  perfis_bloqueados: []
+  perfis_validacao_ura: []
+  observacoes:
+  - Regra revisada conforme Wiki em 2026-06-26
+  - Cadastro do profissional na unidade funcional 90 - Centro de Hemodinâmica como a função Enfermeiro
+- escopo: Perfis Básicos Módulo Cirurgias/PDT Centro de Hemodinâmica (UDE)
+  categoria: Enfermagem (Centro de Hemodinâmica)
+  perfis_conceder:
+  - ADM04
+  - ENF01
+  - ENF07
+  - RM01
+  - EXT.CENSO
+  - EXT.POL
+  - EXT.ADMASS
+  - EXT.CIR.PLANEJAMENTO
+  - EXT.CIR.STATUS
+  perfis_bloqueados: []
+  perfis_validacao_ura: []
+  observacoes:
+  - Regra revisada conforme Wiki em 2026-06-26
+  - Cadastro do profissional na unidade funcional 90 - Centro de Hemodinâmica como a função Enfermeiro
+- escopo: Perfis Básicos Módulo Cirurgias/PDT Centro de Hemodinâmica (UDE)
+  categoria: Assistente Administrativo Recepcionista (UDE)
+  perfis_conceder:
+  - ADM04
+  - EXT.ADMASS
+  - EXT.CIR.RELATORIOS
+  - EXT.CIR.PLANEJAMENTO
+  - EXT.CIR.STATUS
+  perfis_bloqueados: []
+  perfis_validacao_ura: []
+  observacoes:
+  - Regra revisada conforme Wiki em 2026-06-26
+- escopo: Perfis Básicos Módulo Cirurgias/PDT Centro de Hemodinâmica (UDE)
+  categoria: Médico (Contratado, Professor ou Residente)(Centro de Hemodinâmica)
+  perfis_conceder:
+  - MED01
+  - MED04
+  - EXT.MED04
+  - EXT.CENSO
+  - EXT.POL
+  - EXT.ADMASS
+  - RM01
+  perfis_bloqueados: []
+  perfis_validacao_ura: []
+  observacoes:
+  - Regra revisada conforme Wiki em 2026-06-26
+  - Cadastro em especialidade para profissionais como internação, ambulatório e cirurgião nas especialidades 2AH, 2CH ou 2NH
+  - Cadastro em especialidade para profissionais ESPECIALISTAS como consultoria nas especialidades 2AH, 2CH ou 2NH
+  - Cadastro do profissional na unidade funcional 90 - Centro de Hemodinâmica
