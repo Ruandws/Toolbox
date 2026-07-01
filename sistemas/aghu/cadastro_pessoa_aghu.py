@@ -72,7 +72,7 @@ ALIASES_COLUNAS = {
     "nacionalidade": ("Nacionalidade", "nacionalidade"),
     "naturalidade": ("Naturalidade", "naturalidade"),
     "rg": ("Nro identidade", "Nro Identidade", "RG", "rg", "Identidade"),
-    "orgao_emissor": ("Órgão Emissor", "Orgao Emissor"),
+    "orgao_emissor": ("Órgão Emissor", "Orgao Emissor", "Órgão emissor", "órgão emissor"),
     "uf_rg": ("UF", "uf", "U.F", "u.f", "UF RG"),
     "cpf": ("CPF", "cpf"),
     "ddd": ("DDD", "ddd"),
@@ -683,6 +683,8 @@ SELECTOR_LOGRADOURO_NAO_CADASTRADO = '[id="logradouroNaoCadastrado:logradouroNao
 SELECTOR_BAIRRO_NAO_CADASTRADO = '[id="bairroNaoCadastrado:bairroNaoCadastrado:inputId"]'
 SELECTOR_CEP_NAO_CADASTRADO = '[id="cepNaoCadastrado:cepNaoCadastrado:inputId_input"]'
 SELECTOR_MUNICIPIO_NAO_CADASTRADO = '[id="suggestionCidadeNaoCadastrada:suggestionCidadeNaoCadastrada:suggestion_input"]'
+SELECTOR_FECHAR_PAINEL_SUCESSO = ('a[href="#"].ui-dialog-titlebar-icon.ui-dialog-titlebar-close.ui-corner-all[role="button"]')
+
 
 
 class PessoaFlow:
@@ -883,6 +885,35 @@ class PessoaFlow:
             return "Feminino"
         return "Ignorado"
 
+    def fechar_painel_sucesso_se_visivel(self, timeout_ms: int = 2000) -> bool:
+        botoes_fechar = self.janela.locator(SELECTOR_FECHAR_PAINEL_SUCESSO)
+
+        try:
+            botoes_fechar.first.wait_for(state="attached", timeout=timeout_ms)
+        except PlaywrightTimeoutError:
+            return False
+
+        total = botoes_fechar.count()
+        for indice in range(total):
+            botao = botoes_fechar.nth(indice)
+
+            try:
+                if not botao.is_visible(timeout=250):
+                    continue
+
+                botao.click(timeout=timeout_ms)
+
+                try:
+                    botao.wait_for(state="hidden", timeout=timeout_ms)
+                except Exception:
+                    pass
+
+                return True
+            except Exception:
+                continue
+
+        return False
+
 
 # ============================================================
 # SECAO: maestro central
@@ -1068,6 +1099,10 @@ def processar_cadastros(
                     url_aghu=url_aghu,
                 )
                 resultado_linha = processar_cadastro(janela_sistema, entrada)
+
+                if resultado_linha.status == STATUS_CRIADO:
+                    PessoaFlow(janela_sistema).fechar_painel_sucesso_se_visivel()
+
                 break
             except Exception as exc:
                 if tentativa == 0:

@@ -131,6 +131,14 @@ class TestRegressaoCleanStatePessoa:
     def test_processar_cadastros_preserva_url_aghu_no_retry(self, monkeypatch):
         chamadas = []
 
+        class FlowFake:
+            def __init__(self, janela):
+                self.janela = janela
+
+            def fechar_painel_sucesso_se_visivel(self):
+                chamadas.append(("fechar_sucesso", self.janela))
+                return True
+
         def garantir(**kwargs):
             chamadas.append(("garantir", kwargs["page_atual"], kwargs["url_aghu"]))
             if len([chamada for chamada in chamadas if chamada[0] == "garantir"]) == 1:
@@ -148,6 +156,7 @@ class TestRegressaoCleanStatePessoa:
         monkeypatch.setattr(aghu, "garantir_tela_pesquisa_pessoa", garantir)
         monkeypatch.setattr(aghu, "trocar_aba_aghux", trocar)
         monkeypatch.setattr(aghu, "navegar_ate_cadastro_pessoa", navegar)
+        monkeypatch.setattr(aghu, "PessoaFlow", FlowFake)
         monkeypatch.setattr(
             aghu,
             "processar_cadastro",
@@ -172,7 +181,8 @@ class TestRegressaoCleanStatePessoa:
         assert resultados[0].status == STATUS_CRIADO
         assert ("trocar", "http://homologacao") in chamadas
         assert ("navegar", "page-limpa", "http://homologacao") in chamadas
-        assert chamadas[-1] == ("garantir", "page-limpa", "http://homologacao")
+        assert ("garantir", "page-limpa", "http://homologacao") in chamadas
+        assert chamadas[-1] == ("fechar_sucesso", "janela-limpa")
 
     def test_navegar_ate_cadastro_pessoa_tenta_clean_state_uma_vez(
         self,

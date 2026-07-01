@@ -558,6 +558,16 @@ class TestMaestro:
         assert "Linha ignorada" in resultados[0].detalhes
 
     def test_processar_cadastros_processa_linha_valida(self, monkeypatch):
+        fechamentos = []
+
+        class FlowFake:
+            def __init__(self, janela):
+                self.janela = janela
+
+            def fechar_painel_sucesso_se_visivel(self):
+                fechamentos.append(self.janela)
+                return True
+
         monkeypatch.setattr(
             aghu,
             "garantir_tela_pesquisa_pessoa",
@@ -573,17 +583,20 @@ class TestMaestro:
                 detalhes="OK",
             ),
         )
+        monkeypatch.setattr(aghu, "PessoaFlow", FlowFake)
 
+        janela = object()
         resultados = aghu.processar_cadastros(
             context=object(),
             page_inicial=object(),
-            janela_sistema_inicial=object(),
+            janela_sistema_inicial=janela,
             cadastros=[pessoa_valida()],
             usuario_rede="usuario",
             senha="senha",
         )
 
         assert resultados[0].status == STATUS_CRIADO
+        assert fechamentos == [janela]
 
     def test_processar_cadastros_retorna_erro_apos_duas_falhas(self, monkeypatch):
         monkeypatch.setattr(
