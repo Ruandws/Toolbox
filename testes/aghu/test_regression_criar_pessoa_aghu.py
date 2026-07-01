@@ -1,7 +1,7 @@
 import pytest
 
-import cadastro_pessoa_aghu as aghu
-from cadastro_pessoa_aghu import (
+import criar_pessoa_aghu as aghu
+from criar_pessoa_aghu import (
     CadastroPessoaEntrada,
     ResultadoCadastroPessoa,
     STATUS_CRIADO,

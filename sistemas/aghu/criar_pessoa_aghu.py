@@ -38,7 +38,6 @@ TEMPO_DETECCAO_WIDGET_CARREGAMENTO_MS = 2000
 TEMPO_ESTABILIDADE_RESULTADO_MS = 250
 
 STATUS_CRIADO = "criado"
-STATUS_ATUALIZADO = "atualizado"
 STATUS_MANTIDO = "mantido"
 STATUS_ERRO = "erro"
 STATUS_IGNORADO = "ignorado"
@@ -46,23 +45,11 @@ STATUS_CONFERIR_MANUAL = "conferir_manual"
 
 StatusCadastro = Literal[
     "criado",
-    "atualizado",
     "mantido",
     "erro",
     "ignorado",
     "conferir_manual",
 ]
-
-COLUNAS_OBRIGATORIAS_PESSOA = (
-    "Nome da Pessoa",
-    "Nome da Mãe",
-    "Data de Nascimento",
-    "Naturalidade",
-    "Nro identidade",
-    "Órgão Emissor",
-    "UF",
-    "CPF",
-)
 
 ALIASES_COLUNAS = {
     "nome_pessoa": ("Nome da Pessoa", "Nome Pessoa", "Nome", "Nome Completo", "nome completo", "Nome completo"),
@@ -571,43 +558,6 @@ def selecionar_selectonemenu(
     item.click(timeout=timeout_ms)
 
 
-def clicar_acao(linha_ou_janela: Locator | FrameLocator, nomes: tuple[str, ...], timeout_ms: int = 10000) -> None:
-    seletores_css = []
-    for nome in nomes:
-        fragmento = nome[:8]
-        seletores_css.extend(
-            [
-                f"a[title*='{fragmento}' i]",
-                f"button[title*='{fragmento}' i]",
-                f"a[aria-label*='{fragmento}' i]",
-                f"button[aria-label*='{fragmento}' i]",
-            ]
-        )
-
-    candidatos: list[Locator] = []
-    for nome in nomes:
-        candidatos.append(linha_ou_janela.get_by_role("link", name=re.compile(re.escape(nome), re.I)).first)
-        candidatos.append(linha_ou_janela.get_by_role("button", name=re.compile(re.escape(nome), re.I)).first)
-
-    for seletor in seletores_css:
-        candidatos.append(linha_ou_janela.locator(seletor).first)
-
-    candidatos.append(linha_ou_janela.locator("a.ui-commandlink, button.ui-button").first)
-
-    ultimo_erro: Exception | None = None
-    for candidato in candidatos:
-        try:
-            candidato.wait_for(state="visible", timeout=1500)
-            candidato.click(timeout=timeout_ms)
-            if not isinstance(linha_ou_janela, Locator):
-                aguardar_ciclo_carregamento(linha_ou_janela, deteccao_ms=500)
-            return
-        except Exception as exc:
-            ultimo_erro = exc
-
-    raise PlaywrightTimeoutError(f"Acao nao localizada: {', '.join(nomes)}") from ultimo_erro
-
-
 def clicar_voltar_se_visivel(janela_sistema: FrameLocator, timeout_ms: int = 3000) -> bool:
     botao = janela_sistema.get_by_role("button", name="Voltar").first
     try:
@@ -1064,6 +1014,7 @@ def processar_cadastros(
     usuario_rede: str,
     senha: str,
     *,
+    resultados_prevalidacao: list[ResultadoCadastroPessoa | None] | None = None,
     url_aghu: str = AGHU_URL,
 ) -> list[ResultadoCadastroPessoa]:
     resultados: list[ResultadoCadastroPessoa] = []
@@ -1071,19 +1022,33 @@ def processar_cadastros(
     janela_sistema = janela_sistema_inicial
     total = len(cadastros)
 
-    for indice, entrada in enumerate(cadastros):
+    if not resultados_prevalidacao:
+        resultados_prevalidacao = []
+        for cadastro in cadastros:
+            erros = validar_entrada(cadastro)
+            if erros:
+                resultados_prevalidacao.append(
+                    resultado_ignorado(
+                        cadastro,
+                        "Linha ignorada: " + "; ".join(erros) + ".",
+                    )
+                )
+            else:
+                resultados_prevalidacao.append(None)
+
+    if len(resultados_prevalidacao) != total:
+        raise ValueError(
+            "A pre-validacao deve ter a mesma quantidade de cadastros."
+        )
+
+    for indice, (entrada, pre_resultado) in enumerate(zip(cadastros, resultados_prevalidacao)):
         entrada = normalizar_entrada(entrada)
         print("\n========================================")
         print(f"Processando [{indice + 1}/{total}]: CPF [{entrada.cpf}] | Nome [{entrada.nome_pessoa}]")
 
-        erros = validar_entrada(entrada)
-        if erros:
-            resultado = resultado_ignorado(
-                entrada,
-                "Linha ignorada: " + "; ".join(erros) + ".",
-            )
-            print(resultado.detalhes)
-            resultados.append(resultado)
+        if pre_resultado is not None:
+            print(pre_resultado.detalhes)
+            resultados.append(pre_resultado)
             continue
 
         resultado_linha: ResultadoCadastroPessoa | None = None
@@ -1223,6 +1188,7 @@ def _executar_cadastro_pessoas_com_saida_configurada(
                 page_inicial=page,
                 janela_sistema_inicial=janela_sistema,
                 cadastros=cadastros,
+                resultados_prevalidacao=resultados_prevalidacao,
                 usuario_rede=usuario_rede,
                 senha=senha,
                 url_aghu=url_aghu,

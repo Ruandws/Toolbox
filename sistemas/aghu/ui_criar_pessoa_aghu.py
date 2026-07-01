@@ -7,9 +7,8 @@ from tkinter import filedialog, messagebox
 
 import customtkinter as ctk
 
-from cadastro_pessoa_aghu import (
+from criar_pessoa_aghu import (
     CadastroPessoaEntrada,
-    STATUS_ATUALIZADO,
     STATUS_CONFERIR_MANUAL,
     STATUS_CRIADO,
     STATUS_ERRO,
@@ -32,7 +31,9 @@ URLS_AMBIENTE_AGHU = {
 
 SEXO_MASCULINO = "Masculino"
 SEXO_FEMININO = "Feminino"
+SEXO_SELECIONE = "Selecione"
 OPCOES_SEXO = (SEXO_MASCULINO, SEXO_FEMININO)
+OPCOES_SEXO_UI = (SEXO_SELECIONE, *OPCOES_SEXO)
 
 BASE_DIR = Path(__file__).resolve().parent
 LOGS_DIR = BASE_DIR / "logs"
@@ -88,7 +89,7 @@ class AghuCadastroPessoaApp(ctk.CTk):
         self.var_tipo_execucao = tk.StringVar(value=TIPO_INDIVIDUAL)
         self.var_browser = tk.BooleanVar(value=True)
         self.var_console = tk.BooleanVar(value=True)
-        self.var_sexo = tk.StringVar(value=SEXO_MASCULINO)
+        self.var_sexo = tk.StringVar(value="")
         self.segment_sexo: ctk.CTkSegmentedButton | None = None
         self.em_execucao = False
         self.entries_individual: dict[str, ctk.CTkEntry] = {}
@@ -453,7 +454,7 @@ class AghuCadastroPessoaApp(ctk.CTk):
 
         segment = ctk.CTkSegmentedButton(
             frame,
-            values=list(OPCOES_SEXO),
+            values=list(OPCOES_SEXO_UI),
             variable=self.var_sexo,
             command=self._atualizar_visual_sexo,
             height=34,
@@ -463,9 +464,10 @@ class AghuCadastroPessoaApp(ctk.CTk):
             unselected_hover_color=("#C9C9C9", "#3D3D3D"),
         )
         segment.grid(row=row, column=1, columnspan=2, padx=14, pady=6, sticky="ew")
-        segment.set(SEXO_MASCULINO)
+        segment.set(SEXO_SELECIONE)
+        self.var_sexo.set("")
 
-        self._atualizar_visual_segmented_button(segment, SEXO_MASCULINO)
+        self._atualizar_visual_segmented_button(segment, SEXO_SELECIONE)
 
         return segment
 
@@ -474,7 +476,11 @@ class AghuCadastroPessoaApp(ctk.CTk):
         if self.segment_sexo is None:
             return
 
-        self._atualizar_visual_segmented_button(self.segment_sexo, sexo)
+        valor_visual = sexo
+        if sexo == SEXO_SELECIONE:
+            self.var_sexo.set("")
+
+        self._atualizar_visual_segmented_button(self.segment_sexo, valor_visual)
 
 
     def _atualizar_visual_segmented_button(
@@ -732,7 +738,6 @@ class AghuCadastroPessoaApp(ctk.CTk):
         return (
             f"Lote concluído. Total: {total}. "
             f"Criados: {contagem[STATUS_CRIADO]}. "
-            f"Atualizados: {contagem[STATUS_ATUALIZADO]}. "
             f"Mantidos: {contagem[STATUS_MANTIDO]}. "
             f"Conferir manualmente: {contagem[STATUS_CONFERIR_MANUAL]}. "
             f"Ignorados: {contagem[STATUS_IGNORADO]}. "
@@ -753,3 +758,4 @@ if __name__ == "__main__":
 
     app = AghuCadastroPessoaApp()
     app.mainloop()
+

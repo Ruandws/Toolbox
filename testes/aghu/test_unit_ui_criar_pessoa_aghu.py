@@ -4,10 +4,9 @@ from pathlib import Path
 import pytest
 
 import ui_criar_pessoa_aghu as ui
-from cadastro_pessoa_aghu import (
+from criar_pessoa_aghu import (
     CadastroPessoaEntrada,
     ResultadoCadastroPessoa,
-    STATUS_ATUALIZADO,
     STATUS_CONFERIR_MANUAL,
     STATUS_CRIADO,
     STATUS_ERRO,
@@ -111,7 +110,7 @@ def app_fake():
     app.var_tipo_execucao = FakeVar(ui.TIPO_INDIVIDUAL)
     app.var_browser = FakeVar(True)
     app.var_console = FakeVar(True)
-    app.var_sexo = FakeVar(ui.SEXO_MASCULINO)
+    app.var_sexo = FakeVar("")
     app.entry_usuario_rede = FakeEntry()
     app.entry_senha = FakeEntry()
     app.entry_planilha_lote = FakeEntry()
@@ -123,7 +122,7 @@ def app_fake():
     }
     app.button_executar = FakeWidget()
     app.segment_tipo_execucao = FakeSegment([ui.TIPO_INDIVIDUAL, ui.TIPO_LOTE])
-    app.segment_sexo = FakeSegment(list(ui.OPCOES_SEXO))
+    app.segment_sexo = FakeSegment(list(ui.OPCOES_SEXO_UI))
     app.checkbox_browser = FakeWidget()
     app.checkbox_console = FakeWidget()
     app.option_ambiente = FakeWidget()
@@ -246,6 +245,19 @@ def test_atualizar_visual_sexo_ignora_segmento_ausente(app_fake):
     app_fake.segment_sexo = None
 
     ui.AghuCadastroPessoaApp._atualizar_visual_sexo(app_fake, ui.SEXO_FEMININO)
+
+
+def test_atualizar_visual_sexo_selecione_mantem_valor_vazio(app_fake):
+    app_fake.var_sexo.set(ui.SEXO_SELECIONE)
+
+    ui.AghuCadastroPessoaApp._atualizar_visual_sexo(app_fake, ui.SEXO_SELECIONE)
+
+    assert app_fake.var_sexo.get() == ""
+    assert (
+        app_fake.segment_sexo._buttons_dict[ui.SEXO_SELECIONE]
+        .configuracoes["text_color"]
+        == "white"
+    )
 
 
 def test_atualizar_visual_segmented_button_destaca_valor_selecionado(app_fake):
@@ -416,6 +428,15 @@ def test_cadastro_individual_rejeita_sexo_invalido(app_fake):
     app_fake.var_sexo.set("Outro")
 
     with pytest.raises(ValueError, match="sexo"):
+        ui.AghuCadastroPessoaApp._cadastro_individual(app_fake)
+
+
+@pytest.mark.parametrize("sexo", ["", ui.SEXO_SELECIONE])
+def test_cadastro_individual_exige_escolha_explicita_de_sexo(app_fake, sexo):
+    preencher_cadastro_individual(app_fake)
+    app_fake.var_sexo.set(sexo)
+
+    with pytest.raises(ValueError, match="Selecione o sexo"):
         ui.AghuCadastroPessoaApp._cadastro_individual(app_fake)
 
 
@@ -678,7 +699,6 @@ def test_iniciar_execucao_lote_gera_relatorio_padrao_e_inicia_thread(
 def test_resumir_resultados_conta_status_conhecidos(app_fake):
     resultados = [
         ResultadoCadastroPessoa("1", "A", STATUS_CRIADO, "ok"),
-        ResultadoCadastroPessoa("2", "B", STATUS_ATUALIZADO, "ok"),
         ResultadoCadastroPessoa("3", "C", STATUS_MANTIDO, "ok"),
         ResultadoCadastroPessoa("4", "D", STATUS_CONFERIR_MANUAL, "ok"),
         ResultadoCadastroPessoa("5", "E", STATUS_IGNORADO, "ok"),
@@ -688,9 +708,8 @@ def test_resumir_resultados_conta_status_conhecidos(app_fake):
     resumo = ui.AghuCadastroPessoaApp._resumir_resultados(app_fake, resultados)
 
     assert "Lote conclu" in resumo
-    assert "Total: 6." in resumo
+    assert "Total: 5." in resumo
     assert "Criados: 1." in resumo
-    assert "Atualizados: 1." in resumo
     assert "Mantidos: 1." in resumo
     assert "Conferir manualmente: 1." in resumo
     assert "Ignorados: 1." in resumo
@@ -824,7 +843,6 @@ def test_executar_lote_thread_agenda_finalizacao_com_resumo(
     assert "Lote conclu" in mensagem
     assert "Total: 1." in mensagem
     assert "Criados: 1." in mensagem
-    assert "Atualizados: 0." in mensagem
     assert "Mantidos: 0." in mensagem
     assert "Conferir manualmente: 0." in mensagem
     assert "Ignorados: 0." in mensagem

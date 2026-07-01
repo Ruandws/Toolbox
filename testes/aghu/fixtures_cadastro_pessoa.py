@@ -1,4 +1,4 @@
-from cadastro_pessoa_aghu import CadastroPessoaEntrada
+from criar_pessoa_aghu import CadastroPessoaEntrada
 
 
 def pessoa_valida(**sobrescritas):
