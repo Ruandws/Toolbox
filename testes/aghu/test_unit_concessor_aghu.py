@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import pandas as pd
 import pytest
 
 import concessor_aghu as aghu
@@ -216,6 +217,60 @@ def test_salvar_relatorio_resultados_cria_xlsx(tmp_path: Path):
 
     assert retorno.exists()
     assert retorno.suffix == ".xlsx"
+
+
+def test_ler_planilha_concessoes_aceita_aliases_normalizados(tmp_path: Path):
+    caminho = tmp_path / "concessoes.xlsx"
+    pd.DataFrame(
+        [
+            {
+                "Usu\u00e1rio alvo": " usuario.teste ",
+                "Numero do Protocolo": "ABC-52501301",
+                "Escopo": " Perfis B\u00e1sicos ",
+                "Categoria": " Medicina Geral ",
+            }
+        ]
+    ).to_excel(caminho, index=False)
+
+    entradas = aghu.ler_planilha_concessoes(caminho)
+
+    assert entradas == [
+        ConcessaoPerfisEntrada(
+            login="USUARIO.TESTE",
+            protocolo="52501301",
+            escopo="Perfis B\u00e1sicos",
+            categoria="Medicina Geral",
+        )
+    ]
+
+
+def test_executar_concessoes_sem_perfis_elegiveis_nao_abre_playwright(monkeypatch):
+    def falhar_sync_playwright():
+        raise AssertionError("Playwright nao deveria ser iniciado")
+
+    monkeypatch.setattr(aghu, "sync_playwright", falhar_sync_playwright)
+
+    resultados = aghu.executar_concessoes_perfis(
+        concessoes=[
+            ConcessaoPerfisEntrada(
+                login="usuario.teste",
+                protocolo="52501301",
+                escopo="PERFIS CR\u00cdTICOS. ATEN\u00c7\u00c3O!",
+                categoria="Ningu\u00e9m",
+            )
+        ],
+        usuario_rede="tecnico",
+        senha="senha",
+        mostrar_console=True,
+        gerar_csv_log=False,
+    )
+
+    assert len(resultados) == 1
+    assert resultados[0].status == STATUS_IGNORADO
+    assert any(
+        perfil.status == STATUS_BLOQUEADO
+        for perfil in resultados[0].resultados_perfis
+    )
 
 
 def test_obter_regra_inexistente_levanta_erro():

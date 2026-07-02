@@ -17,6 +17,12 @@ class FakeEntry:
     def get(self):
         return self.valor
 
+    def delete(self, inicio, fim):
+        self.valor = ""
+
+    def insert(self, indice, valor):
+        self.valor = valor
+
 
 class FakeWidget:
     def __init__(self):
@@ -113,6 +119,7 @@ def app_fake():
     app.catalogo = FakeCatalogo()
     app.em_execucao = False
     app.var_ambiente = FakeStringVar(ui.AMBIENTE_HOMOLOGACAO)
+    app.var_tipo_execucao = FakeStringVar(ui.TIPO_INDIVIDUAL)
     app.var_browser = FakeStringVar(True)
     app.var_console = FakeStringVar(True)
     app.var_escopo = FakeStringVar("Escopo A")
@@ -121,12 +128,17 @@ def app_fake():
     app.entry_senha = FakeEntry()
     app.entry_login_alvo = FakeEntry()
     app.entry_protocolo = FakeEntry()
+    app.entry_planilha_lote = FakeEntry()
+    app.entry_relatorio_lote = FakeEntry()
     app.button_executar = FakeWidget()
+    app.segment_tipo_execucao = FakeWidget()
     app.checkbox_browser = FakeWidget()
     app.checkbox_console = FakeWidget()
     app.option_ambiente = FakeWidget()
     app.option_escopo = FakeWidget()
     app.option_categoria = FakeWidget()
+    app.button_planilha_lote = FakeWidget()
+    app.button_relatorio_lote = FakeWidget()
     app.frame_alerta_producao = FakeFrame()
     app.text_perfis = FakeText()
     app.label_status = FakeWidget()
@@ -327,6 +339,56 @@ def test_iniciar_execucao_inicia_thread_com_dados_validados(app_fake, monkeypatc
     assert app_fake.label_status.configuracoes["text"].endswith(" de perfis...")
 
 
+def test_iniciar_execucao_lote_inicia_thread_com_dados_validados(
+    app_fake,
+    monkeypatch,
+):
+    FakeThread.criadas = []
+    monkeypatch.setattr(ui.threading, "Thread", FakeThread)
+    app_fake.var_tipo_execucao.set(ui.TIPO_LOTE)
+    app_fake.entry_usuario_rede.valor = "tecnico"
+    app_fake.entry_senha.valor = "senha"
+    app_fake.entry_planilha_lote.valor = "entrada.xlsx"
+    app_fake.entry_relatorio_lote.valor = "saida.xlsx"
+
+    ui.AghuConcessorPerfisApp.iniciar_execucao(app_fake)
+
+    thread = FakeThread.criadas[0]
+    assert thread.iniciada is True
+    assert thread.daemon is True
+    assert thread.target == app_fake._executar_lote_thread
+    assert thread.args == (
+        "tecnico",
+        "senha",
+        "entrada.xlsx",
+        "saida.xlsx",
+        ui.AGHU_URL_HOMOLOGACAO,
+        True,
+        True,
+    )
+    assert app_fake.label_status.configuracoes["text"].startswith("Executando lote")
+
+
+def test_iniciar_execucao_lote_preenche_relatorio_padrao(app_fake, monkeypatch):
+    FakeThread.criadas = []
+    monkeypatch.setattr(ui.threading, "Thread", FakeThread)
+    monkeypatch.setattr(
+        ui,
+        "caminho_relatorio_padrao",
+        lambda _base="": "relatorio_padrao.xlsx",
+    )
+    app_fake.var_tipo_execucao.set(ui.TIPO_LOTE)
+    app_fake.entry_usuario_rede.valor = "tecnico"
+    app_fake.entry_senha.valor = "senha"
+    app_fake.entry_planilha_lote.valor = "entrada.xlsx"
+    app_fake.entry_relatorio_lote.valor = ""
+
+    ui.AghuConcessorPerfisApp.iniciar_execucao(app_fake)
+
+    assert app_fake.entry_relatorio_lote.valor == "relatorio_padrao.xlsx"
+    assert FakeThread.criadas[0].args[3] == "relatorio_padrao.xlsx"
+
+
 def test_executar_thread_agenda_finalizacao_com_sucesso(app_fake, monkeypatch):
     chamadas = []
     capturados = {}
@@ -428,3 +490,45 @@ def test_executar_thread_agenda_finalizacao_em_excecao(app_fake, monkeypatch):
     )
 
     assert chamadas[0][2] == ("Erro: falha", "red")
+
+
+def test_executar_lote_thread_agenda_finalizacao_com_resumo(app_fake, monkeypatch):
+    chamadas = []
+    capturados = {}
+    resultado = ResultadoConcessao(
+        "usuario.teste",
+        "52501301",
+        "Escopo A",
+        "Categoria A",
+        STATUS_CONCEDIDO,
+        "Total: 1; concedidos: 1.",
+        (),
+    )
+    app_fake.after = lambda delay, func, *args: chamadas.append((delay, func, args))
+
+    def executar_fake(**kwargs):
+        capturados.update(kwargs)
+        return [resultado], "saida.xlsx"
+
+    monkeypatch.setattr(ui, "executar_concessao_lote", executar_fake)
+
+    ui.AghuConcessorPerfisApp._executar_lote_thread(
+        app_fake,
+        "tecnico",
+        "senha",
+        "entrada.xlsx",
+        "saida.xlsx",
+        "url",
+        False,
+        True,
+    )
+
+    assert chamadas[0][0] == 0
+    assert chamadas[0][1] == app_fake._finalizar_execucao
+    assert "Lote concluido. Total: 1." in chamadas[0][2][0]
+    assert "Relatorio: saida.xlsx" in chamadas[0][2][0]
+    assert chamadas[0][2][1] == "green"
+    assert capturados["caminho_planilha"] == "entrada.xlsx"
+    assert capturados["caminho_relatorio"] == "saida.xlsx"
+    assert capturados["mostrar_browser"] is False
+    assert capturados["mostrar_console"] is True

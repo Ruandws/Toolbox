@@ -1,6 +1,9 @@
 import threading
+from collections import Counter
+from datetime import datetime
+from pathlib import Path
 import tkinter as tk
-from tkinter import messagebox
+from tkinter import filedialog, messagebox
 
 import customtkinter as ctk
 
@@ -9,8 +12,13 @@ from concessor_aghu import (
     ConcessaoPerfisEntrada,
     LOGS_DIR,
     STATUS_CONFERIR_MANUAL,
+    STATUS_CONCEDIDO,
     STATUS_ERRO,
+    STATUS_IGNORADO,
+    STATUS_JA_EXISTENTE,
+    STATUS_USUARIO_NAO_ENCONTRADO,
     carregar_catalogo_regras,
+    executar_concessao_lote,
     executar_concessao_perfis,
     validar_entrada,
 )
@@ -25,6 +33,24 @@ URLS_AMBIENTE_AGHU = {
 
 def obter_url_ambiente_aghu(ambiente: str) -> str:
     return URLS_AMBIENTE_AGHU.get(ambiente, AGHU_URL)
+
+
+TIPO_INDIVIDUAL = "Unitaria"
+TIPO_LOTE = "Lote"
+
+
+def caminho_relatorio_padrao(base: str = "") -> str:
+    nome = (
+        "relatorio_concessao_perfis_"
+        f"{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    )
+
+    if base:
+        caminho_base = Path(base)
+        diretorio = caminho_base.parent if caminho_base.suffix else caminho_base
+        return str(diretorio / nome)
+
+    return str(Path.cwd() / nome)
 
 
 class AghuConcessorPerfisApp(ctk.CTk):
@@ -45,6 +71,7 @@ class AghuConcessorPerfisApp(ctk.CTk):
         self.grid_rowconfigure(1, weight=1)
 
         self.var_ambiente = tk.StringVar(value=AMBIENTE_HOMOLOGACAO)
+        self.var_tipo_execucao = tk.StringVar(value=TIPO_INDIVIDUAL)
         self.var_browser = tk.BooleanVar(value=True)
         self.var_console = tk.BooleanVar(value=True)
         self.var_escopo = tk.StringVar(value=escopo_inicial)
@@ -63,14 +90,30 @@ class AghuConcessorPerfisApp(ctk.CTk):
         self.frame_conteudo.grid_columnconfigure(0, weight=1)
 
         self.frame_acesso = self._criar_secao("Acesso", 0)
-        self.frame_concessao = self._criar_secao("Concessão", 1)
+        self.frame_concessao = self._criar_secao("Tipo de Execucao", 1)
         self.frame_perfis = self._criar_secao("Perfis da regra", 2)
+        self.frame_tipo_execucao = self.frame_concessao
+
+        self.frame_execucao = ctk.CTkFrame(
+            self.frame_conteudo,
+            fg_color="transparent",
+        )
+        self.frame_execucao.grid(row=2, column=0, padx=0, pady=8, sticky="ew")
+        self.frame_execucao.grid_columnconfigure(0, weight=1)
+
+        self.frame_individual = self._criar_secao_execucao("Concessao unitaria")
+        self.frame_lote = self._criar_secao_execucao("Concessao em lote")
+        self.frame_concessao = self.frame_individual
+        self.frame_perfis.grid(row=3, column=0, padx=0, pady=8, sticky="ew")
 
         self._criar_campos_acesso()
         self._criar_opcoes_execucao()
+        self._criar_seletor_tipo_execucao()
         self._criar_campos_concessao(escopos, categorias)
+        self._criar_campos_lote()
         self._criar_previa_perfis()
         self._atualizar_previa_perfis()
+        self._atualizar_tipo_execucao(TIPO_INDIVIDUAL)
 
         self.button_executar = ctk.CTkButton(
             self.frame_conteudo,
@@ -79,7 +122,7 @@ class AghuConcessorPerfisApp(ctk.CTk):
             height=40,
             font=ctk.CTkFont(weight="bold"),
         )
-        self.button_executar.grid(row=3, column=0, padx=0, pady=(12, 8), sticky="e")
+        self.button_executar.grid(row=4, column=0, padx=0, pady=(12, 8), sticky="e")
 
         self.label_status = ctk.CTkLabel(
             self,
@@ -102,6 +145,64 @@ class AghuConcessorPerfisApp(ctk.CTk):
         )
         label.grid(row=0, column=0, columnspan=3, padx=14, pady=(12, 8), sticky="w")
         return frame
+
+    def _criar_secao_execucao(self, titulo: str) -> ctk.CTkFrame:
+        frame = ctk.CTkFrame(self.frame_execucao)
+        frame.grid_columnconfigure(1, weight=1)
+
+        label = ctk.CTkLabel(
+            frame,
+            text=titulo,
+            font=ctk.CTkFont(size=15, weight="bold"),
+        )
+        label.grid(row=0, column=0, columnspan=3, padx=14, pady=(12, 8), sticky="w")
+        return frame
+
+    def _criar_seletor_tipo_execucao(self) -> None:
+        self.label_tipo_execucao = ctk.CTkLabel(
+            self.frame_tipo_execucao,
+            text="Tipo:",
+        )
+        self.label_tipo_execucao.grid(row=1, column=0, padx=14, pady=8, sticky="e")
+
+        self.segment_tipo_execucao = ctk.CTkSegmentedButton(
+            self.frame_tipo_execucao,
+            values=[TIPO_INDIVIDUAL, TIPO_LOTE],
+            variable=self.var_tipo_execucao,
+            command=self._atualizar_tipo_execucao,
+            height=36,
+            selected_color=("#1F6AA5", "#144870"),
+            selected_hover_color=("#155E96", "#0F3A5A"),
+            unselected_color=("#D9D9D9", "#333333"),
+            unselected_hover_color=("#C9C9C9", "#3D3D3D"),
+        )
+        self.segment_tipo_execucao.grid(
+            row=1,
+            column=1,
+            columnspan=2,
+            padx=14,
+            pady=8,
+            sticky="ew",
+        )
+        self.segment_tipo_execucao.set(TIPO_INDIVIDUAL)
+
+    def _atualizar_tipo_execucao(self, tipo: str) -> None:
+        self.frame_individual.grid_remove()
+        self.frame_lote.grid_remove()
+
+        if tipo == TIPO_INDIVIDUAL:
+            self.frame_individual.grid(row=0, column=0, sticky="ew")
+            self.frame_perfis.grid(row=3, column=0, padx=0, pady=8, sticky="ew")
+        else:
+            self.frame_lote.grid(row=0, column=0, sticky="ew")
+            self.frame_perfis.grid_remove()
+
+        if hasattr(self, "segment_tipo_execucao"):
+            for valor, btn in self.segment_tipo_execucao._buttons_dict.items():
+                if valor == tipo:
+                    btn.configure(text_color="white")
+                else:
+                    btn.configure(text_color=("#1F6AA5", "#3B8ED0"))
 
     def _criar_campos_acesso(self) -> None:
         self.label_usuario_rede = ctk.CTkLabel(
@@ -265,6 +366,59 @@ class AghuConcessorPerfisApp(ctk.CTk):
             sticky="ew",
         )
 
+    def _criar_campos_lote(self) -> None:
+        self.label_planilha_lote = ctk.CTkLabel(
+            self.frame_lote,
+            text="Planilha .xlsx:",
+        )
+        self.label_planilha_lote.grid(row=1, column=0, padx=14, pady=8, sticky="e")
+
+        self.entry_planilha_lote = ctk.CTkEntry(
+            self.frame_lote,
+            placeholder_text="Arquivo .xlsx",
+        )
+        self.entry_planilha_lote.grid(
+            row=1,
+            column=1,
+            padx=14,
+            pady=8,
+            sticky="ew",
+        )
+
+        self.button_planilha_lote = ctk.CTkButton(
+            self.frame_lote,
+            text="Selecionar",
+            width=110,
+            command=self.selecionar_planilha_lote,
+        )
+        self.button_planilha_lote.grid(row=1, column=2, padx=14, pady=8)
+
+        self.label_relatorio_lote = ctk.CTkLabel(
+            self.frame_lote,
+            text="Relatorio:",
+        )
+        self.label_relatorio_lote.grid(row=2, column=0, padx=14, pady=8, sticky="e")
+
+        self.entry_relatorio_lote = ctk.CTkEntry(
+            self.frame_lote,
+            placeholder_text="Arquivo .xlsx de saida",
+        )
+        self.entry_relatorio_lote.grid(
+            row=2,
+            column=1,
+            padx=14,
+            pady=8,
+            sticky="ew",
+        )
+
+        self.button_relatorio_lote = ctk.CTkButton(
+            self.frame_lote,
+            text="Selecionar",
+            width=110,
+            command=self.selecionar_relatorio_lote,
+        )
+        self.button_relatorio_lote.grid(row=2, column=2, padx=14, pady=8)
+
     def _criar_previa_perfis(self) -> None:
         self.text_perfis = ctk.CTkTextbox(self.frame_perfis, height=130)
         self.text_perfis.grid(
@@ -327,6 +481,33 @@ class AghuConcessorPerfisApp(ctk.CTk):
 
         self.frame_alerta_producao.grid_remove()
 
+    def selecionar_planilha_lote(self) -> None:
+        caminho = filedialog.askopenfilename(
+            title="Selecione a planilha de lote",
+            filetypes=(("Excel", "*.xlsx"),),
+        )
+
+        if not caminho:
+            return
+
+        self.entry_planilha_lote.delete(0, "end")
+        self.entry_planilha_lote.insert(0, caminho)
+
+        if not self.entry_relatorio_lote.get().strip():
+            self.entry_relatorio_lote.insert(0, caminho_relatorio_padrao(caminho))
+
+    def selecionar_relatorio_lote(self) -> None:
+        caminho = filedialog.asksaveasfilename(
+            title="Salvar relatorio como",
+            defaultextension=".xlsx",
+            initialfile=Path(caminho_relatorio_padrao()).name,
+            filetypes=(("Excel", "*.xlsx"),),
+        )
+
+        if caminho:
+            self.entry_relatorio_lote.delete(0, "end")
+            self.entry_relatorio_lote.insert(0, caminho)
+
     def _on_escopo_changed(self, escopo: str) -> None:
         categorias = list(self.catalogo.categorias(escopo))
         categoria = categorias[0] if categorias else ""
@@ -388,22 +569,34 @@ class AghuConcessorPerfisApp(ctk.CTk):
     def _bloquear_execucao(self, texto_botao: str) -> None:
         self.em_execucao = True
         self.button_executar.configure(state="disabled", text=texto_botao)
+        self.segment_tipo_execucao.configure(state="disabled")
         self.checkbox_browser.configure(state="disabled")
         self.checkbox_console.configure(state="disabled")
         self.option_ambiente.configure(state="disabled")
         self.option_escopo.configure(state="disabled")
         self.option_categoria.configure(state="disabled")
+        self.button_planilha_lote.configure(state="disabled")
+        self.button_relatorio_lote.configure(state="disabled")
 
     def _liberar_execucao(self) -> None:
         self.em_execucao = False
+        self.segment_tipo_execucao.configure(state="normal")
         self.button_executar.configure(state="normal", text="Executar concessão")
         self.checkbox_browser.configure(state="normal")
         self.checkbox_console.configure(state="normal")
         self.option_ambiente.configure(state="normal")
         self.option_escopo.configure(state="normal")
         self.option_categoria.configure(state="normal")
+        self.button_planilha_lote.configure(state="normal")
+        self.button_relatorio_lote.configure(state="normal")
 
     def iniciar_execucao(self) -> None:
+        if self.var_tipo_execucao.get() == TIPO_LOTE:
+            self.iniciar_execucao_lote()
+        else:
+            self.iniciar_execucao_individual()
+
+    def iniciar_execucao_individual(self) -> None:
         if self.em_execucao:
             return
 
@@ -468,6 +661,97 @@ class AghuConcessorPerfisApp(ctk.CTk):
             self.after(0, self._finalizar_execucao, mensagem, cor)
         except Exception as exc:
             self.after(0, self._finalizar_execucao, f"Erro: {exc}", "red")
+
+    def iniciar_execucao_lote(self) -> None:
+        if self.em_execucao:
+            return
+
+        try:
+            usuario_rede, senha, url_aghu = self._credenciais_e_url()
+            caminho_planilha = self.entry_planilha_lote.get().strip()
+            caminho_relatorio = self.entry_relatorio_lote.get().strip()
+            mostrar_browser = bool(self.var_browser.get())
+            mostrar_console = bool(self.var_console.get())
+
+            if not caminho_planilha:
+                raise ValueError("Informe a planilha .xlsx de lote.")
+
+            if not caminho_relatorio:
+                caminho_relatorio = caminho_relatorio_padrao(caminho_planilha)
+                self.entry_relatorio_lote.insert(0, caminho_relatorio)
+
+            if Path(caminho_planilha).suffix.lower() != ".xlsx":
+                raise ValueError("A planilha de lote deve ser um arquivo .xlsx.")
+
+            if Path(caminho_relatorio).suffix.lower() != ".xlsx":
+                raise ValueError("O relatorio de saida deve ser um arquivo .xlsx.")
+        except Exception as exc:
+            self._mostrar_status(f"Erro: {exc}", "red")
+            return
+
+        self._mostrar_status("Executando lote de concessao de perfis...", "blue")
+        self._bloquear_execucao("Executando...")
+
+        thread = threading.Thread(
+            target=self._executar_lote_thread,
+            args=(
+                usuario_rede,
+                senha,
+                caminho_planilha,
+                caminho_relatorio,
+                url_aghu,
+                mostrar_browser,
+                mostrar_console,
+            ),
+            daemon=True,
+        )
+        thread.start()
+
+    def _executar_lote_thread(
+        self,
+        usuario_rede: str,
+        senha: str,
+        caminho_planilha: str,
+        caminho_relatorio: str,
+        url_aghu: str,
+        mostrar_browser: bool,
+        mostrar_console: bool,
+    ) -> None:
+        try:
+            resultados, relatorio = executar_concessao_lote(
+                usuario_rede=usuario_rede,
+                senha=senha,
+                caminho_planilha=caminho_planilha,
+                caminho_relatorio=caminho_relatorio,
+                url_aghu=url_aghu,
+                mostrar_browser=mostrar_browser,
+                mostrar_console=mostrar_console,
+                diretorio_logs=LOGS_DIR,
+            )
+            resumo = self._resumir_resultados(resultados)
+            mensagem = f"{resumo} Relatorio: {relatorio}"
+            cor = (
+                "red"
+                if any(resultado.status == STATUS_ERRO for resultado in resultados)
+                else "green"
+            )
+            self.after(0, self._finalizar_execucao, mensagem, cor)
+        except Exception as exc:
+            self.after(0, self._finalizar_execucao, f"Erro: {exc}", "red")
+
+    def _resumir_resultados(self, resultados) -> str:
+        contagem = Counter(resultado.status for resultado in resultados)
+        total = len(resultados)
+
+        return (
+            f"Lote concluido. Total: {total}. "
+            f"Concedidos: {contagem[STATUS_CONCEDIDO]}. "
+            f"Ja existentes: {contagem[STATUS_JA_EXISTENTE]}. "
+            f"Usuarios nao encontrados: {contagem[STATUS_USUARIO_NAO_ENCONTRADO]}. "
+            f"Conferir manualmente: {contagem[STATUS_CONFERIR_MANUAL]}. "
+            f"Ignorados: {contagem[STATUS_IGNORADO]}. "
+            f"Erros: {contagem[STATUS_ERRO]}."
+        )
 
     def _finalizar_execucao(self, mensagem: str, cor: str) -> None:
         self._mostrar_status(mensagem, cor)

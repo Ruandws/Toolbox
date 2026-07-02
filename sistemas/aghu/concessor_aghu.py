@@ -2,6 +2,7 @@ import ctypes
 import os
 import re
 import time
+import unicodedata
 from collections import Counter
 from contextlib import contextmanager, redirect_stderr, redirect_stdout
 from dataclasses import dataclass
@@ -59,6 +60,26 @@ STATUS_USUARIO_NAO_ENCONTRADO = "usuario_nao_encontrado"
 STATUS_CONFERIR_MANUAL = "conferir_manual"
 STATUS_ERRO = "erro"
 STATUS_IGNORADO = "ignorado"
+
+ALIASES_COLUNAS_PLANILHA = {
+    "login": (
+        "Login",
+        "Usuario",
+        "Usuario alvo",
+        "Usuario AGHU",
+        "Login do usuario",
+    ),
+    "protocolo": (
+        "Protocolo",
+        "Nro Protocolo",
+        "Numero Protocolo",
+        "Numero do Protocolo",
+        "Chamado",
+    ),
+    "escopo": ("Escopo",),
+    "categoria": ("Categoria", "Perfil", "Grupo"),
+}
+CAMPOS_CONCESSAO_OBRIGATORIOS = ("login", "protocolo", "escopo", "categoria")
 
 StatusPerfil = Literal[
     "concedido",
@@ -210,6 +231,23 @@ def _valor_em_branco(valor: object) -> bool:
         pass
 
     return str(valor or "").strip() == ""
+
+
+def _texto_planilha(valor: object) -> str:
+    if _valor_em_branco(valor):
+        return ""
+
+    return str(valor).strip()
+
+
+def _normalizar_cabecalho_planilha(valor: object) -> str:
+    texto = unicodedata.normalize("NFKD", _texto_planilha(valor))
+    texto = "".join(
+        caractere
+        for caractere in texto
+        if not unicodedata.combining(caractere)
+    )
+    return re.sub(r"\s+", " ", texto).casefold()
 
 
 def _unicos_preservando_ordem(valores) -> tuple[str, ...]:
@@ -440,6 +478,82 @@ def validar_entrada(entrada: ConcessaoPerfisEntrada) -> list[str]:
     return erros
 
 
+def _nome_coluna_planilha(campo: str) -> str:
+    return ALIASES_COLUNAS_PLANILHA[campo][0]
+
+
+def _mapear_colunas_planilha(colunas: pd.Index) -> dict[str, str]:
+    colunas_por_nome = {
+        _normalizar_cabecalho_planilha(coluna): str(coluna).strip()
+        for coluna in colunas
+    }
+    mapa: dict[str, str] = {}
+    faltantes: list[str] = []
+
+    for campo in CAMPOS_CONCESSAO_OBRIGATORIOS:
+        aliases = ALIASES_COLUNAS_PLANILHA[campo]
+        coluna_encontrada = None
+
+        for alias in aliases:
+            alias_normalizado = _normalizar_cabecalho_planilha(alias)
+
+            if alias_normalizado in colunas_por_nome:
+                coluna_encontrada = colunas_por_nome[alias_normalizado]
+                break
+
+        if coluna_encontrada is None:
+            faltantes.append(_nome_coluna_planilha(campo))
+        else:
+            mapa[campo] = coluna_encontrada
+
+    if faltantes:
+        raise ValueError(
+            "Planilha invalida. Colunas obrigatorias ausentes: "
+            + ", ".join(faltantes)
+        )
+
+    return mapa
+
+
+def _valor_por_coluna_mapeada(
+    linha: pd.Series,
+    mapa_colunas: dict[str, str],
+    campo: str,
+) -> str:
+    return _texto_planilha(linha.get(mapa_colunas[campo], ""))
+
+
+def ler_planilha_concessoes(
+    caminho_planilha: str | os.PathLike,
+) -> list[ConcessaoPerfisEntrada]:
+    caminho = Path(caminho_planilha).expanduser()
+
+    if not caminho.exists():
+        raise FileNotFoundError(f"Planilha nao encontrada: {caminho}")
+
+    if caminho.suffix.lower() != ".xlsx":
+        raise ValueError("A planilha deve ser um arquivo .xlsx.")
+
+    df = pd.read_excel(caminho, dtype=str, engine="openpyxl").fillna("")
+    df.columns = df.columns.str.strip()
+    mapa_colunas = _mapear_colunas_planilha(df.columns)
+    concessoes: list[ConcessaoPerfisEntrada] = []
+
+    for _, linha in df.iterrows():
+        if all(_valor_em_branco(valor) for valor in linha):
+            continue
+
+        entrada = ConcessaoPerfisEntrada(
+            login=_valor_por_coluna_mapeada(linha, mapa_colunas, "login"),
+            protocolo=_valor_por_coluna_mapeada(linha, mapa_colunas, "protocolo"),
+            escopo=_valor_por_coluna_mapeada(linha, mapa_colunas, "escopo"),
+            categoria=_valor_por_coluna_mapeada(linha, mapa_colunas, "categoria"),
+        )
+        concessoes.append(normalizar_entrada(entrada))
+
+    return concessoes
+
+
 def _resultado_perfil(
     entrada: ConcessaoPerfisEntrada,
     perfil: str,
@@ -607,6 +721,24 @@ def _montar_resultado_concessao(
         status=_status_geral(resultados_tuple),
         detalhes=_resumir_status(resultados_tuple),
         resultados_perfis=resultados_tuple,
+    )
+
+
+def resultado_ignorado(
+    entrada: ConcessaoPerfisEntrada,
+    detalhes: str,
+) -> ResultadoConcessao:
+    entrada = normalizar_entrada(entrada)
+    return _montar_resultado_concessao(
+        entrada,
+        (
+            _resultado_perfil(
+                entrada,
+                "",
+                STATUS_IGNORADO,
+                detalhes,
+            ),
+        ),
     )
 
 
@@ -1512,6 +1644,61 @@ def processar_concessao(
     return _montar_resultado_concessao(entrada, resultados)
 
 
+def processar_concessoes(
+    context: BrowserContext,
+    page_inicial: Page,
+    janela_sistema_inicial: FrameLocator,
+    preparadas: list[ConcessaoPreparada],
+    usuario_rede: str,
+    senha: str,
+    *,
+    resultados_prevalidacao: list[ResultadoConcessao | None] | None = None,
+    url_aghu: str = AGHU_URL,
+) -> list[ResultadoConcessao]:
+    resultados: list[ResultadoConcessao] = []
+    page = page_inicial
+    janela_sistema = janela_sistema_inicial
+    total = len(preparadas)
+
+    if resultados_prevalidacao is None:
+        resultados_prevalidacao = [None] * total
+
+    if len(resultados_prevalidacao) != total:
+        raise ValueError(
+            "A pre-validacao deve ter a mesma quantidade de concessoes."
+        )
+
+    for indice, (preparada, pre_resultado) in enumerate(
+        zip(preparadas, resultados_prevalidacao)
+    ):
+        entrada = preparada.entrada
+        print("\n========================================")
+        print(
+            f"Processando [{indice + 1}/{total}]: "
+            f"Login [{entrada.login}] | Escopo [{entrada.escopo}] | "
+            f"Categoria [{entrada.categoria}]"
+        )
+
+        if pre_resultado is not None:
+            print(pre_resultado.detalhes)
+            resultados.append(pre_resultado)
+            continue
+
+        resultado_linha = processar_concessao(
+            context=context,
+            page_inicial=page,
+            janela_sistema_inicial=janela_sistema,
+            preparada=preparada,
+            usuario_rede=usuario_rede,
+            senha=senha,
+            url_aghu=url_aghu,
+        )
+        print(f"Resultado: [{resultado_linha.status}] {resultado_linha.detalhes}")
+        resultados.append(resultado_linha)
+
+    return resultados
+
+
 def executar_concessao_perfis(
     entrada: ConcessaoPerfisEntrada,
     usuario_rede: str,
@@ -1619,6 +1806,189 @@ def processar_concessao_sem_browser(
         )
 
     return _montar_resultado_concessao(entrada, resultados)
+
+
+def _preparar_concessoes_lote(
+    concessoes: list[ConcessaoPerfisEntrada],
+    catalogo: CatalogoPerfis,
+) -> tuple[list[ConcessaoPreparada], list[ResultadoConcessao | None], bool]:
+    preparadas: list[ConcessaoPreparada] = []
+    resultados_prevalidacao: list[ResultadoConcessao | None] = []
+    existem_automatizaveis = False
+
+    for entrada in concessoes:
+        entrada = normalizar_entrada(entrada)
+        erros = validar_entrada(entrada)
+
+        if erros:
+            preparadas.append(
+                ConcessaoPreparada(
+                    entrada=entrada,
+                    regra=RegraPerfil("", "", (), (), (), ()),
+                    perfis_automatizados=(),
+                    resultados_previos=(),
+                )
+            )
+            resultados_prevalidacao.append(
+                resultado_ignorado(
+                    entrada,
+                    "Linha ignorada: " + "; ".join(erros) + ".",
+                )
+            )
+            continue
+
+        try:
+            preparada = preparar_concessao(entrada, catalogo)
+        except Exception as exc:
+            preparadas.append(
+                ConcessaoPreparada(
+                    entrada=entrada,
+                    regra=RegraPerfil("", "", (), (), (), ()),
+                    perfis_automatizados=(),
+                    resultados_previos=(),
+                )
+            )
+            resultados_prevalidacao.append(
+                resultado_ignorado(entrada, f"Linha ignorada: {exc}.")
+            )
+            continue
+
+        preparadas.append(preparada)
+
+        if preparada.perfis_automatizados:
+            resultados_prevalidacao.append(None)
+            existem_automatizaveis = True
+        else:
+            resultados_prevalidacao.append(processar_concessao_sem_browser(preparada))
+
+    return preparadas, resultados_prevalidacao, existem_automatizaveis
+
+
+def executar_concessoes_perfis(
+    concessoes: list[ConcessaoPerfisEntrada],
+    usuario_rede: str,
+    senha: str,
+    *,
+    url_aghu: str = AGHU_URL,
+    caminho_regras: str | os.PathLike = REGRAS_PADRAO,
+    mostrar_browser: bool = True,
+    mostrar_console: bool = True,
+    diretorio_logs: str | os.PathLike | None = None,
+    gerar_csv_log: bool = True,
+) -> list[ResultadoConcessao]:
+    if not usuario_rede or not senha:
+        raise ValueError("Preencha usuario de rede e senha.")
+
+    if not url_aghu:
+        raise ValueError("Informe o ambiente do AGHU.")
+
+    with _controle_saida_terminal(mostrar_console):
+        return _executar_concessoes_perfis_com_saida_configurada(
+            concessoes=concessoes,
+            usuario_rede=usuario_rede,
+            senha=senha,
+            url_aghu=url_aghu,
+            caminho_regras=caminho_regras,
+            mostrar_browser=mostrar_browser,
+            diretorio_logs=diretorio_logs,
+            gerar_csv_log=gerar_csv_log,
+        )
+
+
+def _executar_concessoes_perfis_com_saida_configurada(
+    concessoes: list[ConcessaoPerfisEntrada],
+    usuario_rede: str,
+    senha: str,
+    *,
+    url_aghu: str,
+    caminho_regras: str | os.PathLike,
+    mostrar_browser: bool,
+    diretorio_logs: str | os.PathLike | None,
+    gerar_csv_log: bool,
+) -> list[ResultadoConcessao]:
+    catalogo = carregar_catalogo_regras(caminho_regras)
+    concessoes = [normalizar_entrada(entrada) for entrada in concessoes]
+    (
+        preparadas,
+        resultados_prevalidacao,
+        existem_automatizaveis,
+    ) = _preparar_concessoes_lote(concessoes, catalogo)
+
+    if not existem_automatizaveis:
+        resultados = [
+            resultado
+            for resultado in resultados_prevalidacao
+            if resultado is not None
+        ]
+
+        if gerar_csv_log:
+            gerar_csv_logs(tuple(resultados), usuario_rede, diretorio_logs)
+
+        return resultados
+
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(
+            headless=not mostrar_browser,
+            slow_mo=500,
+        )
+        context = browser.new_context(ignore_https_errors=True)
+        page = context.new_page()
+
+        try:
+            page.goto(url_aghu)
+            print(f"Ambiente acessado: {page.url}")
+            fazer_login(page, usuario_rede, senha, url_aghu=url_aghu)
+            page, janela_sistema = navegar_ate_cadastro_usuario(
+                context=context,
+                page_atual=page,
+                usuario_rede=usuario_rede,
+                senha=senha,
+                url_aghu=url_aghu,
+            )
+            resultados = processar_concessoes(
+                context=context,
+                page_inicial=page,
+                janela_sistema_inicial=janela_sistema,
+                preparadas=preparadas,
+                resultados_prevalidacao=resultados_prevalidacao,
+                usuario_rede=usuario_rede,
+                senha=senha,
+                url_aghu=url_aghu,
+            )
+
+            if gerar_csv_log:
+                gerar_csv_logs(tuple(resultados), usuario_rede, diretorio_logs)
+
+            return resultados
+        finally:
+            browser.close()
+
+
+def executar_concessao_lote(
+    usuario_rede: str,
+    senha: str,
+    caminho_planilha: str | os.PathLike,
+    caminho_relatorio: str | os.PathLike,
+    *,
+    url_aghu: str = AGHU_URL,
+    caminho_regras: str | os.PathLike = REGRAS_PADRAO,
+    mostrar_browser: bool = True,
+    mostrar_console: bool = True,
+    diretorio_logs: str | os.PathLike | None = None,
+) -> tuple[list[ResultadoConcessao], Path]:
+    concessoes = ler_planilha_concessoes(caminho_planilha)
+    resultados = executar_concessoes_perfis(
+        concessoes=concessoes,
+        usuario_rede=usuario_rede,
+        senha=senha,
+        url_aghu=url_aghu,
+        caminho_regras=caminho_regras,
+        mostrar_browser=mostrar_browser,
+        mostrar_console=mostrar_console,
+        diretorio_logs=diretorio_logs,
+    )
+    relatorio = salvar_relatorio_resultados(resultados, caminho_relatorio)
+    return resultados, relatorio
 
 
 def executar_concessao_individual(
