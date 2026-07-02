@@ -57,6 +57,20 @@ class TestRegressaoValidacao:
         assert "Login" not in erros
         assert "Login contem espacos indevidos" in erros
 
+    def test_nome_com_espacos_corrigiveis_nao_ignora_linha(self):
+        usuario = UsuarioImportacao(
+            login="joao.silva",
+            nome_completo="  Joao\t\u00a0 Silva\r\nSouza  ",
+            email="joao@email.com",
+        )
+
+        usuario_normalizado, resultado_validacao = (
+            aghu._preparar_usuario_importacao(usuario)
+        )
+
+        assert resultado_validacao is None
+        assert usuario_normalizado.nome_completo == "Joao Silva Souza"
+
 
 class TestRegressaoPlanilha:
     """Regressões na leitura de planilhas."""

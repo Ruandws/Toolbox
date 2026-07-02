@@ -122,12 +122,16 @@ def _texto_para_validacao(valor: object) -> str:
     return str(valor)
 
 
+def _normalizar_nome_completo(valor: object) -> str:
+    return re.sub(r"\s+", " ", _texto_para_validacao(valor)).strip()
+
+
 def _normalizar_usuario_importacao(
     usuario: UsuarioImportacao,
 ) -> UsuarioImportacao:
     return UsuarioImportacao(
         login=_normalizar_login(usuario.login),
-        nome_completo=_texto_para_validacao(usuario.nome_completo).strip(),
+        nome_completo=_normalizar_nome_completo(usuario.nome_completo),
         email=_texto_para_validacao(usuario.email).strip(),
     )
 
@@ -737,7 +741,12 @@ def _preparar_usuario_importacao(
     usuario: UsuarioImportacao,
 ) -> tuple[UsuarioImportacao, ResultadoImportacao | None]:
     usuario_normalizado = _normalizar_usuario_importacao(usuario)
-    erros = _validar_usuario(usuario)
+    usuario_para_validacao = UsuarioImportacao(
+        login=usuario.login,
+        nome_completo=usuario_normalizado.nome_completo,
+        email=usuario.email,
+    )
+    erros = _validar_usuario(usuario_para_validacao)
 
     if not erros:
         return usuario_normalizado, None
