@@ -26,6 +26,31 @@ CAMINHO_MENU_CADASTRO_USUARIO = (
 )
 
 COLUNAS_OBRIGATORIAS_PLANILHA = ("Login", "Nome Completo", "E-mail")
+ALIASES_COLUNAS_PLANILHA = {
+    "login": (
+        "Login",
+        "login",
+        "Usuário",
+        "Usuario",
+        "usuário",
+        "usuario",
+        "User",
+        "Usuário/Login",
+        "Usuario/Login",
+    ),
+    "nome_completo": (
+        "Nome Completo",
+        "Nome completo",
+        "nome completo",
+        "Nome",
+    ),
+    "email": (
+        "E-mail",
+        "E-Mail",
+        "Email",
+        "email",
+    ),
+}
 PADRAO_EMAIL_MINIMO = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 PADRAO_LOGIN_VALIDO = re.compile(r"^[A-Za-z0-9._-]+$")
 
@@ -134,6 +159,17 @@ def _normalizar_usuario_importacao(
         nome_completo=_normalizar_nome_completo(usuario.nome_completo),
         email=_texto_para_validacao(usuario.email).strip(),
     )
+
+
+def _nome_coluna_planilha(campo: str) -> str:
+    return ALIASES_COLUNAS_PLANILHA[campo][0]
+
+
+def _valor_por_alias_planilha(linha: pd.Series, campo: str) -> str:
+    for alias in ALIASES_COLUNAS_PLANILHA[campo]:
+        if alias in linha.index:
+            return str(linha.get(alias, ""))
+    return ""
 
 
 def _nome_tem_espacos_indevidos(nome: str) -> bool:
@@ -1089,9 +1125,10 @@ def ler_planilha_usuarios(caminho_planilha: str) -> list[UsuarioImportacao]:
     df = pd.read_excel(caminho, dtype=str, engine="openpyxl").fillna("")
     df.columns = df.columns.str.strip()
 
-    colunas_faltantes = [
-        coluna for coluna in COLUNAS_OBRIGATORIAS_PLANILHA if coluna not in df.columns
-    ]
+    colunas_faltantes = []
+    for campo in ALIASES_COLUNAS_PLANILHA:
+        if not any(alias in df.columns for alias in ALIASES_COLUNAS_PLANILHA[campo]):
+            colunas_faltantes.append(_nome_coluna_planilha(campo))
 
     if colunas_faltantes:
         raise ValueError(
@@ -1104,9 +1141,9 @@ def ler_planilha_usuarios(caminho_planilha: str) -> list[UsuarioImportacao]:
     for _, linha in df.iterrows():
         usuarios.append(
             UsuarioImportacao(
-                login=str(linha.get("Login", "")),
-                nome_completo=str(linha.get("Nome Completo", "")),
-                email=str(linha.get("E-mail", "")),
+                login=_valor_por_alias_planilha(linha, "login"),
+                nome_completo=_valor_por_alias_planilha(linha, "nome_completo"),
+                email=_valor_por_alias_planilha(linha, "email"),
             )
         )
 

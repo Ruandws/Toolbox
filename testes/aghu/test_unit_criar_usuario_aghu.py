@@ -289,6 +289,34 @@ class TestLerPlanilhaUsuarios:
         assert len(usuarios) == 1
         assert usuarios[0].login == "joao.silva"
 
+    @pytest.mark.parametrize("alias_login", ["Usuário", "usuario", "login", "User"])
+    def test_planilha_reconhece_aliases_de_usuario_login(
+        self,
+        tmp_xlsx,
+        alias_login,
+    ):
+        caminho = tmp_xlsx(
+            f"usuarios_{alias_login}.xlsx",
+            [alias_login, "Nome Completo", "E-mail"],
+            [["joao.silva", "Joao Silva", "joao@email.com"]],
+        )
+
+        usuarios = ler_planilha_usuarios(str(caminho))
+
+        assert usuarios[0].login == "joao.silva"
+
+    def test_planilha_reconhece_aliases_de_nome_completo_e_email(self, tmp_xlsx):
+        caminho = tmp_xlsx(
+            "usuarios_aliases_nome_email.xlsx",
+            ["Login", "Nome", "Email"],
+            [["ana.silva", "Ana Silva", "ana@email.com"]],
+        )
+
+        usuarios = ler_planilha_usuarios(str(caminho))
+
+        assert usuarios[0].nome_completo == "Ana Silva"
+        assert usuarios[0].email == "ana@email.com"
+
     def test_planilha_inexistente_levanta_erro(self):
         with pytest.raises(FileNotFoundError):
             ler_planilha_usuarios("inexistente.xlsx")
