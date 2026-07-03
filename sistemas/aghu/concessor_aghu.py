@@ -64,20 +64,31 @@ STATUS_IGNORADO = "ignorado"
 ALIASES_COLUNAS_PLANILHA = {
     "login": (
         "Login",
+        "login",
+        "Usuário",
         "Usuario",
-        "Usuario alvo",
-        "Usuario AGHU",
-        "Login do usuario",
+        "usuário",
+        "usuario",
+        "User",
+        "Usuário/Login",
+        "Usuario/Login",
     ),
     "protocolo": (
         "Protocolo",
+        "protocolo",
         "Nro Protocolo",
+        "nro protocolo",
         "Numero Protocolo",
+        "numero protocolo",
         "Numero do Protocolo",
+        "numero do protocolo",
+        "Despacho",
+        "despacho",
         "Chamado",
+        "chamado",
     ),
-    "escopo": ("Escopo",),
-    "categoria": ("Categoria", "Perfil", "Grupo"),
+    "escopo": ("Escopo", "escopo"),
+    "categoria": ("Categoria", "categoria", "Perfil", "perfil", "Grupo", "grupo"),
 }
 CAMPOS_CONCESSAO_OBRIGATORIOS = ("login", "protocolo", "escopo", "categoria")
 
