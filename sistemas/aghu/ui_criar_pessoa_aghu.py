@@ -15,6 +15,7 @@ from criar_pessoa_aghu import (
     STATUS_IGNORADO,
     STATUS_MANTIDO,
     executar_cadastro_individual,
+    executar_cadastro_pessoas,
     executar_cadastro_lote,
 )
 from autenticador import AGHU_URL, AGHU_URL_HOMOLOGACAO
@@ -28,6 +29,7 @@ URLS_AMBIENTE_AGHU = {
     AMBIENTE_PRODUCAO: AGHU_URL,
     AMBIENTE_HOMOLOGACAO: AGHU_URL_HOMOLOGACAO,
 }
+MAX_PESSOAS_MANUAIS = 5
 
 SEXO_MASCULINO = "Masculino"
 SEXO_FEMININO = "Feminino"
@@ -57,6 +59,10 @@ CAMPOS_PESSOA = (
     ("municipio_nao_cadastrado", "Município:", "Município não cadastrado"),
 )
 
+CAMPOS_PESSOA_ESQUERDA = CAMPOS_PESSOA[:9]
+CAMPOS_PESSOA_DIREITA = CAMPOS_PESSOA[9:]
+
+
 def obter_url_ambiente_aghu(ambiente: str) -> str:
     return URLS_AMBIENTE_AGHU.get(ambiente, AGHU_URL)
 
@@ -73,6 +79,10 @@ def caminho_relatorio_padrao(base: str = "") -> str:
 
 
 class AghuCadastroPessoaApp(ctk.CTk):
+    # ============================================================
+    # SECAO 1: Inicializacao
+    # ============================================================
+
     def __init__(self):
         super().__init__()
 
@@ -87,10 +97,8 @@ class AghuCadastroPessoaApp(ctk.CTk):
         self.var_tipo_execucao = tk.StringVar(value=TIPO_INDIVIDUAL)
         self.var_browser = tk.BooleanVar(value=True)
         self.var_console = tk.BooleanVar(value=True)
-        self.var_sexo = tk.StringVar(value="")
-        self.segment_sexo: ctk.CTkSegmentedButton | None = None
         self.em_execucao = False
-        self.entries_individual: dict[str, ctk.CTkEntry] = {}
+        self.linhas_pessoas_individual = []
 
         self.label_title = ctk.CTkLabel(
             self,
@@ -138,6 +146,11 @@ class AghuCadastroPessoaApp(ctk.CTk):
         )
         self.label_status.grid(row=2, column=0, padx=20, pady=(8, 18), sticky="ew")
 
+
+    # ============================================================
+    # SECAO 2: Builders de UI
+    # ============================================================
+
     def _criar_secao(self, titulo: str, row: int) -> ctk.CTkFrame:
         frame = ctk.CTkFrame(self.frame_conteudo)
         frame.grid(row=row, column=0, padx=0, pady=8, sticky="ew")
@@ -172,50 +185,6 @@ class AghuCadastroPessoaApp(ctk.CTk):
         )
         label.grid(row=row, column=0, columnspan=3, padx=14, pady=(18, 6), sticky="w")
         return row + 1
-
-    def _criar_seletor_tipo_execucao(self) -> None:
-        self.label_tipo_execucao = ctk.CTkLabel(
-            self.frame_tipo_execucao,
-            text="Tipo:",
-        )
-        self.label_tipo_execucao.grid(row=1, column=0, padx=14, pady=8, sticky="e")
-
-        self.segment_tipo_execucao = ctk.CTkSegmentedButton(
-            self.frame_tipo_execucao,
-            values=[TIPO_INDIVIDUAL, TIPO_LOTE],
-            variable=self.var_tipo_execucao,
-            command=self._atualizar_tipo_execucao,
-            height=36,
-            selected_color=("#1F6AA5", "#144870"),
-            selected_hover_color=("#155E96", "#0F3A5A"),
-            unselected_color=("#D9D9D9", "#333333"),
-            unselected_hover_color=("#C9C9C9", "#3D3D3D"),
-        )
-        self.segment_tipo_execucao.grid(
-            row=1,
-            column=1,
-            columnspan=2,
-            padx=14,
-            pady=8,
-            sticky="ew",
-        )
-        self.segment_tipo_execucao.set(TIPO_INDIVIDUAL)
-
-    def _atualizar_tipo_execucao(self, tipo: str) -> None:
-        self.frame_individual.grid_remove()
-        self.frame_lote.grid_remove()
-
-        if tipo == TIPO_INDIVIDUAL:
-            self.frame_individual.grid(row=0, column=0, sticky="ew")
-        else:
-            self.frame_lote.grid(row=0, column=0, sticky="ew")
-
-        if hasattr(self, "segment_tipo_execucao"):
-            for valor, btn in self.segment_tipo_execucao._buttons_dict.items():
-                if valor == tipo:
-                    btn.configure(text_color="white")
-                else:
-                    btn.configure(text_color=("#1F6AA5", "#3B8ED0"))
 
     def _criar_campos_acesso(self) -> None:
         self.label_usuario_rede = ctk.CTkLabel(
@@ -332,46 +301,97 @@ class AghuCadastroPessoaApp(ctk.CTk):
             sticky="w",
         )
 
-    def _validar_opcoes_visibilidade(self, variavel_alvo: tk.BooleanVar) -> None:
-        if not self.var_browser.get() and not self.var_console.get():
-            variavel_alvo.set(True)
-            messagebox.showwarning(
-                "Ação bloqueada",
-                "Para evitar processos invisíveis, mantenha o navegador ou o terminal ativo.",
-                parent=self,
-            )
+    def _criar_seletor_tipo_execucao(self) -> None:
+        self.label_tipo_execucao = ctk.CTkLabel(
+            self.frame_tipo_execucao,
+            text="Tipo:",
+        )
+        self.label_tipo_execucao.grid(row=1, column=0, padx=14, pady=8, sticky="e")
+
+        self.segment_tipo_execucao = ctk.CTkSegmentedButton(
+            self.frame_tipo_execucao,
+            values=[TIPO_INDIVIDUAL, TIPO_LOTE],
+            variable=self.var_tipo_execucao,
+            command=self._atualizar_tipo_execucao,
+            height=36,
+            selected_color=("#1F6AA5", "#144870"),
+            selected_hover_color=("#155E96", "#0F3A5A"),
+            unselected_color=("#D9D9D9", "#333333"),
+            unselected_hover_color=("#C9C9C9", "#3D3D3D"),
+        )
+        self.segment_tipo_execucao.grid(
+            row=1,
+            column=1,
+            columnspan=2,
+            padx=14,
+            pady=8,
+            sticky="ew",
+        )
+        self.segment_tipo_execucao.set(TIPO_INDIVIDUAL)
 
     def _criar_campos_individual(self) -> None:
-        row = 1
-        row = self._criar_subsecao(self.frame_individual, row, "Pessoa")
-        row = self._criar_grupo_campos(self.frame_individual, row, CAMPOS_PESSOA)
+        self.label_pessoas_individual = ctk.CTkLabel(
+            self.frame_individual,
+            text="Pessoas:",
+        )
+        self.label_pessoas_individual.grid(
+            row=1,
+            column=0,
+            padx=14,
+            pady=(10, 8),
+            sticky="ne",
+        )
 
-    def _criar_grupo_campos(
-        self,
-        frame: ctk.CTkFrame,
-        row_inicial: int,
-        campos: tuple[tuple[str, str, str], ...],
-    ) -> int:
-        row = row_inicial
+        self.frame_pessoas_individual = ctk.CTkFrame(
+            self.frame_individual,
+            fg_color="transparent",
+        )
+        self.frame_pessoas_individual.grid(
+            row=1,
+            column=1,
+            columnspan=2,
+            padx=14,
+            pady=(8, 12),
+            sticky="ew",
+        )
+        self.frame_pessoas_individual.grid_columnconfigure(0, weight=1)
 
-        for nome_campo, label, placeholder in campos:
-            if nome_campo == "sexo":
-                self.segment_sexo = self._criar_linha_seletor_sexo(
-                    frame=frame,
-                    row=row,
-                    label=label,
-                )
-            else:
-                self.entries_individual[nome_campo] = self._criar_linha_entry(
-                    frame=frame,
-                    row=row,
-                    label=label,
-                    placeholder=placeholder,
-                )
+        self.frame_linhas_pessoas = ctk.CTkFrame(
+            self.frame_pessoas_individual,
+            fg_color="transparent",
+        )
+        self.frame_linhas_pessoas.grid(row=0, column=0, sticky="ew")
+        self.frame_linhas_pessoas.grid_columnconfigure(0, weight=1)
 
-            row += 1
+        self.frame_acoes_pessoas = ctk.CTkFrame(
+            self.frame_pessoas_individual,
+            fg_color="transparent",
+        )
+        self.frame_acoes_pessoas.grid(row=1, column=0, pady=(6, 0), sticky="ew")
+        self.frame_acoes_pessoas.grid_columnconfigure(1, weight=1)
 
-        return row
+        self.button_adicionar_pessoa = ctk.CTkButton(
+            self.frame_acoes_pessoas,
+            text="+ Adicionar pessoa",
+            width=160,
+            height=32,
+            command=self.adicionar_linha_pessoa,
+        )
+        self.button_adicionar_pessoa.grid(row=0, column=0, sticky="w")
+
+        self.label_limite_pessoas = ctk.CTkLabel(
+            self.frame_acoes_pessoas,
+            text="",
+            text_color=("#9A3412", "#FDBA74"),
+        )
+        self.label_limite_pessoas.grid(
+            row=0,
+            column=1,
+            padx=(10, 0),
+            sticky="w",
+        )
+
+        self.adicionar_linha_pessoa()
 
     def _criar_campos_lote(self) -> None:
         self.label_planilha_lote = ctk.CTkLabel(
@@ -426,6 +446,48 @@ class AghuCadastroPessoaApp(ctk.CTk):
         )
         self.button_relatorio_lote.grid(row=2, column=2, padx=14, pady=8)
 
+    def _criar_coluna_campos_pessoa(
+        self,
+        frame_linha: ctk.CTkFrame,
+        row: int,
+        column: int,
+        padx: tuple[int, int],
+    ) -> ctk.CTkFrame:
+        frame_coluna = ctk.CTkFrame(frame_linha, fg_color="transparent")
+        frame_coluna.grid(
+            row=row,
+            column=column,
+            padx=padx,
+            pady=(0, 12),
+            sticky="nsew",
+        )
+        frame_coluna.grid_columnconfigure(0, minsize=120)
+        frame_coluna.grid_columnconfigure(1, weight=1)
+        return frame_coluna
+
+    def _preencher_coluna_campos_pessoa(
+        self,
+        frame: ctk.CTkFrame,
+        linha: dict,
+        campos: tuple[tuple[str, str, str], ...],
+    ) -> None:
+        for row, (nome_campo, label, placeholder) in enumerate(campos):
+            if nome_campo == "sexo":
+                segmento = self._criar_linha_seletor_sexo(
+                    frame=frame,
+                    row=row,
+                    label=label,
+                    variavel=linha["sexo"],
+                )
+                linha["segment_sexo"] = segmento
+            else:
+                linha["entries"][nome_campo] = self._criar_linha_entry(
+                    frame=frame,
+                    row=row,
+                    label=label,
+                    placeholder=placeholder,
+                )
+
     def _criar_linha_entry(
         self,
         frame: ctk.CTkFrame,
@@ -433,35 +495,48 @@ class AghuCadastroPessoaApp(ctk.CTk):
         label: str,
         placeholder: str,
     ) -> ctk.CTkEntry:
-        label_widget = ctk.CTkLabel(frame, text=label)
-        label_widget.grid(row=row, column=0, padx=14, pady=6, sticky="e")
+        label_widget = ctk.CTkLabel(
+            frame,
+            text=label,
+            font=ctk.CTkFont(size=12),
+        )
+        label_widget.grid(row=row, column=0, padx=(0, 8), pady=3, sticky="e")
 
-        entry = ctk.CTkEntry(frame, placeholder_text=placeholder)
-        entry.grid(row=row, column=1, columnspan=2, padx=14, pady=6, sticky="ew")
+        entry = ctk.CTkEntry(frame, placeholder_text=placeholder, height=30)
+        entry.grid(row=row, column=1, padx=0, pady=3, sticky="ew")
         return entry
-        
-    
+
     def _criar_linha_seletor_sexo(
         self,
         frame: ctk.CTkFrame,
         row: int,
         label: str,
+        variavel: tk.StringVar,
     ) -> ctk.CTkSegmentedButton:
-        label_widget = ctk.CTkLabel(frame, text=label)
-        label_widget.grid(row=row, column=0, padx=14, pady=6, sticky="e")
+        label_widget = ctk.CTkLabel(
+            frame,
+            text=label,
+            font=ctk.CTkFont(size=12),
+        )
+        label_widget.grid(row=row, column=0, padx=(0, 8), pady=3, sticky="e")
 
         segment = ctk.CTkSegmentedButton(
             frame,
             values=list(OPCOES_SEXO),
-            variable=self.var_sexo,
-            command=self._atualizar_visual_sexo,
-            height=34,
+            variable=variavel,
+            height=30,
             selected_color=("#1F6AA5", "#144870"),
             selected_hover_color=("#155E96", "#0F3A5A"),
             unselected_color=("#D9D9D9", "#333333"),
             unselected_hover_color=("#C9C9C9", "#3D3D3D"),
         )
-        segment.grid(row=row, column=1, columnspan=2, padx=14, pady=6, sticky="ew")
+        segment.configure(
+            command=lambda sexo: self._atualizar_visual_segmented_button(
+                segment,
+                sexo,
+            )
+        )
+        segment.grid(row=row, column=1, padx=0, pady=3, sticky="ew")
         segment.set("")
 
         self._atualizar_visual_segmented_button(segment, "")
@@ -469,84 +544,9 @@ class AghuCadastroPessoaApp(ctk.CTk):
         return segment
 
 
-    def _atualizar_visual_sexo(self, sexo: str) -> None:
-        if self.segment_sexo is None:
-            return
-
-        self._atualizar_visual_segmented_button(self.segment_sexo, sexo)
-
-
-    def _atualizar_visual_segmented_button(
-        self,
-        segment: ctk.CTkSegmentedButton,
-        valor_selecionado: str,
-    ) -> None:
-        for valor, btn in segment._buttons_dict.items():
-            if valor == valor_selecionado:
-                btn.configure(text_color="white")
-            else:
-                btn.configure(text_color=("#1F6AA5", "#3B8ED0"))
-
-    def _on_ambiente_changed(self, ambiente: str) -> None:
-        self._atualizar_alerta_ambiente(ambiente)
-        if ambiente == AMBIENTE_PRODUCAO:
-            messagebox.showwarning(
-                "Atenção: Ambiente de Produção",
-                (
-                    "Você selecionou o ambiente de Produção.\n\n"
-                    "Tenha cautela: as alterações serão aplicadas no AGHUX de produção."
-                ),
-                parent=self,
-            )
-
-    def _atualizar_alerta_ambiente(self, ambiente: str) -> None:
-        if ambiente == AMBIENTE_PRODUCAO:
-            self.frame_alerta_producao.grid(
-                row=4,
-                column=0,
-                columnspan=3,
-                padx=14,
-                pady=(0, 10),
-                sticky="ew",
-            )
-            return
-
-        self.frame_alerta_producao.grid_remove()
-
-    def selecionar_planilha_lote(self) -> None:
-        caminho = filedialog.askopenfilename(
-            title="Selecione a planilha de lote",
-            filetypes=(("Excel", "*.xlsx"),),
-        )
-
-        if not caminho:
-            return
-
-        self.entry_planilha_lote.delete(0, "end")
-        self.entry_planilha_lote.insert(0, caminho)
-
-        if not self.entry_relatorio_lote.get().strip():
-            self.entry_relatorio_lote.insert(0, caminho_relatorio_padrao(caminho))
-
-    def selecionar_relatorio_lote(self) -> None:
-        caminho = filedialog.asksaveasfilename(
-            title="Salvar relatório como",
-            defaultextension=".xlsx",
-            initialfile=Path(caminho_relatorio_padrao()).name,
-            filetypes=(("Excel", "*.xlsx"),),
-        )
-
-        if caminho:
-            self.entry_relatorio_lote.delete(0, "end")
-            self.entry_relatorio_lote.insert(0, caminho)
-
-    def iniciar_execucao(self) -> None:
-        tipo = self.var_tipo_execucao.get()
-
-        if tipo == TIPO_INDIVIDUAL:
-            self.iniciar_execucao_individual()
-        else:
-            self.iniciar_execucao_lote()
+    # ============================================================
+    # SECAO 3: Coleta e validacao de dados
+    # ============================================================
 
     def _credenciais_e_url(self) -> tuple[str, str, str]:
         usuario_rede = self.entry_usuario_rede.get().strip()
@@ -559,40 +559,71 @@ class AghuCadastroPessoaApp(ctk.CTk):
 
         return usuario_rede, senha, url_aghu
 
+    def coletar_pessoas_individuais(self) -> list[CadastroPessoaEntrada]:
+        if self._usar_formulario_individual_legado():
+            return [self._cadastro_individual()]
+
+        pessoas = []
+
+        for indice, linha in enumerate(self.linhas_pessoas_individual, start=1):
+            dados = {
+                nome_campo: entry.get().strip()
+                for nome_campo, entry in linha["entries"].items()
+            }
+            sexo = linha["sexo"].get().strip()
+
+            if not any(dados.values()) and not sexo:
+                continue
+
+            if sexo not in OPCOES_SEXO:
+                raise ValueError(
+                    f"Pessoa {indice}: selecione o sexo: Masculino ou Feminino."
+                )
+
+            dados["sexo"] = sexo
+            pessoas.append(CadastroPessoaEntrada(**dados))
+
+        if not pessoas:
+            raise ValueError("Informe ao menos uma pessoa.")
+
+        return pessoas
+
+    def _usar_formulario_individual_legado(self) -> bool:
+        return (
+            "linhas_pessoas_individual" not in self.__dict__
+            and "entries_individual" in self.__dict__
+            and "var_sexo" in self.__dict__
+        )
+
     def _cadastro_individual(self) -> CadastroPessoaEntrada:
-        dados = {
-            nome_campo: entry.get().strip()
-            for nome_campo, entry in self.entries_individual.items()
-        }
+        if self._usar_formulario_individual_legado():
+            dados = {
+                nome_campo: entry.get().strip()
+                for nome_campo, entry in self.entries_individual.items()
+            }
+            sexo = self.var_sexo.get().strip()
 
-        sexo = self.var_sexo.get().strip()
+            if sexo not in OPCOES_SEXO:
+                raise ValueError("Selecione o sexo: Masculino ou Feminino.")
 
-        if sexo not in OPCOES_SEXO:
-            raise ValueError("Selecione o sexo: Masculino ou Feminino.")
+            dados["sexo"] = sexo
+            return CadastroPessoaEntrada(**dados)
 
-        dados["sexo"] = sexo
+        pessoas = self.coletar_pessoas_individuais()
+        return pessoas[0]
 
-        return CadastroPessoaEntrada(**dados)
 
-    def _bloquear_execucao(self, texto_botao: str) -> None:
-        self.em_execucao = True
-        self.button_executar.configure(state="disabled", text=texto_botao)
-        self.segment_tipo_execucao.configure(state="disabled")
-        self.checkbox_browser.configure(state="disabled")
-        self.checkbox_console.configure(state="disabled")
-        self.option_ambiente.configure(state="disabled")
-        self.button_planilha_lote.configure(state="disabled")
-        self.button_relatorio_lote.configure(state="disabled")
+    # ============================================================
+    # SECAO 4: Controle de execucao e threading
+    # ============================================================
 
-    def _liberar_execucao(self) -> None:
-        self.em_execucao = False
-        self.button_executar.configure(state="normal", text="Executar cadastro")
-        self.segment_tipo_execucao.configure(state="normal")
-        self.checkbox_browser.configure(state="normal")
-        self.checkbox_console.configure(state="normal")
-        self.option_ambiente.configure(state="normal")
-        self.button_planilha_lote.configure(state="normal")
-        self.button_relatorio_lote.configure(state="normal")
+    def iniciar_execucao(self) -> None:
+        tipo = self.var_tipo_execucao.get()
+
+        if tipo == TIPO_INDIVIDUAL:
+            self.iniciar_execucao_individual()
+        else:
+            self.iniciar_execucao_lote()
 
     def iniciar_execucao_individual(self) -> None:
         if self.em_execucao:
@@ -600,14 +631,24 @@ class AghuCadastroPessoaApp(ctk.CTk):
 
         try:
             usuario_rede, senha, url_aghu = self._credenciais_e_url()
-            cadastro = self._cadastro_individual()
+            cadastros = self.coletar_pessoas_individuais()
+            cadastro_thread = (
+                cadastros[0]
+                if self._usar_formulario_individual_legado()
+                else cadastros
+            )
             mostrar_browser = bool(self.var_browser.get())
             mostrar_console = bool(self.var_console.get())
         except Exception as exc:
             self._mostrar_status(f"Erro: {exc}", "red")
             return
 
-        self._mostrar_status("Executando cadastro individual...", "blue")
+        texto_status = (
+            "Executando cadastro individual..."
+            if self._usar_formulario_individual_legado()
+            else "Executando cadastro unitário..."
+        )
+        self._mostrar_status(texto_status, "blue")
         self._bloquear_execucao("Executando...")
 
         thread = threading.Thread(
@@ -615,7 +656,7 @@ class AghuCadastroPessoaApp(ctk.CTk):
             args=(
                 usuario_rede,
                 senha,
-                cadastro,
+                cadastro_thread,
                 url_aghu,
                 mostrar_browser,
                 mostrar_console,
@@ -628,26 +669,51 @@ class AghuCadastroPessoaApp(ctk.CTk):
         self,
         usuario_rede: str,
         senha: str,
-        cadastro: CadastroPessoaEntrada,
+        cadastros: CadastroPessoaEntrada | list[CadastroPessoaEntrada],
         url_aghu: str,
         mostrar_browser: bool,
         mostrar_console: bool,
     ) -> None:
         try:
-            resultado = executar_cadastro_individual(
-                usuario_rede=usuario_rede,
-                senha=senha,
-                cadastro=cadastro,
-                url_aghu=url_aghu,
-                mostrar_browser=mostrar_browser,
-                mostrar_console=mostrar_console,
-                diretorio_logs=LOGS_DIR,
-            )
-            mensagem = (
-                f"{resultado.cpf or resultado.nome_pessoa}: "
-                f"{resultado.status} - {resultado.detalhes}"
-            )
-            cor = "green" if resultado.status not in {STATUS_ERRO, STATUS_IGNORADO} else "red"
+            if isinstance(cadastros, CadastroPessoaEntrada):
+                resultados = [
+                    executar_cadastro_individual(
+                        usuario_rede=usuario_rede,
+                        senha=senha,
+                        cadastro=cadastros,
+                        url_aghu=url_aghu,
+                        mostrar_browser=mostrar_browser,
+                        mostrar_console=mostrar_console,
+                        diretorio_logs=LOGS_DIR,
+                    )
+                ]
+            else:
+                resultados = executar_cadastro_pessoas(
+                    usuario_rede=usuario_rede,
+                    senha=senha,
+                    cadastros=cadastros,
+                    url_aghu=url_aghu,
+                    mostrar_browser=mostrar_browser,
+                    mostrar_console=mostrar_console,
+                    diretorio_logs=LOGS_DIR,
+                )
+            if len(resultados) == 1:
+                resultado = resultados[0]
+                mensagem = (
+                    f"{resultado.cpf or resultado.nome_pessoa}: "
+                    f"{resultado.status} - {resultado.detalhes}"
+                )
+                cor = (
+                    "green"
+                    if resultado.status not in {STATUS_ERRO, STATUS_IGNORADO}
+                    else "red"
+                )
+            else:
+                mensagem = self._resumir_resultados(
+                    resultados,
+                    prefixo="Execução unitária concluída",
+                )
+                cor = "green"
             self.after(0, self._finalizar_execucao, mensagem, cor)
         except Exception as exc:
             self.after(0, self._finalizar_execucao, f"Erro: {exc}", "red")
@@ -724,12 +790,43 @@ class AghuCadastroPessoaApp(ctk.CTk):
         except Exception as exc:
             self.after(0, self._finalizar_execucao, f"Erro: {exc}", "red")
 
-    def _resumir_resultados(self, resultados) -> str:
+    def _bloquear_execucao(self, texto_botao: str) -> None:
+        self.em_execucao = True
+        self.button_executar.configure(state="disabled", text=texto_botao)
+        self.segment_tipo_execucao.configure(state="disabled")
+        self.checkbox_browser.configure(state="disabled")
+        self.checkbox_console.configure(state="disabled")
+        self.option_ambiente.configure(state="disabled")
+        self.button_planilha_lote.configure(state="disabled")
+        self.button_relatorio_lote.configure(state="disabled")
+        self._atualizar_estado_lista_pessoas()
+
+    def _liberar_execucao(self) -> None:
+        self.em_execucao = False
+        self.button_executar.configure(state="normal", text="Executar cadastro")
+        self.segment_tipo_execucao.configure(state="normal")
+        self.checkbox_browser.configure(state="normal")
+        self.checkbox_console.configure(state="normal")
+        self.option_ambiente.configure(state="normal")
+        self.button_planilha_lote.configure(state="normal")
+        self.button_relatorio_lote.configure(state="normal")
+        self._atualizar_estado_lista_pessoas()
+
+
+    # ============================================================
+    # SECAO 5: Feedback e status
+    # ============================================================
+
+    def _resumir_resultados(
+        self,
+        resultados,
+        prefixo: str = "Lote concluído",
+    ) -> str:
         contagem = Counter(resultado.status for resultado in resultados)
         total = len(resultados)
 
         return (
-            f"Lote concluído. Total: {total}. "
+            f"{prefixo}. Total: {total}. "
             f"Criados: {contagem[STATUS_CRIADO]}. "
             f"Mantidos: {contagem[STATUS_MANTIDO]}. "
             f"Conferir manualmente: {contagem[STATUS_CONFERIR_MANUAL]}. "
@@ -744,6 +841,234 @@ class AghuCadastroPessoaApp(ctk.CTk):
     def _mostrar_status(self, mensagem: str, cor: str) -> None:
         self.label_status.configure(text=mensagem, text_color=cor)
 
+
+    # ============================================================
+    # SECAO 6: Utilitarios de interface
+    # ============================================================
+
+    def _validar_opcoes_visibilidade(self, variavel_alvo: tk.BooleanVar) -> None:
+        if not self.var_browser.get() and not self.var_console.get():
+            variavel_alvo.set(True)
+            messagebox.showwarning(
+                "Ação bloqueada",
+                "Para evitar processos invisíveis, mantenha o navegador ou o terminal ativo.",
+                parent=self,
+            )
+
+    def _atualizar_tipo_execucao(self, tipo: str) -> None:
+        self.frame_individual.grid_remove()
+        self.frame_lote.grid_remove()
+
+        if tipo == TIPO_INDIVIDUAL:
+            self.frame_individual.grid(row=0, column=0, sticky="ew")
+        else:
+            self.frame_lote.grid(row=0, column=0, sticky="ew")
+
+        if hasattr(self, "segment_tipo_execucao"):
+            for valor, btn in self.segment_tipo_execucao._buttons_dict.items():
+                if valor == tipo:
+                    btn.configure(text_color="white")
+                else:
+                    btn.configure(text_color=("#1F6AA5", "#3B8ED0"))
+
+    def adicionar_linha_pessoa(self) -> None:
+        if len(self.linhas_pessoas_individual) >= MAX_PESSOAS_MANUAIS:
+            self._atualizar_estado_lista_pessoas()
+            return
+
+        frame_linha = ctk.CTkFrame(self.frame_linhas_pessoas)
+        frame_linha.grid(
+            row=len(self.linhas_pessoas_individual),
+            column=0,
+            pady=(0, 10),
+            sticky="ew",
+        )
+        frame_linha.grid_columnconfigure(0, weight=1, uniform="colunas_pessoa")
+        frame_linha.grid_columnconfigure(1, weight=1, uniform="colunas_pessoa")
+
+        linha = {"frame": frame_linha, "entries": {}}
+
+        label_titulo = ctk.CTkLabel(
+            frame_linha,
+            text=f"Pessoa {len(self.linhas_pessoas_individual) + 1}",
+            font=ctk.CTkFont(size=14, weight="bold"),
+        )
+        label_titulo.grid(
+            row=0,
+            column=0,
+            padx=14,
+            pady=(12, 6),
+            sticky="w",
+        )
+
+        button_remover = ctk.CTkButton(
+            frame_linha,
+            text="\U0001F5D1",
+            width=36,
+            height=32,
+            fg_color=("#E5E7EB", "#2B2B2B"),
+            hover_color=("#D1D5DB", "#3A3A3A"),
+            text_color=("#991B1B", "#FCA5A5"),
+            command=lambda linha=linha: self.remover_linha_pessoa(linha),
+        )
+        button_remover.grid(row=0, column=1, padx=14, pady=(12, 6), sticky="e")
+
+        linha.update(
+            {
+                "titulo": label_titulo,
+                "remover": button_remover,
+                "sexo": tk.StringVar(value=""),
+                "segment_sexo": None,
+            }
+        )
+
+        frame_coluna_esquerda = self._criar_coluna_campos_pessoa(
+            frame_linha,
+            row=1,
+            column=0,
+            padx=(14, 7),
+        )
+        frame_coluna_direita = self._criar_coluna_campos_pessoa(
+            frame_linha,
+            row=1,
+            column=1,
+            padx=(7, 14),
+        )
+
+        self._preencher_coluna_campos_pessoa(
+            frame=frame_coluna_esquerda,
+            linha=linha,
+            campos=CAMPOS_PESSOA_ESQUERDA,
+        )
+        self._preencher_coluna_campos_pessoa(
+            frame=frame_coluna_direita,
+            linha=linha,
+            campos=CAMPOS_PESSOA_DIREITA,
+        )
+
+        self.linhas_pessoas_individual.append(linha)
+        self._atualizar_estado_lista_pessoas()
+
+    def remover_linha_pessoa(self, linha_pessoa) -> None:
+        if len(self.linhas_pessoas_individual) <= 1:
+            self._atualizar_estado_lista_pessoas()
+            return
+
+        if linha_pessoa not in self.linhas_pessoas_individual:
+            return
+
+        linha_pessoa["frame"].destroy()
+        self.linhas_pessoas_individual.remove(linha_pessoa)
+
+        for indice, linha in enumerate(self.linhas_pessoas_individual):
+            linha["frame"].grid_configure(row=indice)
+            linha["titulo"].configure(text=f"Pessoa {indice + 1}")
+
+        self._atualizar_estado_lista_pessoas()
+
+    def _atualizar_estado_lista_pessoas(self) -> None:
+        linhas_pessoas = self.__dict__.get("linhas_pessoas_individual")
+        if linhas_pessoas is None:
+            return
+
+        limite_atingido = len(linhas_pessoas) >= MAX_PESSOAS_MANUAIS
+        estado_campos = "disabled" if self.em_execucao else "normal"
+        estado_adicionar = (
+            "disabled" if self.em_execucao or limite_atingido else "normal"
+        )
+        estado_remover = (
+            "normal"
+            if not self.em_execucao and len(linhas_pessoas) > 1
+            else "disabled"
+        )
+
+        if (
+            "button_adicionar_pessoa" not in self.__dict__
+            or "label_limite_pessoas" not in self.__dict__
+        ):
+            return
+
+        self.button_adicionar_pessoa.configure(state=estado_adicionar)
+        self.label_limite_pessoas.configure(
+            text="Limite de 5 pessoas atingido." if limite_atingido else ""
+        )
+
+        for linha in linhas_pessoas:
+            for entry in linha["entries"].values():
+                entry.configure(state=estado_campos)
+            linha["segment_sexo"].configure(state=estado_campos)
+            linha["remover"].configure(state=estado_remover)
+
+    def _atualizar_visual_sexo(self, sexo: str) -> None:
+        segment = self.__dict__.get("segment_sexo")
+        if segment is None:
+            return
+
+        self._atualizar_visual_segmented_button(segment, sexo)
+
+    def _atualizar_visual_segmented_button(
+        self,
+        segment: ctk.CTkSegmentedButton,
+        valor_selecionado: str,
+    ) -> None:
+        for valor, btn in segment._buttons_dict.items():
+            if valor == valor_selecionado:
+                btn.configure(text_color="white")
+            else:
+                btn.configure(text_color=("#1F6AA5", "#3B8ED0"))
+
+    def _on_ambiente_changed(self, ambiente: str) -> None:
+        self._atualizar_alerta_ambiente(ambiente)
+        if ambiente == AMBIENTE_PRODUCAO:
+            messagebox.showwarning(
+                "Atenção: Ambiente de Produção",
+                (
+                    "Você selecionou o ambiente de Produção.\n\n"
+                    "Tenha cautela: as alterações serão aplicadas no AGHUX de produção."
+                ),
+                parent=self,
+            )
+
+    def _atualizar_alerta_ambiente(self, ambiente: str) -> None:
+        if ambiente == AMBIENTE_PRODUCAO:
+            self.frame_alerta_producao.grid(
+                row=4,
+                column=0,
+                columnspan=3,
+                padx=14,
+                pady=(0, 10),
+                sticky="ew",
+            )
+            return
+
+        self.frame_alerta_producao.grid_remove()
+
+    def selecionar_planilha_lote(self) -> None:
+        caminho = filedialog.askopenfilename(
+            title="Selecione a planilha de lote",
+            filetypes=(("Excel", "*.xlsx"),),
+        )
+
+        if not caminho:
+            return
+
+        self.entry_planilha_lote.delete(0, "end")
+        self.entry_planilha_lote.insert(0, caminho)
+
+        if not self.entry_relatorio_lote.get().strip():
+            self.entry_relatorio_lote.insert(0, caminho_relatorio_padrao(caminho))
+
+    def selecionar_relatorio_lote(self) -> None:
+        caminho = filedialog.asksaveasfilename(
+            title="Salvar relatório como",
+            defaultextension=".xlsx",
+            initialfile=Path(caminho_relatorio_padrao()).name,
+            filetypes=(("Excel", "*.xlsx"),),
+        )
+
+        if caminho:
+            self.entry_relatorio_lote.delete(0, "end")
+            self.entry_relatorio_lote.insert(0, caminho)
 
 if __name__ == "__main__":
     ctk.set_appearance_mode("System")

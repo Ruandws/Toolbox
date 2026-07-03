@@ -573,8 +573,8 @@ def test_iniciar_execucao_individual_inicia_thread_com_dados_da_tela(
     app_fake.entry_usuario_rede.valor = " usuario "
     app_fake.entry_senha.valor = "senha"
     preencher_cadastro_individual(app_fake)
-
     app_fake.var_sexo.set(ui.SEXO_MASCULINO)
+
     ui.AghuCadastroPessoaApp.iniciar_execucao_individual(app_fake)
 
     thread = FakeThread.criadas[0]
@@ -875,3 +875,4 @@ def test_finalizar_execucao_mostra_status_e_libera(app_fake):
         "text_color": "green",
     }
     assert app_fake.em_execucao is False
+
