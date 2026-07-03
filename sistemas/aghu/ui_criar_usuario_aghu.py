@@ -13,7 +13,8 @@ from criar_usuario_aghu import (
     STATUS_IMPORTADO,
     STATUS_JA_IMPORTADO,
     STATUS_NAO_ENCONTRADO,
-    executar_importacao_individual,
+    UsuarioImportacao,
+    executar_importacao_usuarios,
     executar_importacao_lote,
 )
 from autenticador import AGHU_URL, AGHU_URL_HOMOLOGACAO
@@ -28,6 +29,7 @@ URLS_AMBIENTE_AGHU = {
     AMBIENTE_PRODUCAO: AGHU_URL,
     AMBIENTE_HOMOLOGACAO: AGHU_URL_HOMOLOGACAO,
 }
+MAX_USUARIOS_MANUAIS = 5
 BASE_DIR = Path(__file__).resolve().parent
 LOGS_DIR = BASE_DIR / "logs"
 
@@ -63,6 +65,7 @@ class AghuImportUserApp(ctk.CTk):
         self.var_browser = tk.BooleanVar(value=True)
         self.var_console = tk.BooleanVar(value=True)
         self.em_execucao = False
+        self.linhas_usuarios_individual = []
 
         self.label_title = ctk.CTkLabel(
             self,
@@ -304,24 +307,205 @@ class AghuImportUserApp(ctk.CTk):
             )
 
     def _criar_campos_individual(self) -> None:
-        self.entry_login_individual = self._criar_linha_entry(
+        self.label_usuarios_individual = ctk.CTkLabel(
             self.frame_individual,
+            text="Usuários:",
+        )
+        self.label_usuarios_individual.grid(
             row=1,
-            label="Login:",
-            placeholder="Login",
+            column=0,
+            padx=14,
+            pady=(10, 8),
+            sticky="ne",
         )
-        self.entry_nome_individual = self._criar_linha_entry(
+
+        self.frame_usuarios_individual = ctk.CTkFrame(
             self.frame_individual,
-            row=2,
-            label="Nome Completo:",
-            placeholder="Nome completo",
+            fg_color="transparent",
         )
-        self.entry_email_individual = self._criar_linha_entry(
-            self.frame_individual,
-            row=3,
-            label="E-mail:",
-            placeholder="E-mail",
+        self.frame_usuarios_individual.grid(
+            row=1,
+            column=1,
+            columnspan=2,
+            padx=14,
+            pady=(8, 12),
+            sticky="ew",
         )
+        self.frame_usuarios_individual.grid_columnconfigure(0, weight=1)
+
+        self.frame_cabecalho_usuarios = ctk.CTkFrame(
+            self.frame_usuarios_individual,
+            fg_color="transparent",
+        )
+        self.frame_cabecalho_usuarios.grid(row=0, column=0, sticky="ew")
+        self.frame_cabecalho_usuarios.grid_columnconfigure(0, weight=1, minsize=130)
+        self.frame_cabecalho_usuarios.grid_columnconfigure(1, weight=2, minsize=180)
+        self.frame_cabecalho_usuarios.grid_columnconfigure(2, weight=2, minsize=180)
+        self.frame_cabecalho_usuarios.grid_columnconfigure(3, minsize=42)
+
+        for coluna, texto in enumerate(("Login", "Nome completo", "E-mail")):
+            label = ctk.CTkLabel(
+                self.frame_cabecalho_usuarios,
+                text=texto,
+                text_color="gray",
+                font=ctk.CTkFont(size=12, weight="bold"),
+            )
+            label.grid(row=0, column=coluna, padx=(0, 8), pady=(0, 2), sticky="w")
+
+        self.frame_linhas_usuarios = ctk.CTkFrame(
+            self.frame_usuarios_individual,
+            fg_color="transparent",
+        )
+        self.frame_linhas_usuarios.grid(row=1, column=0, sticky="ew")
+        self.frame_linhas_usuarios.grid_columnconfigure(0, weight=1)
+
+        self.frame_acoes_usuarios = ctk.CTkFrame(
+            self.frame_usuarios_individual,
+            fg_color="transparent",
+        )
+        self.frame_acoes_usuarios.grid(row=2, column=0, pady=(6, 0), sticky="ew")
+        self.frame_acoes_usuarios.grid_columnconfigure(1, weight=1)
+
+        self.button_adicionar_usuario = ctk.CTkButton(
+            self.frame_acoes_usuarios,
+            text="+ Adicionar usuário",
+            width=160,
+            height=32,
+            command=self.adicionar_linha_usuario,
+        )
+        self.button_adicionar_usuario.grid(row=0, column=0, sticky="w")
+
+        self.label_limite_usuarios = ctk.CTkLabel(
+            self.frame_acoes_usuarios,
+            text="",
+            text_color=("#9A3412", "#FDBA74"),
+        )
+        self.label_limite_usuarios.grid(
+            row=0,
+            column=1,
+            padx=(10, 0),
+            sticky="w",
+        )
+
+        self.adicionar_linha_usuario()
+
+    def adicionar_linha_usuario(self) -> None:
+        if len(self.linhas_usuarios_individual) >= MAX_USUARIOS_MANUAIS:
+            self._atualizar_estado_lista_usuarios()
+            return
+
+        frame_linha = ctk.CTkFrame(
+            self.frame_linhas_usuarios,
+            fg_color="transparent",
+        )
+        frame_linha.grid(
+            row=len(self.linhas_usuarios_individual),
+            column=0,
+            pady=3,
+            sticky="ew",
+        )
+        frame_linha.grid_columnconfigure(0, weight=1, minsize=130)
+        frame_linha.grid_columnconfigure(1, weight=2, minsize=180)
+        frame_linha.grid_columnconfigure(2, weight=2, minsize=180)
+        frame_linha.grid_columnconfigure(3, minsize=42)
+
+        linha = {"frame": frame_linha}
+
+        entry_login = ctk.CTkEntry(
+            frame_linha,
+            placeholder_text="Login",
+            height=32,
+        )
+        entry_login.grid(row=0, column=0, padx=(0, 8), sticky="ew")
+
+        entry_nome = ctk.CTkEntry(
+            frame_linha,
+            placeholder_text="Nome completo",
+            height=32,
+        )
+        entry_nome.grid(row=0, column=1, padx=(0, 8), sticky="ew")
+
+        entry_email = ctk.CTkEntry(
+            frame_linha,
+            placeholder_text="E-mail",
+            height=32,
+        )
+        entry_email.grid(row=0, column=2, padx=(0, 8), sticky="ew")
+
+        button_remover = ctk.CTkButton(
+            frame_linha,
+            text="\U0001F5D1",
+            width=36,
+            height=32,
+            fg_color=("#E5E7EB", "#2B2B2B"),
+            hover_color=("#D1D5DB", "#3A3A3A"),
+            text_color=("#991B1B", "#FCA5A5"),
+            command=lambda linha=linha: self.remover_linha_usuario(linha),
+        )
+        button_remover.grid(row=0, column=3, sticky="e")
+
+        linha.update(
+            {
+                "login": entry_login,
+                "nome_completo": entry_nome,
+                "email": entry_email,
+                "remover": button_remover,
+            }
+        )
+        self.linhas_usuarios_individual.append(linha)
+        self._atualizar_estado_lista_usuarios()
+
+        if len(self.linhas_usuarios_individual) > 1:
+            entry_login.focus()
+
+    def remover_linha_usuario(self, linha_usuario) -> None:
+        if len(self.linhas_usuarios_individual) <= 1:
+            self._atualizar_estado_lista_usuarios()
+            return
+
+        if linha_usuario not in self.linhas_usuarios_individual:
+            return
+
+        linha_usuario["frame"].destroy()
+        self.linhas_usuarios_individual.remove(linha_usuario)
+
+        for indice, linha in enumerate(self.linhas_usuarios_individual):
+            linha["frame"].grid_configure(row=indice)
+
+        self._atualizar_estado_lista_usuarios()
+
+    def coletar_usuarios_individuais(self) -> list[UsuarioImportacao]:
+        return [
+            UsuarioImportacao(
+                login=linha["login"].get(),
+                nome_completo=linha["nome_completo"].get(),
+                email=linha["email"].get(),
+            )
+            for linha in self.linhas_usuarios_individual
+        ]
+
+    def _atualizar_estado_lista_usuarios(self) -> None:
+        limite_atingido = len(self.linhas_usuarios_individual) >= MAX_USUARIOS_MANUAIS
+        estado_campos = "disabled" if self.em_execucao else "normal"
+        estado_adicionar = (
+            "disabled" if self.em_execucao or limite_atingido else "normal"
+        )
+        estado_remover = (
+            "normal"
+            if not self.em_execucao and len(self.linhas_usuarios_individual) > 1
+            else "disabled"
+        )
+
+        self.button_adicionar_usuario.configure(state=estado_adicionar)
+        self.label_limite_usuarios.configure(
+            text="Limite de 5 usuários atingido." if limite_atingido else ""
+        )
+
+        for linha in self.linhas_usuarios_individual:
+            linha["login"].configure(state=estado_campos)
+            linha["nome_completo"].configure(state=estado_campos)
+            linha["email"].configure(state=estado_campos)
+            linha["remover"].configure(state=estado_remover)
 
     def iniciar_execucao(self) -> None:
         tipo = self.var_tipo_execucao.get()
@@ -469,6 +653,7 @@ class AghuImportUserApp(ctk.CTk):
         self.checkbox_console.configure(state="disabled")
         self.button_planilha_lote.configure(state="disabled")
         self.button_relatorio_lote.configure(state="disabled")
+        self._atualizar_estado_lista_usuarios()
 
 
     def _liberar_execucao(self) -> None:
@@ -479,6 +664,7 @@ class AghuImportUserApp(ctk.CTk):
         self.checkbox_console.configure(state="normal")
         self.button_planilha_lote.configure(state="normal")
         self.button_relatorio_lote.configure(state="normal")
+        self._atualizar_estado_lista_usuarios()
 
     def iniciar_execucao_individual(self) -> None:
         if self.em_execucao:
@@ -486,16 +672,14 @@ class AghuImportUserApp(ctk.CTk):
 
         try:
             usuario_rede, senha, url_aghu = self._credenciais_e_url()
-            login = self.entry_login_individual.get()
-            nome_completo = self.entry_nome_individual.get()
-            email = self.entry_email_individual.get()
+            usuarios = self.coletar_usuarios_individuais()
             mostrar_browser = bool(self.var_browser.get())
             mostrar_console = bool(self.var_console.get())
         except Exception as exc:
             self._mostrar_status(f"Erro: {exc}", "red")
             return
 
-        self._mostrar_status("Executando importação individual...", "blue")
+        self._mostrar_status("Executando importação unitária...", "blue")
         self._bloquear_execucao("Executando...")
 
         thread = threading.Thread(
@@ -503,9 +687,7 @@ class AghuImportUserApp(ctk.CTk):
             args=(
                 usuario_rede,
                 senha,
-                login,
-                nome_completo,
-                email,
+                usuarios,
                 url_aghu,
                 mostrar_browser,
                 mostrar_console,
@@ -518,20 +700,16 @@ class AghuImportUserApp(ctk.CTk):
         self,
         usuario_rede: str,
         senha: str,
-        login: str,
-        nome_completo: str,
-        email: str,
+        usuarios: list[UsuarioImportacao],
         url_aghu: str,
         mostrar_browser: bool,
         mostrar_console: bool,
     ) -> None:
         try:
-            resultado = executar_importacao_individual(
+            resultados = executar_importacao_usuarios(
+                usuarios=usuarios,
                 usuario_rede=usuario_rede,
                 senha=senha,
-                login=login,
-                nome_completo=nome_completo,
-                email=email,
                 url_aghu=url_aghu,
 <<<<<<< HEAD
                 mostrar_browser=mostrar_browser,
@@ -541,7 +719,16 @@ class AghuImportUserApp(ctk.CTk):
 >>>>>>> e2d6b15 (fix (ui_criar_usuario_aghu) : Definido ambiente 'Homologação'como padrão na criacão de usuario. Incrementado alerta ao selecionar ambiente de 'Produção'.)
                 diretorio_logs=LOGS_DIR,
             )
-            mensagem = f"{resultado.login}: {resultado.status} - {resultado.detalhes}"
+            if len(resultados) == 1:
+                resultado = resultados[0]
+                mensagem = (
+                    f"{resultado.login}: {resultado.status} - {resultado.detalhes}"
+                )
+            else:
+                mensagem = self._resumir_resultados(
+                    resultados,
+                    prefixo="Execução unitária concluída",
+                )
             self.after(0, self._finalizar_execucao, mensagem, "green")
         except Exception as exc:
             self.after(0, self._finalizar_execucao, f"Erro: {exc}", "red")
@@ -619,12 +806,16 @@ class AghuImportUserApp(ctk.CTk):
         except Exception as exc:
             self.after(0, self._finalizar_execucao, f"Erro: {exc}", "red")
 
-    def _resumir_resultados(self, resultados) -> str:
+    def _resumir_resultados(
+        self,
+        resultados,
+        prefixo: str = "Lote concluído",
+    ) -> str:
         contagem = Counter(resultado.status for resultado in resultados)
         total = len(resultados)
 
         return (
-            f"Lote concluído. Total: {total}. "
+            f"{prefixo}. Total: {total}. "
             f"Importados: {contagem[STATUS_IMPORTADO]}. "
             f"Já importados: {contagem[STATUS_JA_IMPORTADO]}. "
             f"Não encontrados: {contagem[STATUS_NAO_ENCONTRADO]}. "

@@ -11,12 +11,17 @@ from criar_usuario_aghu import (
     STATUS_JA_IMPORTADO,
     STATUS_NAO_ENCONTRADO,
     ResultadoImportacao,
+    UsuarioImportacao,
 )
 
 
 class FakeEntry:
-    def __init__(self, valor=""):
+    def __init__(self, *args, valor="", **kwargs):
+        if args and isinstance(args[0], str):
+            valor = args[0]
         self.valor = valor
+        self.configuracoes = dict(kwargs)
+        self.focus_recebido = False
 
     def get(self):
         return self.valor
@@ -31,26 +36,69 @@ class FakeEntry:
 
         self.valor = self.valor[:indice] + valor + self.valor[indice:]
 
+    def configure(self, **kwargs):
+        self.configuracoes.update(kwargs)
+
+    def grid(self, **kwargs):
+        self.grid_args = kwargs
+
+    def focus(self):
+        self.focus_recebido = True
+
 
 class FakeWidget:
-    def __init__(self):
-        self.configuracoes = {}
+    def __init__(self, *args, **kwargs):
+        self.configuracoes = dict(kwargs)
+        self.grid_args = None
+        self.grid_column_args = []
+        self.destruido = False
+        self.focus_recebido = False
 
     def configure(self, **kwargs):
         self.configuracoes.update(kwargs)
 
+    def grid(self, **kwargs):
+        self.grid_args = kwargs
+
+    def grid_configure(self, **kwargs):
+        self.grid_args = {**(self.grid_args or {}), **kwargs}
+
+    def grid_columnconfigure(self, *args, **kwargs):
+        self.grid_column_args.append((args, kwargs))
+
+    def grid_remove(self):
+        self.visivel = False
+
+    def destroy(self):
+        self.destruido = True
+
+    def focus(self):
+        self.focus_recebido = True
+
 
 class FakeFrame:
-    def __init__(self):
+    def __init__(self, *args, **kwargs):
         self.visivel = False
+        self.configuracoes = dict(kwargs)
         self.grid_args = None
+        self.grid_column_args = []
+        self.destruido = False
 
     def grid(self, **kwargs):
         self.visivel = True
         self.grid_args = kwargs
 
+    def grid_configure(self, **kwargs):
+        self.grid_args = {**(self.grid_args or {}), **kwargs}
+
+    def grid_columnconfigure(self, *args, **kwargs):
+        self.grid_column_args.append((args, kwargs))
+
     def grid_remove(self):
         self.visivel = False
+
+    def destroy(self):
+        self.destruido = True
 
 
 class FakeStringVar:
@@ -65,7 +113,9 @@ class FakeStringVar:
 
 
 class FakeButton(FakeWidget):
-    pass
+    def __init__(self, *args, command=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.command = command
 
 
 class FakeSegment(FakeWidget):
@@ -100,6 +150,16 @@ class FixedDatetime:
 CAMINHO_TMP_TESTE = Path("C:/Extrator2/testes/aghu")
 
 
+def linha_usuario_fake(login="", nome_completo="", email=""):
+    return {
+        "frame": FakeFrame(),
+        "login": FakeEntry(login),
+        "nome_completo": FakeEntry(nome_completo),
+        "email": FakeEntry(email),
+        "remover": FakeButton(),
+    }
+
+
 @pytest.fixture()
 def app_fake():
     app = object.__new__(ui.AghuImportUserApp)
@@ -110,9 +170,6 @@ def app_fake():
     app.var_console = FakeStringVar(True)
     app.entry_usuario_rede = FakeEntry()
     app.entry_senha = FakeEntry()
-    app.entry_login_individual = FakeEntry()
-    app.entry_nome_individual = FakeEntry()
-    app.entry_email_individual = FakeEntry()
     app.entry_planilha_lote = FakeEntry()
     app.entry_relatorio_lote = FakeEntry()
     app.button_executar = FakeWidget()
@@ -125,6 +182,10 @@ def app_fake():
     app.frame_individual = FakeFrame()
     app.frame_lote = FakeFrame()
     app.frame_alerta_producao = FakeFrame()
+    app.frame_linhas_usuarios = FakeFrame()
+    app.button_adicionar_usuario = FakeButton()
+    app.label_limite_usuarios = FakeWidget()
+    app.linhas_usuarios_individual = [linha_usuario_fake()]
     return app
 
 
@@ -396,6 +457,111 @@ def test_selecionar_relatorio_lote_preenche_caminho(
     assert app_fake.entry_relatorio_lote.get() == str(caminho)
 
 
+def test_adicionar_linha_usuario_cria_linha_e_respeita_limite(
+    app_fake,
+    monkeypatch,
+):
+    monkeypatch.setattr(ui.ctk, "CTkFrame", FakeFrame)
+    monkeypatch.setattr(ui.ctk, "CTkEntry", FakeEntry)
+    monkeypatch.setattr(ui.ctk, "CTkButton", FakeButton)
+    app_fake.linhas_usuarios_individual = []
+
+    for _ in range(ui.MAX_USUARIOS_MANUAIS):
+        ui.AghuImportUserApp.adicionar_linha_usuario(app_fake)
+
+    ui.AghuImportUserApp.adicionar_linha_usuario(app_fake)
+
+    assert len(app_fake.linhas_usuarios_individual) == ui.MAX_USUARIOS_MANUAIS
+    assert app_fake.button_adicionar_usuario.configuracoes["state"] == "disabled"
+    assert app_fake.label_limite_usuarios.configuracoes["text"] == (
+        "Limite de 5 usuários atingido."
+    )
+    assert app_fake.linhas_usuarios_individual[-1]["login"].focus_recebido is True
+
+
+def test_remover_linha_usuario_nao_remove_linha_unica(app_fake):
+    linha_unica = app_fake.linhas_usuarios_individual[0]
+
+    ui.AghuImportUserApp.remover_linha_usuario(app_fake, linha_unica)
+
+    assert app_fake.linhas_usuarios_individual == [linha_unica]
+    assert linha_unica["frame"].destruido is False
+    assert linha_unica["remover"].configuracoes["state"] == "disabled"
+
+
+def test_remover_linha_usuario_remove_e_reindexa_linhas(app_fake):
+    linha_1 = linha_usuario_fake("a", "A", "a@x.com")
+    linha_2 = linha_usuario_fake("b", "B", "b@x.com")
+    linha_3 = linha_usuario_fake("c", "C", "c@x.com")
+    app_fake.linhas_usuarios_individual = [linha_1, linha_2, linha_3]
+
+    ui.AghuImportUserApp.remover_linha_usuario(app_fake, linha_2)
+
+    assert app_fake.linhas_usuarios_individual == [linha_1, linha_3]
+    assert linha_2["frame"].destruido is True
+    assert linha_1["frame"].grid_args["row"] == 0
+    assert linha_3["frame"].grid_args["row"] == 1
+
+
+def test_remover_linha_usuario_ignora_linha_desconhecida(app_fake):
+    linha_existente = app_fake.linhas_usuarios_individual[0]
+    linha_desconhecida = linha_usuario_fake("fora", "Fora", "fora@x.com")
+
+    ui.AghuImportUserApp.remover_linha_usuario(app_fake, linha_desconhecida)
+
+    assert app_fake.linhas_usuarios_individual == [linha_existente]
+    assert linha_desconhecida["frame"].destruido is False
+
+
+def test_coletar_usuarios_individuais_preserva_ordem_e_valores(app_fake):
+    app_fake.linhas_usuarios_individual = [
+        linha_usuario_fake("login1", "Nome 1", "email1@x.com"),
+        linha_usuario_fake("login2", "Nome 2", "email2@x.com"),
+    ]
+
+    usuarios = ui.AghuImportUserApp.coletar_usuarios_individuais(app_fake)
+
+    assert usuarios == [
+        UsuarioImportacao("login1", "Nome 1", "email1@x.com"),
+        UsuarioImportacao("login2", "Nome 2", "email2@x.com"),
+    ]
+
+
+def test_atualizar_estado_lista_usuarios_bloqueia_campos_durante_execucao(
+    app_fake,
+):
+    app_fake.linhas_usuarios_individual = [
+        linha_usuario_fake("login1", "Nome 1", "email1@x.com"),
+        linha_usuario_fake("login2", "Nome 2", "email2@x.com"),
+    ]
+    app_fake.em_execucao = True
+
+    ui.AghuImportUserApp._atualizar_estado_lista_usuarios(app_fake)
+
+    assert app_fake.button_adicionar_usuario.configuracoes["state"] == "disabled"
+    for linha in app_fake.linhas_usuarios_individual:
+        assert linha["login"].configuracoes["state"] == "disabled"
+        assert linha["nome_completo"].configuracoes["state"] == "disabled"
+        assert linha["email"].configuracoes["state"] == "disabled"
+        assert linha["remover"].configuracoes["state"] == "disabled"
+
+
+def test_atualizar_estado_lista_usuarios_habilita_remocao_quando_ha_mais_de_um(
+    app_fake,
+):
+    app_fake.linhas_usuarios_individual = [
+        linha_usuario_fake("login1", "Nome 1", "email1@x.com"),
+        linha_usuario_fake("login2", "Nome 2", "email2@x.com"),
+    ]
+
+    ui.AghuImportUserApp._atualizar_estado_lista_usuarios(app_fake)
+
+    assert app_fake.button_adicionar_usuario.configuracoes["state"] == "normal"
+    for linha in app_fake.linhas_usuarios_individual:
+        assert linha["login"].configuracoes["state"] == "normal"
+        assert linha["remover"].configuracoes["state"] == "normal"
+
+
 def test_bloquear_e_liberar_execucao_alteram_estados(app_fake):
     ui.AghuImportUserApp._bloquear_execucao(app_fake, "Executando...")
 
@@ -469,29 +635,32 @@ def test_iniciar_execucao_individual_inicia_thread_com_dados_da_tela(
     monkeypatch.setattr(ui.threading, "Thread", FakeThread)
     app_fake.entry_usuario_rede.valor = "usuario"
     app_fake.entry_senha.valor = "senha"
-    app_fake.entry_login_individual.valor = "login"
-    app_fake.entry_nome_individual.valor = "Nome"
-    app_fake.entry_email_individual.valor = "email@x.com"
+    app_fake.linhas_usuarios_individual = [
+        linha_usuario_fake("login1", "Nome 1", "email1@x.com"),
+        linha_usuario_fake("login2", "Nome 2", "email2@x.com"),
+    ]
 
     ui.AghuImportUserApp.iniciar_execucao_individual(app_fake)
 
     thread = FakeThread.criadas[0]
+    usuarios = thread.args[2]
     assert thread.iniciada is True
     assert thread.daemon is True
     assert thread.target == app_fake._executar_individual_thread
     assert thread.args == (
         "usuario",
         "senha",
-        "login",
-        "Nome",
-        "email@x.com",
+        usuarios,
         ui.AGHU_URL,
         True,
         True,
     )
-    assert (
-        app_fake.label_status.configuracoes["text"]
-        == "Executando importação individual..."
+    assert usuarios == [
+        UsuarioImportacao("login1", "Nome 1", "email1@x.com"),
+        UsuarioImportacao("login2", "Nome 2", "email2@x.com"),
+    ]
+    assert app_fake.label_status.configuracoes["text"] == (
+        "Executando importação unitária..."
     )
     assert app_fake.button_executar.configuracoes["state"] == "disabled"
 
@@ -574,18 +743,25 @@ def test_executar_individual_thread_agenda_finalizacao_em_sucesso(
     app_fake,
     monkeypatch,
 ):
-    resultado = ResultadoImportacao("login", "Nome", "email@x.com", STATUS_IMPORTADO, "OK")
+    resultado = ResultadoImportacao(
+        "login",
+        "Nome",
+        "email@x.com",
+        STATUS_IMPORTADO,
+        "OK",
+    )
+    usuarios = [UsuarioImportacao("login", "Nome", "email@x.com")]
     chamadas = []
     capturados = {}
     app_fake.after = lambda delay, func, *args: chamadas.append((delay, func, args))
 
     def executar_fake(**kwargs):
         capturados.update(kwargs)
-        return resultado
+        return [resultado]
 
     monkeypatch.setattr(
         ui,
-        "executar_importacao_individual",
+        "executar_importacao_usuarios",
         executar_fake,
     )
 
@@ -593,9 +769,7 @@ def test_executar_individual_thread_agenda_finalizacao_em_sucesso(
         app_fake,
         "usuario",
         "senha",
-        "login",
-        "Nome",
-        "email@x.com",
+        usuarios,
         "url",
         False,
         True,
@@ -605,8 +779,50 @@ def test_executar_individual_thread_agenda_finalizacao_em_sucesso(
     assert delay == 0
     assert func == app_fake._finalizar_execucao
     assert args == ("login: importado - OK", "green")
+    assert capturados["usuarios"] == usuarios
     assert capturados["mostrar_browser"] is False
     assert capturados["mostrar_console"] is True
+
+
+def test_executar_individual_thread_resume_multiplos_resultados(
+    app_fake,
+    monkeypatch,
+):
+    resultados = [
+        ResultadoImportacao("a", "A", "a@x.com", STATUS_IMPORTADO, "OK"),
+        ResultadoImportacao("b", "B", "b@x.com", STATUS_ERRO, "Falha"),
+    ]
+    usuarios = [
+        UsuarioImportacao("a", "A", "a@x.com"),
+        UsuarioImportacao("b", "B", "b@x.com"),
+    ]
+    chamadas = []
+    app_fake.after = lambda delay, func, *args: chamadas.append((delay, func, args))
+    monkeypatch.setattr(
+        ui,
+        "executar_importacao_usuarios",
+        lambda **kwargs: resultados,
+    )
+
+    ui.AghuImportUserApp._executar_individual_thread(
+        app_fake,
+        "usuario",
+        "senha",
+        usuarios,
+        "url",
+        True,
+        True,
+    )
+
+    assert chamadas[0][2] == (
+        "Execução unitária concluída. Total: 2. "
+        "Importados: 1. "
+        "Já importados: 0. "
+        "Não encontrados: 0. "
+        "Ignorados: 0. "
+        "Erros: 1.",
+        "green",
+    )
 
 
 def test_executar_individual_thread_agenda_finalizacao_em_erro(
@@ -619,15 +835,13 @@ def test_executar_individual_thread_agenda_finalizacao_em_erro(
     def falhar(**kwargs):
         raise RuntimeError("falha")
 
-    monkeypatch.setattr(ui, "executar_importacao_individual", falhar)
+    monkeypatch.setattr(ui, "executar_importacao_usuarios", falhar)
 
     ui.AghuImportUserApp._executar_individual_thread(
         app_fake,
         "usuario",
         "senha",
-        "login",
-        "Nome",
-        "email@x.com",
+        [UsuarioImportacao("login", "Nome", "email@x.com")],
         "url",
         True,
         True,
