@@ -51,35 +51,144 @@ StatusCadastro = Literal[
     "conferir_manual",
 ]
 
+@dataclass(frozen=True)
+class CampoPessoaSpec:
+    nome: str
+    label_ui: str
+    placeholder_ui: str
+    aliases_planilha: tuple[str, ...]
+    obrigatorio: bool = False
+    tipo_ui: str = "entry"
+
+
+CAMPOS_PESSOA_SCHEMA = (
+    CampoPessoaSpec(
+        nome="nome_pessoa",
+        label_ui="Nome da Pessoa:",
+        placeholder_ui="Nome completo",
+        aliases_planilha=("Nome da Pessoa", "Nome Pessoa", "Nome", "Nome Completo", "nome completo", "Nome completo"),
+        obrigatorio=True,
+    ),
+    CampoPessoaSpec(
+        nome="nome_mae",
+        label_ui="Nome da Mãe:",
+        placeholder_ui="Nome completo da mãe",
+        aliases_planilha=("Nome da Mãe", "Nome Mae", "Nome da Mae", "Nome da mãe"),
+        obrigatorio=True,
+    ),
+    CampoPessoaSpec(
+        nome="sexo",
+        label_ui="Sexo:",
+        placeholder_ui="Masculino ou Feminino",
+        aliases_planilha=("Sexo", "sexo"),
+        tipo_ui="sexo",
+    ),
+    CampoPessoaSpec(
+        nome="data_nascimento",
+        label_ui="Data de Nascimento:",
+        placeholder_ui="dd/mm/aaaa",
+        aliases_planilha=("Data de Nascimento", "Data de nascimento", "Nascimento"),
+        obrigatorio=True,
+    ),
+    CampoPessoaSpec(
+        nome="nacionalidade",
+        label_ui="Nacionalidade:",
+        placeholder_ui="Ex.: Brasileiro",
+        aliases_planilha=("Nacionalidade", "nacionalidade"),
+    ),
+    CampoPessoaSpec(
+        nome="naturalidade",
+        label_ui="Naturalidade:",
+        placeholder_ui="Município/UF ou texto do AGHU",
+        aliases_planilha=("Naturalidade", "naturalidade"),
+        obrigatorio=True,
+    ),
+    CampoPessoaSpec(
+        nome="rg",
+        label_ui="Nro identidade:",
+        placeholder_ui="RG",
+        aliases_planilha=("Nro identidade", "Nro Identidade", "RG", "rg", "Identidade"),
+        obrigatorio=True,
+    ),
+    CampoPessoaSpec(
+        nome="orgao_emissor",
+        label_ui="Órgão Emissor:",
+        placeholder_ui="Ex.: SSP",
+        aliases_planilha=("Órgão Emissor", "Orgao Emissor", "Órgão emissor", "órgão emissor"),
+        obrigatorio=True,
+    ),
+    CampoPessoaSpec(
+        nome="uf_rg",
+        label_ui="UF:",
+        placeholder_ui="Ex.: DF",
+        aliases_planilha=("UF", "uf", "U.F", "u.f", "UF RG"),
+        obrigatorio=True,
+    ),
+    CampoPessoaSpec(
+        nome="cpf",
+        label_ui="CPF:",
+        placeholder_ui="Somente números ou formatado",
+        aliases_planilha=("CPF", "cpf"),
+        obrigatorio=True,
+    ),
+    CampoPessoaSpec(
+        nome="ddd",
+        label_ui="DDD:",
+        placeholder_ui="Ex.: 61",
+        aliases_planilha=("DDD", "ddd"),
+    ),
+    CampoPessoaSpec(
+        nome="telefone_celular",
+        label_ui="Telefone Celular:",
+        placeholder_ui="Número do celular",
+        aliases_planilha=("Telefone Celular", "Celular", "Telefone", "Telefone (Cel.)"),
+    ),
+    CampoPessoaSpec(
+        nome="cep_cadastrado",
+        label_ui="CEP Cadastrado:",
+        placeholder_ui="CEP já cadastrado no AGHU",
+        aliases_planilha=("CEP Cadastrado", "CEP", "cep"),
+    ),
+    CampoPessoaSpec(
+        nome="logradouro_nao_cadastrado",
+        label_ui="Logradouro:",
+        placeholder_ui="Logradouro não cadastrado",
+        aliases_planilha=("Logradouro", "Logradouro Não Cadastrado", "Logradouro Nao Cadastrado"),
+    ),
+    CampoPessoaSpec(
+        nome="bairro_nao_cadastrado",
+        label_ui="Bairro:",
+        placeholder_ui="Bairro não cadastrado",
+        aliases_planilha=("Bairro", "Bairro Não Cadastrado", "Bairro Nao Cadastrado"),
+    ),
+    CampoPessoaSpec(
+        nome="cep_nao_cadastrado",
+        label_ui="CEP Não Cadastrado:",
+        placeholder_ui="CEP não cadastrado",
+        aliases_planilha=("CEP Não Cadastrado", "CEP Nao Cadastrado"),
+    ),
+    CampoPessoaSpec(
+        nome="municipio_nao_cadastrado",
+        label_ui="Município:",
+        placeholder_ui="Município não cadastrado",
+        aliases_planilha=("Município", "Municipio", "Município Não Cadastrado", "Municipio Nao Cadastrado"),
+    ),
+)
+
 ALIASES_COLUNAS = {
-    "nome_pessoa": ("Nome da Pessoa", "Nome Pessoa", "Nome", "Nome Completo", "nome completo", "Nome completo"),
-    "nome_mae": ("Nome da Mãe", "Nome Mae", "Nome da Mae", "Nome da mãe"),
-    "sexo": ("Sexo", "sexo"),
-    "data_nascimento": ("Data de Nascimento", "Data de nascimento", "Nascimento"),
-    "nacionalidade": ("Nacionalidade", "nacionalidade"),
-    "naturalidade": ("Naturalidade", "naturalidade"),
-    "rg": ("Nro identidade", "Nro Identidade", "RG", "rg", "Identidade"),
-    "orgao_emissor": ("Órgão Emissor", "Orgao Emissor", "Órgão emissor", "órgão emissor"),
-    "uf_rg": ("UF", "uf", "U.F", "u.f", "UF RG"),
-    "cpf": ("CPF", "cpf"),
-    "ddd": ("DDD", "ddd"),
-    "telefone_celular": ("Telefone Celular", "Celular", "Telefone", "Telefone (Cel.)"),
-    "cep_cadastrado": ("CEP Cadastrado", "CEP", "cep"),
-    "logradouro_nao_cadastrado": ("Logradouro", "Logradouro Não Cadastrado", "Logradouro Nao Cadastrado"),
-    "bairro_nao_cadastrado": ("Bairro", "Bairro Não Cadastrado", "Bairro Nao Cadastrado"),
-    "cep_nao_cadastrado": ("CEP Não Cadastrado", "CEP Nao Cadastrado"),
-    "municipio_nao_cadastrado": ("Município", "Municipio", "Município Não Cadastrado", "Municipio Nao Cadastrado"),
+    campo.nome: campo.aliases_planilha
+    for campo in CAMPOS_PESSOA_SCHEMA
 }
 
-CAMPOS_PESSOA_OBRIGATORIOS = (
-    "nome_pessoa",
-    "nome_mae",
-    "data_nascimento",
-    "naturalidade",
-    "rg",
-    "orgao_emissor",
-    "uf_rg",
-    "cpf",
+CAMPOS_PESSOA_OBRIGATORIOS = tuple(
+    campo.nome
+    for campo in CAMPOS_PESSOA_SCHEMA
+    if campo.obrigatorio
+)
+
+CAMPOS_PESSOA_UI = tuple(
+    (campo.nome, campo.label_ui, campo.placeholder_ui, campo.tipo_ui)
+    for campo in CAMPOS_PESSOA_SCHEMA
 )
 
 @dataclass(frozen=True)
@@ -1249,6 +1358,7 @@ def executar_cadastro_individual(
 
 __all__ = [
     "CadastroPessoaEntrada",
+    "CAMPOS_PESSOA_UI",
     "ResultadoCadastroPessoa",
     "executar_cadastro_individual",
     "executar_cadastro_lote",

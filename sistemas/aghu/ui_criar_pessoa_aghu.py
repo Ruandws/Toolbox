@@ -9,6 +9,7 @@ import customtkinter as ctk
 
 from criar_pessoa_aghu import (
     CadastroPessoaEntrada,
+    CAMPOS_PESSOA_UI,
     STATUS_CONFERIR_MANUAL,
     STATUS_CRIADO,
     STATUS_ERRO,
@@ -39,28 +40,8 @@ BASE_DIR = Path(__file__).resolve().parent
 LOGS_DIR = BASE_DIR / "logs"
 
 
-CAMPOS_PESSOA = (
-    ("nome_pessoa", "Nome da Pessoa:", "Nome completo"),
-    ("nome_mae", "Nome da Mãe:", "Nome completo da mãe"),
-    ("sexo", "Sexo:", "Masculino ou Feminino"),
-    ("data_nascimento", "Data de Nascimento:", "dd/mm/aaaa"),
-    ("nacionalidade", "Nacionalidade:", "Ex.: Brasileiro"),
-    ("naturalidade", "Naturalidade:", "Município/UF ou texto do AGHU"),
-    ("rg", "Nro identidade:", "RG"),
-    ("orgao_emissor", "Órgão Emissor:", "Ex.: SSP"),
-    ("uf_rg", "UF:", "Ex.: DF"),
-    ("cpf", "CPF:", "Somente números ou formatado"),
-    ("ddd", "DDD:", "Ex.: 61"),
-    ("telefone_celular", "Telefone Celular:", "Número do celular"),
-    ("cep_cadastrado", "CEP Cadastrado:", "CEP já cadastrado no AGHU"),
-    ("logradouro_nao_cadastrado", "Logradouro:", "Logradouro não cadastrado"),
-    ("bairro_nao_cadastrado", "Bairro:", "Bairro não cadastrado"),
-    ("cep_nao_cadastrado", "CEP Não Cadastrado:", "CEP não cadastrado"),
-    ("municipio_nao_cadastrado", "Município:", "Município não cadastrado"),
-)
-
-CAMPOS_PESSOA_ESQUERDA = CAMPOS_PESSOA[:9]
-CAMPOS_PESSOA_DIREITA = CAMPOS_PESSOA[9:]
+CAMPOS_PESSOA_ESQUERDA = CAMPOS_PESSOA_UI[:9]
+CAMPOS_PESSOA_DIREITA = CAMPOS_PESSOA_UI[9:]
 
 
 def obter_url_ambiente_aghu(ambiente: str) -> str:
@@ -469,10 +450,10 @@ class AghuCadastroPessoaApp(ctk.CTk):
         self,
         frame: ctk.CTkFrame,
         linha: dict,
-        campos: tuple[tuple[str, str, str], ...],
+        campos: tuple[tuple[str, str, str, str], ...],
     ) -> None:
-        for row, (nome_campo, label, placeholder) in enumerate(campos):
-            if nome_campo == "sexo":
+        for row, (nome_campo, label, placeholder, tipo_ui) in enumerate(campos):
+            if tipo_ui == "sexo":
                 segmento = self._criar_linha_seletor_sexo(
                     frame=frame,
                     row=row,
@@ -1076,4 +1057,3 @@ if __name__ == "__main__":
 
     app = AghuCadastroPessoaApp()
     app.mainloop()
-

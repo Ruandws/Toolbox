@@ -117,7 +117,7 @@ def app_fake():
     app.entry_relatorio_lote = FakeEntry()
     app.entries_individual = {
         nome_campo: FakeEntry()
-        for nome_campo, _label, _placeholder in ui.CAMPOS_PESSOA
+        for nome_campo, _label, _placeholder, _tipo_ui in ui.CAMPOS_PESSOA_UI
         if nome_campo != "sexo"
     }
     app.button_executar = FakeWidget()
