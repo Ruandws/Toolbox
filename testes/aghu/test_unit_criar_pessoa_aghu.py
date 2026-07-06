@@ -49,12 +49,14 @@ class TestNormalizacao:
     def test_normalizar_entrada_limpa_campos_e_cpf(self):
         entrada = pessoa_valida(
             nome_pessoa="  Joao   Silva  ",
+            orgao_emissor="DETRAN",
             cpf="  123.456.789-01  ",
         )
 
         normalizada = aghu.normalizar_entrada(entrada)
 
         assert normalizada.nome_pessoa == "Joao   Silva"
+        assert normalizada.orgao_emissor == aghu.ORGAO_EMISSOR_PADRAO
         assert normalizada.cpf == "12345678901"
 
     @pytest.mark.parametrize(
@@ -138,6 +140,7 @@ class TestPlanilha:
 
         assert len(cadastros) == 1
         assert cadastros[0].nome_pessoa == "Joao Silva"
+        assert cadastros[0].orgao_emissor == aghu.ORGAO_EMISSOR_PADRAO
         assert cadastros[0].cpf == "12345678901"
 
     def test_ler_planilha_reconhece_aliases_sem_acentos(self, tmp_xlsx):
@@ -164,7 +167,7 @@ class TestPlanilha:
                     "Brasileira",
                     "Brasilia",
                     "123",
-                    "SSP",
+                    "DETRAN",
                     "DF",
                     "987.654.321-00",
                 ]
@@ -175,7 +178,7 @@ class TestPlanilha:
 
         assert cadastros[0].nome_mae == "Maria"
         assert cadastros[0].rg == "123"
-        assert cadastros[0].orgao_emissor == "SSP"
+        assert cadastros[0].orgao_emissor == aghu.ORGAO_EMISSOR_PADRAO
         assert cadastros[0].cpf == "98765432100"
 
     def test_ler_planilha_remove_espacos_dos_cabecalhos(self, tmp_xlsx):
@@ -487,6 +490,42 @@ class TestPessoaFlow:
         assert resultado == FluxoResultado(STATUS_CRIADO, "incluida")
         assert "Novo" in chamadas
         assert "voltar" in chamadas
+
+    def test_preencher_formulario_usa_orgao_emissor_padrao(self, monkeypatch):
+        flow = aghu.PessoaFlow(object())
+        chamadas = []
+        monkeypatch.setattr(
+            aghu,
+            "primeiro_visivel",
+            lambda _janela, seletores, timeout_ms=5000: seletores[0],
+        )
+        monkeypatch.setattr(
+            aghu,
+            "preencher_input",
+            lambda locator, valor, timeout_ms=5000: chamadas.append(
+                ("input", locator, valor)
+            ),
+        )
+        monkeypatch.setattr(
+            aghu,
+            "selecionar_autocomplete",
+            lambda _janela, seletor, valor, **_kwargs: chamadas.append(
+                ("autocomplete", seletor, valor)
+            ),
+        )
+        monkeypatch.setattr(
+            aghu,
+            "selecionar_selectonemenu",
+            lambda *_args, **_kwargs: None,
+        )
+
+        flow._preencher_formulario(pessoa_valida(orgao_emissor="DETRAN"))
+
+        assert (
+            "autocomplete",
+            aghu.SELECTOR_ORGAO,
+            aghu.ORGAO_EMISSOR_PADRAO,
+        ) in chamadas
 
     def test_processar_retorna_conferir_manual_quando_pesquisa_indefinida(self, monkeypatch):
         flow = aghu.PessoaFlow(object())

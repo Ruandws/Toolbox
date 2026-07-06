@@ -42,6 +42,7 @@ STATUS_MANTIDO = "mantido"
 STATUS_ERRO = "erro"
 STATUS_IGNORADO = "ignorado"
 STATUS_CONFERIR_MANUAL = "conferir_manual"
+ORGAO_EMISSOR_PADRAO = "SSP - Secretaria de Segurança Pública"
 
 StatusCadastro = Literal[
     "criado",
@@ -108,13 +109,6 @@ CAMPOS_PESSOA_SCHEMA = (
         label_ui="Nro identidade:",
         placeholder_ui="RG",
         aliases_planilha=("Nro identidade", "Nro Identidade", "RG", "rg", "Identidade"),
-        obrigatorio=True,
-    ),
-    CampoPessoaSpec(
-        nome="orgao_emissor",
-        label_ui="Órgão Emissor:",
-        placeholder_ui="Ex.: SSP",
-        aliases_planilha=("Órgão Emissor", "Orgao Emissor", "Órgão emissor", "órgão emissor"),
         obrigatorio=True,
     ),
     CampoPessoaSpec(
@@ -200,7 +194,7 @@ class CadastroPessoaEntrada:
     nacionalidade: str = ""
     naturalidade: str = ""
     rg: str = ""
-    orgao_emissor: str = ""
+    orgao_emissor: str = ORGAO_EMISSOR_PADRAO
     uf_rg: str = ""
     cpf: str = ""
     ddd: str = ""
@@ -372,6 +366,7 @@ def normalizar_entrada(entrada: CadastroPessoaEntrada) -> CadastroPessoaEntrada:
     dados["nacionalidade"] = normalizar_nacionalidade(dados["nacionalidade"])
     dados["naturalidade"] = normalizar_naturalidade(dados["naturalidade"])
     dados["cpf"] = apenas_digitos(dados["cpf"])
+    dados["orgao_emissor"] = ORGAO_EMISSOR_PADRAO
     return CadastroPessoaEntrada(**dados)
 
 
@@ -898,7 +893,7 @@ class PessoaFlow:
         selecionar_autocomplete(self.janela, SELECTOR_NACIONALIDADE, entrada.nacionalidade)
         selecionar_autocomplete(self.janela, SELECTOR_NATURALIDADE, entrada.naturalidade)
         preencher_input(primeiro_visivel(self.janela, (SELECTOR_RG,)), entrada.rg)
-        selecionar_autocomplete(self.janela, SELECTOR_ORGAO, entrada.orgao_emissor)
+        selecionar_autocomplete(self.janela, SELECTOR_ORGAO, ORGAO_EMISSOR_PADRAO)
         selecionar_autocomplete(self.janela, SELECTOR_UF_RG, entrada.uf_rg)
         preencher_input(primeiro_visivel(self.janela, (SELECTOR_PESQUISA_CPF,)), apenas_digitos(entrada.cpf))
 
@@ -1359,6 +1354,7 @@ def executar_cadastro_individual(
 __all__ = [
     "CadastroPessoaEntrada",
     "CAMPOS_PESSOA_UI",
+    "ORGAO_EMISSOR_PADRAO",
     "ResultadoCadastroPessoa",
     "executar_cadastro_individual",
     "executar_cadastro_lote",

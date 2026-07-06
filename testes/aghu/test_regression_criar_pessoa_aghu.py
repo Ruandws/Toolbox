@@ -46,7 +46,6 @@ class TestRegressaoPlanilhaPessoa:
                 "Nascimento",
                 "Naturalidade",
                 "RG",
-                "Orgao Emissor",
                 "UF RG",
                 "CPF",
             ],
@@ -57,7 +56,6 @@ class TestRegressaoPlanilhaPessoa:
                     "01/01/1990",
                     "Brasilia",
                     "123456",
-                    "SSP",
                     "DF",
                     "123.456.789-01",
                 ]
@@ -68,7 +66,7 @@ class TestRegressaoPlanilhaPessoa:
 
         assert cadastros[0].nome_pessoa == "Joao"
         assert cadastros[0].nome_mae == "Maria"
-        assert cadastros[0].orgao_emissor == "SSP"
+        assert cadastros[0].orgao_emissor == aghu.ORGAO_EMISSOR_PADRAO
         assert cadastros[0].uf_rg == "DF"
         assert cadastros[0].cpf == "12345678901"
 
