@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Iterator, Literal
 
 import pandas as pd
-from playwright.sync_api import BrowserContext, FrameLocator, Locator, Page
+from playwright.sync_api import BrowserContext, FrameLocator, Locator, Page, expect
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import sync_playwright
 
@@ -83,6 +83,8 @@ TEMPO_MAXIMO_CONSULTA_USUARIO_MS = 130000
 TEMPO_MAXIMO_GRAVACAO_USUARIO_MS = 10000
 TEMPO_DETECCAO_WIDGET_CARREGAMENTO_MS = 2000
 TEMPO_ESTABILIDADE_RESULTADO_MS = 250
+TEMPO_CHECAGEM_IMEDIATA_MS = 1
+ERROS_ESPERA_PLAYWRIGHT = (AssertionError, PlaywrightTimeoutError)
 
 
 def esconder_console_windows() -> None:
@@ -183,22 +185,82 @@ def _nome_tem_espacos_indevidos(nome: str) -> bool:
     )
 
 
-def _login_confere(valor_atual: object, login_esperado: str) -> bool:
-    return _normalizar_texto(valor_atual) == _normalizar_texto(login_esperado)
-
-def _linha_tabela_por_texto_visivel(
-    linhas: Locator,
-    texto: str,
-    timeout_ms: int = 5000,
-) -> Locator | None:
-    padrao = re.compile(re.escape(str(texto or "").strip()), re.IGNORECASE)
-    linha = linhas.filter(has_text=padrao).first
+def _locator_visivel(locator: Locator, timeout_ms: int = 0) -> bool:
+    timeout_assert_ms = max(timeout_ms, TEMPO_CHECAGEM_IMEDIATA_MS)
 
     try:
-        linha.wait_for(state="visible", timeout=timeout_ms)
-        return linha
-    except PlaywrightTimeoutError:
-        return None
+        expect(locator).to_be_visible(timeout=timeout_assert_ms)
+        return True
+    except ValueError:
+        try:
+            return bool(locator.is_visible(timeout=timeout_assert_ms))
+        except Exception:
+            return False
+    except ERROS_ESPERA_PLAYWRIGHT:
+        return False
+
+
+def _locator_oculto(locator: Locator, timeout_ms: int = 0) -> bool:
+    timeout_assert_ms = max(timeout_ms, TEMPO_CHECAGEM_IMEDIATA_MS)
+
+    try:
+        expect(locator).to_be_hidden(timeout=timeout_assert_ms)
+        return True
+    except ValueError:
+        try:
+            locator.wait_for(state="hidden", timeout=timeout_assert_ms)
+            return True
+        except PlaywrightTimeoutError:
+            return False
+        except Exception:
+            return False
+    except ERROS_ESPERA_PLAYWRIGHT:
+        return False
+
+
+def _primeiro_entre_locators(*locators: Locator) -> Locator:
+    if not locators:
+        raise ValueError("Informe ao menos um locator.")
+
+    combinado = locators[0]
+
+    for locator in locators[1:]:
+        combinado = combinado.or_(locator)
+
+    return combinado.first
+
+
+def _linha_tabela_por_texto(
+    linhas: Locator,
+    texto: str,
+) -> Locator:
+    padrao = re.compile(re.escape(str(texto or "").strip()), re.IGNORECASE)
+    return linhas.filter(has_text=padrao).first
+
+
+def _linha_tabela_vazia(
+    janela_sistema: FrameLocator,
+    seletor_linhas: str,
+    linhas: Locator,
+) -> Locator:
+    linha_por_texto = linhas.filter(
+        has_text=re.compile(re.escape(TEXTO_NENHUM_REGISTRO), re.IGNORECASE)
+    ).first
+    linha_por_classe = janela_sistema.locator(
+        f"{seletor_linhas}.ui-datatable-empty-message"
+    ).first
+
+    return _primeiro_entre_locators(linha_por_texto, linha_por_classe)
+
+
+def _linha_tabela_com_dados(
+    janela_sistema: FrameLocator,
+    seletor_linhas: str,
+) -> Locator:
+    return janela_sistema.locator(
+        f"{seletor_linhas}:not(.ui-datatable-empty-message)"
+    ).filter(has_not_text=TEXTO_NENHUM_REGISTRO).first
+
 
 def _resultado(
     usuario: UsuarioImportacao,
@@ -331,69 +393,23 @@ def _clicar_botao(janela_sistema: FrameLocator, nome: str, timeout_ms: int = 100
 
 
 def _linha_tabela_por_login(
-    linhas: Locator,
+    janela_sistema: FrameLocator,
+    seletor_linhas: str,
     login: str,
     indice_coluna_login: int,
-) -> Locator | None:
-    total_linhas = linhas.count()
+) -> Locator:
+    padrao_login = re.compile(
+        rf"^\s*{re.escape(str(login or '').strip())}\s*$",
+        re.IGNORECASE,
+    )
+    linhas_com_dados = janela_sistema.locator(
+        f"{seletor_linhas}:not(.ui-datatable-empty-message)"
+    )
+    celula_login = janela_sistema.locator(
+        f"td:nth-child({indice_coluna_login + 1})"
+    ).filter(has_text=padrao_login)
 
-    for indice in range(total_linhas):
-        linha = linhas.nth(indice)
-
-        try:
-            if not linha.is_visible(timeout=500):
-                continue
-        except Exception:
-            continue
-
-        try:
-            classe = linha.get_attribute("class", timeout=500) or ""
-        except Exception:
-            classe = ""
-
-        if "ui-datatable-empty-message" in classe:
-            continue
-
-        celulas = linha.locator("td")
-
-        try:
-            if celulas.count() <= indice_coluna_login:
-                continue
-
-            texto_login = celulas.nth(indice_coluna_login).inner_text(
-                timeout=1000
-            )
-        except Exception:
-            continue
-
-        if _login_confere(texto_login, login):
-            return linha
-
-    return None
-
-
-def _linha_vazia_visivel(linhas: Locator) -> bool:
-    total_linhas = linhas.count()
-
-    for indice in range(total_linhas):
-        linha = linhas.nth(indice)
-
-        try:
-            if not linha.is_visible(timeout=250):
-                continue
-
-            classe = linha.get_attribute("class", timeout=250) or ""
-            texto = linha.inner_text(timeout=250)
-        except Exception:
-            continue
-
-        if "ui-datatable-empty-message" in classe:
-            return True
-
-        if TEXTO_NENHUM_REGISTRO in texto:
-            return True
-
-    return False
+    return linhas_com_dados.filter(has=celula_login).first
 
 
 def _widget_carregamento_consulta(janela_sistema: FrameLocator) -> Locator:
@@ -419,11 +435,8 @@ def _widgets_carregamento(janela_sistema: FrameLocator) -> Iterator[Locator]:
 
 def _existe_carregamento_visivel(janela_sistema: FrameLocator) -> bool:
     for widget in _widgets_carregamento(janela_sistema):
-        try:
-            if widget.is_visible(timeout=100):
-                return True
-        except Exception:
-            continue
+        if _locator_visivel(widget, timeout_ms=100):
+            return True
 
     return False
 
@@ -435,16 +448,9 @@ def _aguardar_carregamento_sumir(
 ) -> bool:
     inicio = time.monotonic()
     widgets = list(_widgets_carregamento(janela_sistema))
-    carregamento_detectado = False
-
-    for widget in widgets:
-        try:
-            widget.wait_for(state="visible", timeout=deteccao_ms)
-            carregamento_detectado = True
-        except PlaywrightTimeoutError:
-            continue
-        except Exception:
-            continue
+    carregamento_detectado = any(
+        _locator_visivel(widget, timeout_ms=deteccao_ms) for widget in widgets
+    )
 
     if not carregamento_detectado:
         return not _existe_carregamento_visivel(janela_sistema)
@@ -453,12 +459,8 @@ def _aguardar_carregamento_sumir(
         tempo_decorrido_ms = int((time.monotonic() - inicio) * 1000)
         timeout_restante_ms = max(timeout_ms - tempo_decorrido_ms, 1)
 
-        try:
-            widget.wait_for(state="hidden", timeout=timeout_restante_ms)
-        except PlaywrightTimeoutError:
+        if not _locator_oculto(widget, timeout_ms=timeout_restante_ms):
             return False
-        except Exception:
-            continue
 
     return not _existe_carregamento_visivel(janela_sistema)
 
@@ -481,17 +483,6 @@ def _aguardar_ciclo_carregamento_consulta(
     )
 
 
-def _pode_confirmar_resultado_sem_carregamento(
-    *,
-    estado_desde: float,
-    consulta_concluida: bool,
-    estabilidade_resultado_ms: int,
-) -> bool:
-    tempo_estavel_ms = (time.monotonic() - estado_desde) * 1000
-
-    return consulta_concluida and tempo_estavel_ms >= estabilidade_resultado_ms
-
-
 def _aguardar_resultado_pesquisa_usuario(
     janela_sistema: FrameLocator,
     login: str,
@@ -499,60 +490,48 @@ def _aguardar_resultado_pesquisa_usuario(
     estabilidade_resultado_ms: int = TEMPO_ESTABILIDADE_RESULTADO_MS,
     consulta_concluida: bool = False,
 ) -> tuple[str, Locator | None]:
+    del consulta_concluida
+
     linhas = janela_sistema.locator(SELECTOR_TABELA_USUARIOS)
-    inicio = time.monotonic()
-    fim = inicio + (timeout_ms / 1000)
-    estado_pendente: str | None = None
-    estado_desde = inicio
-    carregamento_observado = False
+    linha_login = _linha_tabela_por_login(
+        janela_sistema=janela_sistema,
+        seletor_linhas=SELECTOR_TABELA_USUARIOS,
+        login=login,
+        indice_coluna_login=2,
+    )
+    linha_vazia = _linha_tabela_vazia(
+        janela_sistema=janela_sistema,
+        seletor_linhas=SELECTOR_TABELA_USUARIOS,
+        linhas=linhas,
+    )
+    linha_com_dados = _linha_tabela_com_dados(
+        janela_sistema=janela_sistema,
+        seletor_linhas=SELECTOR_TABELA_USUARIOS,
+    )
 
-    while time.monotonic() < fim:
-        carregando = _existe_carregamento_visivel(janela_sistema)
+    resultado = _primeiro_entre_locators(
+        linha_login,
+        linha_vazia,
+        linha_com_dados,
+    )
 
-        if carregando:
-            carregamento_observado = True
-            consulta_concluida = False
-        elif carregamento_observado:
-            consulta_concluida = True
+    if not _locator_visivel(resultado, timeout_ms=timeout_ms):
+        return "indefinido", None
 
-        linha = _linha_tabela_por_login(
-            linhas=linhas,
-            login=login,
-            indice_coluna_login=2,
-        )
+    if _locator_visivel(linha_login):
+        return "encontrado", linha_login
 
-        if linha is not None:
-            return "encontrado", linha
+    if _locator_visivel(linha_vazia):
+        if _locator_visivel(linha_login, timeout_ms=estabilidade_resultado_ms):
+            return "encontrado", linha_login
 
-        estado_atual: str | None = None
+        return "nao_encontrado", None
 
-        if _linha_vazia_visivel(linhas):
-            estado_atual = "nao_encontrado"
-        else:
-            try:
-                if linhas.count() > 0 and linhas.first.is_visible(timeout=250):
-                    estado_atual = "sem_login_exato"
-            except Exception:
-                pass
+    if _locator_visivel(linha_com_dados):
+        if _locator_visivel(linha_login, timeout_ms=estabilidade_resultado_ms):
+            return "encontrado", linha_login
 
-        if carregando:
-            estado_pendente = None
-            estado_desde = time.monotonic()
-        elif estado_atual is not None:
-            if estado_atual != estado_pendente:
-                estado_pendente = estado_atual
-                estado_desde = time.monotonic()
-            elif _pode_confirmar_resultado_sem_carregamento(
-                estado_desde=estado_desde,
-                consulta_concluida=consulta_concluida,
-                estabilidade_resultado_ms=estabilidade_resultado_ms,
-            ):
-                return estado_atual, None
-        else:
-            estado_pendente = None
-            estado_desde = time.monotonic()
-
-        time.sleep(0.15)
+        return "sem_login_exato", None
 
     return "indefinido", None
 
@@ -564,45 +543,29 @@ def _aguardar_resultado_identity(
     estabilidade_resultado_ms: int = TEMPO_ESTABILIDADE_RESULTADO_MS,
     consulta_concluida: bool = False,
 ) -> tuple[str, Locator | None]:
+    del consulta_concluida
+
     linhas = janela_sistema.locator(SELECTOR_TABELA_IDENTITY)
-    inicio = time.monotonic()
-    fim = inicio + (timeout_ms / 1000)
-    vazio_desde: float | None = None
-    carregamento_observado = False
+    linha_login = _linha_tabela_por_texto(linhas=linhas, texto=login)
+    linha_vazia = _linha_tabela_vazia(
+        janela_sistema=janela_sistema,
+        seletor_linhas=SELECTOR_TABELA_IDENTITY,
+        linhas=linhas,
+    )
 
-    while time.monotonic() < fim:
-        carregando = _existe_carregamento_visivel(janela_sistema)
+    resultado = _primeiro_entre_locators(linha_login, linha_vazia)
 
-        if carregando:
-            carregamento_observado = True
-            consulta_concluida = False
-        elif carregamento_observado:
-            consulta_concluida = True
+    if not _locator_visivel(resultado, timeout_ms=timeout_ms):
+        return "indefinido", None
 
-        linha = _linha_tabela_por_texto_visivel(
-            linhas=linhas,
-            texto=login,
-            timeout_ms=300,
-        )
+    if _locator_visivel(linha_login):
+        return "encontrado", linha_login
 
-        if linha is not None:
-            return "encontrado", linha
+    if _locator_visivel(linha_vazia):
+        if _locator_visivel(linha_login, timeout_ms=estabilidade_resultado_ms):
+            return "encontrado", linha_login
 
-        if carregando:
-            vazio_desde = None
-        elif _linha_vazia_visivel(linhas):
-            if vazio_desde is None:
-                vazio_desde = time.monotonic()
-            elif _pode_confirmar_resultado_sem_carregamento(
-                estado_desde=vazio_desde,
-                consulta_concluida=consulta_concluida,
-                estabilidade_resultado_ms=estabilidade_resultado_ms,
-            ):
-                return "nao_encontrado", None
-        else:
-            vazio_desde = None
-
-        time.sleep(0.15)
+        return "nao_encontrado", None
 
     return "indefinido", None
 
@@ -707,53 +670,40 @@ def _aguardar_mensagem_gravacao(
 ) -> tuple[str, str]:
     mensagem_sucesso = janela_sistema.locator("#messagesInDialog div").filter(
         has_text="Usuário incluído com sucesso"
-    )
+    ).first
     mensagem_duplicado = janela_sistema.locator("#messagesInDialog div").filter(
         has_text="Já existe um usuário com este"
-    )
+    ).first
     mensagem_erro = janela_sistema.locator(
         "#messagesInDialog .ui-messages-error-summary"
+    ).first
+    inicio = time.monotonic()
+
+    _aguardar_carregamento_sumir(
+        janela_sistema,
+        timeout_ms=timeout_ms,
+        deteccao_ms=0,
     )
-    fim = time.monotonic() + (timeout_ms / 1000)
 
-    while time.monotonic() < fim:
-        if _existe_carregamento_visivel(janela_sistema):
-            timeout_restante_ms = int(max((fim - time.monotonic()) * 1000, 1))
-            _aguardar_carregamento_sumir(
-                janela_sistema,
-                timeout_ms=timeout_restante_ms,
-            )
-            continue
+    tempo_decorrido_ms = int((time.monotonic() - inicio) * 1000)
+    timeout_restante_ms = max(timeout_ms - tempo_decorrido_ms, 1)
+    resultado = _primeiro_entre_locators(
+        mensagem_sucesso,
+        mensagem_duplicado,
+        mensagem_erro,
+    )
 
-        try:
-            if mensagem_sucesso.count() > 0 and mensagem_sucesso.first.is_visible(
-                timeout=250
-            ):
-                return "sucesso", mensagem_sucesso.first.inner_text(
-                    timeout=1000
-                ).strip()
-        except Exception:
-            pass
+    if not _locator_visivel(resultado, timeout_ms=timeout_restante_ms):
+        return "indefinido", "A gravacao nao retornou mensagem dentro do tempo limite."
 
-        try:
-            if mensagem_duplicado.count() > 0 and mensagem_duplicado.first.is_visible(
-                timeout=250
-            ):
-                return "duplicado", mensagem_duplicado.first.inner_text(
-                    timeout=1000
-                ).strip()
-        except Exception:
-            pass
+    if _locator_visivel(mensagem_sucesso):
+        return "sucesso", mensagem_sucesso.inner_text(timeout=1000).strip()
 
-        try:
-            if mensagem_erro.count() > 0 and mensagem_erro.first.is_visible(
-                timeout=250
-            ):
-                return "erro", mensagem_erro.first.inner_text(timeout=1000).strip()
-        except Exception:
-            pass
+    if _locator_visivel(mensagem_duplicado):
+        return "duplicado", mensagem_duplicado.inner_text(timeout=1000).strip()
 
-        time.sleep(0.15)
+    if _locator_visivel(mensagem_erro):
+        return "erro", mensagem_erro.inner_text(timeout=1000).strip()
 
     return "indefinido", "A gravacao nao retornou mensagem dentro do tempo limite."
 

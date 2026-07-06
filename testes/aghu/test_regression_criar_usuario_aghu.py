@@ -137,6 +137,30 @@ class JanelaFake:
         return object()
 
 
+class LocatorVisivelFake:
+    def __init__(self, *visibilidades, texto=""):
+        self.visibilidades = list(visibilidades)
+        self.texto = texto
+        self.timeouts = []
+
+    @property
+    def first(self):
+        return self
+
+    def is_visible(self, timeout):
+        assert timeout > 0
+        self.timeouts.append(timeout)
+
+        if not self.visibilidades:
+            return False
+
+        return self.visibilidades.pop(0)
+
+    def inner_text(self, timeout):
+        assert timeout > 0
+        return self.texto
+
+
 class WidgetCarregamentoFake:
     def __init__(self, visibilidades):
         self.visibilidades = list(visibilidades)
@@ -193,23 +217,47 @@ class TestRegressaoConsultaLenta:
             deteccao_ms=100,
         ) is True
 
+    def test_checar_visibilidade_imediata_nao_usa_timeout_zero(self, monkeypatch):
+        timeouts = []
+
+        class ExpectativaFake:
+            def to_be_visible(self, *, timeout):
+                timeouts.append(timeout)
+
+        monkeypatch.setattr(aghu, "expect", lambda _locator: ExpectativaFake())
+
+        assert aghu._locator_visivel(object()) is True
+        assert timeouts == [aghu.TEMPO_CHECAGEM_IMEDIATA_MS]
+
     def test_pesquisa_inicial_nao_confirma_vazio_antes_de_resultado_real(
         self,
         monkeypatch,
     ):
-        linha_encontrada = object()
-        chamadas = {"total": 0}
+        linha_encontrada = LocatorVisivelFake(False, True)
+        linha_vazia = LocatorVisivelFake(True)
+        linha_com_dados = LocatorVisivelFake(False)
+        resultado_visivel = LocatorVisivelFake(True)
 
-        def localizar_login(*_args, **_kwargs):
-            chamadas["total"] += 1
-            if chamadas["total"] >= 4:
-                return linha_encontrada
-
-            return None
-
-        monkeypatch.setattr(aghu, "_existe_carregamento_visivel", lambda _janela: False)
-        monkeypatch.setattr(aghu, "_linha_tabela_por_login", localizar_login)
-        monkeypatch.setattr(aghu, "_linha_vazia_visivel", lambda _linhas: True)
+        monkeypatch.setattr(
+            aghu,
+            "_linha_tabela_por_login",
+            lambda *_args, **_kwargs: linha_encontrada,
+        )
+        monkeypatch.setattr(
+            aghu,
+            "_linha_tabela_vazia",
+            lambda *_args, **_kwargs: linha_vazia,
+        )
+        monkeypatch.setattr(
+            aghu,
+            "_linha_tabela_com_dados",
+            lambda *_args, **_kwargs: linha_com_dados,
+        )
+        monkeypatch.setattr(
+            aghu,
+            "_primeiro_entre_locators",
+            lambda *_locators: resultado_visivel,
+        )
 
         estado, linha = aghu._aguardar_resultado_pesquisa_usuario(
             JanelaFake(),
@@ -220,21 +268,68 @@ class TestRegressaoConsultaLenta:
 
         assert estado == "encontrado"
         assert linha is linha_encontrada
+        assert 100 in linha_encontrada.timeouts
+
+    def test_pesquisa_inicial_com_tabela_vazia_retorna_nao_encontrado(
+        self,
+        monkeypatch,
+    ):
+        linha_login = LocatorVisivelFake(False, False)
+        linha_vazia = LocatorVisivelFake(True)
+        linha_com_dados = LocatorVisivelFake(False)
+        resultado_visivel = LocatorVisivelFake(True)
+
+        monkeypatch.setattr(
+            aghu,
+            "_linha_tabela_por_login",
+            lambda *_args, **_kwargs: linha_login,
+        )
+        monkeypatch.setattr(
+            aghu,
+            "_linha_tabela_vazia",
+            lambda *_args, **_kwargs: linha_vazia,
+        )
+        monkeypatch.setattr(
+            aghu,
+            "_linha_tabela_com_dados",
+            lambda *_args, **_kwargs: linha_com_dados,
+        )
+        monkeypatch.setattr(
+            aghu,
+            "_primeiro_entre_locators",
+            lambda *_locators: resultado_visivel,
+        )
+
+        estado, linha = aghu._aguardar_resultado_pesquisa_usuario(
+            JanelaFake(),
+            "JOAO.SILVA",
+            timeout_ms=2000,
+            estabilidade_resultado_ms=100,
+        )
+
+        assert estado == "nao_encontrado"
+        assert linha is None
 
     def test_identity_nao_confirma_vazio_antes_de_resultado_real(self, monkeypatch):
-        linha_encontrada = object()
-        chamadas = {"total": 0}
+        linha_encontrada = LocatorVisivelFake(False, True)
+        linha_vazia = LocatorVisivelFake(True)
+        resultado_visivel = LocatorVisivelFake(True)
 
-        def localizar_texto(*_args, **_kwargs):
-            chamadas["total"] += 1
-            if chamadas["total"] >= 4:
-                return linha_encontrada
-
-            return None
-
-        monkeypatch.setattr(aghu, "_existe_carregamento_visivel", lambda _janela: False)
-        monkeypatch.setattr(aghu, "_linha_tabela_por_texto_visivel", localizar_texto)
-        monkeypatch.setattr(aghu, "_linha_vazia_visivel", lambda _linhas: True)
+        monkeypatch.setattr(
+            aghu,
+            "_linha_tabela_por_texto",
+            lambda *_args, **_kwargs: linha_encontrada,
+        )
+        monkeypatch.setattr(
+            aghu,
+            "_linha_tabela_vazia",
+            lambda *_args, **_kwargs: linha_vazia,
+        )
+        monkeypatch.setattr(
+            aghu,
+            "_primeiro_entre_locators",
+            lambda *_locators: resultado_visivel,
+        )
 
         estado, linha = aghu._aguardar_resultado_identity(
             JanelaFake(),
@@ -245,6 +340,7 @@ class TestRegressaoConsultaLenta:
 
         assert estado == "encontrado"
         assert linha is linha_encontrada
+        assert 100 in linha_encontrada.timeouts
 
     def test_identity_indefinido_retorna_erro_em_vez_de_nao_encontrado(
         self,
@@ -273,6 +369,38 @@ class TestRegressaoConsultaLenta:
         assert resultado.status == STATUS_ERRO
         assert "Identity Manager nao retornou estado conclusivo" in resultado.detalhes
 
+    def test_importar_usuario_abre_importacao_apos_pesquisa_sem_registros(
+        self,
+        monkeypatch,
+    ):
+        usuario = UsuarioImportacao(
+            login="joao.silva",
+            nome_completo="Joao Silva",
+            email="joao@email.com",
+        )
+        chamadas = {"abrir_importacao": 0}
+
+        def abrir_importacao(_janela):
+            chamadas["abrir_importacao"] += 1
+
+        monkeypatch.setattr(
+            aghu,
+            "_pesquisar_usuario_importado",
+            lambda *_args, **_kwargs: ("nao_encontrado", None),
+        )
+        monkeypatch.setattr(aghu, "_abrir_importacao_usuario", abrir_importacao)
+        monkeypatch.setattr(
+            aghu,
+            "_pesquisar_usuario_identity",
+            lambda *_args, **_kwargs: ("indefinido", None),
+        )
+
+        resultado = aghu.importar_usuario(object(), usuario)
+
+        assert chamadas["abrir_importacao"] == 1
+        assert resultado.status == STATUS_ERRO
+        assert "Identity Manager nao retornou estado conclusivo" in resultado.detalhes
+
     def test_gravacao_aguarda_carregamento_sumir_antes_de_ler_mensagem(
         self,
         monkeypatch,
@@ -282,6 +410,9 @@ class TestRegressaoConsultaLenta:
         class MensagemFake:
             @property
             def first(self):
+                return self
+
+            def or_(self, _outro):
                 return self
 
             def count(self):
@@ -299,6 +430,9 @@ class TestRegressaoConsultaLenta:
             @property
             def first(self):
                 return self
+
+            def or_(self, outro):
+                return outro
 
             def count(self):
                 return 0
