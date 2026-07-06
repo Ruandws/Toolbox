@@ -149,8 +149,18 @@ class WidgetCarregamentoFake:
         return self
 
     def wait_for(self, state, timeout):
-        assert state == "visible"
+        assert state in ("visible", "hidden")
         assert timeout > 0
+
+        if state == "hidden":
+            while self.visibilidades:
+                if not self.visibilidades.pop(0):
+                    return
+
+            raise aghu.PlaywrightTimeoutError("Widget permaneceu visivel")
+
+        if not self.visibilidades or not self.visibilidades[0]:
+            raise aghu.PlaywrightTimeoutError("Widget nao ficou visivel")
 
     def is_visible(self, timeout):
         assert timeout > 0
@@ -262,3 +272,77 @@ class TestRegressaoConsultaLenta:
 
         assert resultado.status == STATUS_ERRO
         assert "Identity Manager nao retornou estado conclusivo" in resultado.detalhes
+
+    def test_gravacao_aguarda_carregamento_sumir_antes_de_ler_mensagem(
+        self,
+        monkeypatch,
+    ):
+        chamadas = {"existe": 0, "aguardar": 0}
+
+        class MensagemFake:
+            @property
+            def first(self):
+                return self
+
+            def count(self):
+                return 1
+
+            def is_visible(self, timeout):
+                assert timeout > 0
+                return True
+
+            def inner_text(self, timeout):
+                assert timeout > 0
+                return "Usuário incluído com sucesso"
+
+        class SemMensagemFake:
+            @property
+            def first(self):
+                return self
+
+            def count(self):
+                return 0
+
+            def is_visible(self, timeout):
+                assert timeout > 0
+                return False
+
+        class GrupoMensagensFake:
+            def filter(self, *, has_text):
+                if "incluído com sucesso" in has_text:
+                    return MensagemFake()
+
+                return SemMensagemFake()
+
+        class JanelaGravacaoFake:
+            def locator(self, seletor):
+                if seletor == "#messagesInDialog div":
+                    return GrupoMensagensFake()
+
+                return SemMensagemFake()
+
+        def existe_carregamento(_janela):
+            chamadas["existe"] += 1
+            return chamadas["existe"] == 1
+
+        def aguardar_carregamento_sumir(_janela, *, timeout_ms, deteccao_ms=0):
+            assert timeout_ms > 0
+            assert deteccao_ms == 0
+            chamadas["aguardar"] += 1
+            return True
+
+        monkeypatch.setattr(aghu, "_existe_carregamento_visivel", existe_carregamento)
+        monkeypatch.setattr(
+            aghu,
+            "_aguardar_carregamento_sumir",
+            aguardar_carregamento_sumir,
+        )
+
+        estado, mensagem = aghu._aguardar_mensagem_gravacao(
+            JanelaGravacaoFake(),
+            timeout_ms=1000,
+        )
+
+        assert estado == "sucesso"
+        assert mensagem == "Usuário incluído com sucesso"
+        assert chamadas["aguardar"] == 1

@@ -79,7 +79,8 @@ SELECTOR_TABELA_IDENTITY = (
     '[id="tabelaUsuariosIdentityManager:resultList_data"] > tr'
 )
 TEXTO_NENHUM_REGISTRO = "Nenhum registro encontrado!"
-TEMPO_MAXIMO_CONSULTA_USUARIO_MS = 90000
+TEMPO_MAXIMO_CONSULTA_USUARIO_MS = 130000
+TEMPO_MAXIMO_GRAVACAO_USUARIO_MS = 10000
 TEMPO_DETECCAO_WIDGET_CARREGAMENTO_MS = 2000
 TEMPO_ESTABILIDADE_RESULTADO_MS = 250
 
@@ -399,11 +400,67 @@ def _widget_carregamento_consulta(janela_sistema: FrameLocator) -> Locator:
     return janela_sistema.get_by_label("Carregando").get_by_text("Aguarde...").first
 
 
+def _titulo_widget_carregamento(janela_sistema: FrameLocator) -> Locator:
+    return janela_sistema.locator("div").filter(
+        has_text=re.compile(r"^Carregando$")
+    ).first
+
+
+def _widgets_carregamento(janela_sistema: FrameLocator) -> Iterator[Locator]:
+    for criar_widget in (
+        _widget_carregamento_consulta,
+        _titulo_widget_carregamento,
+    ):
+        try:
+            yield criar_widget(janela_sistema)
+        except Exception:
+            continue
+
+
 def _existe_carregamento_visivel(janela_sistema: FrameLocator) -> bool:
-    try:
-        return _widget_carregamento_consulta(janela_sistema).is_visible(timeout=100)
-    except Exception:
-        return False
+    for widget in _widgets_carregamento(janela_sistema):
+        try:
+            if widget.is_visible(timeout=100):
+                return True
+        except Exception:
+            continue
+
+    return False
+
+
+def _aguardar_carregamento_sumir(
+    janela_sistema: FrameLocator,
+    timeout_ms: int,
+    deteccao_ms: int = 0,
+) -> bool:
+    inicio = time.monotonic()
+    widgets = list(_widgets_carregamento(janela_sistema))
+    carregamento_detectado = False
+
+    for widget in widgets:
+        try:
+            widget.wait_for(state="visible", timeout=deteccao_ms)
+            carregamento_detectado = True
+        except PlaywrightTimeoutError:
+            continue
+        except Exception:
+            continue
+
+    if not carregamento_detectado:
+        return not _existe_carregamento_visivel(janela_sistema)
+
+    for widget in widgets:
+        tempo_decorrido_ms = int((time.monotonic() - inicio) * 1000)
+        timeout_restante_ms = max(timeout_ms - tempo_decorrido_ms, 1)
+
+        try:
+            widget.wait_for(state="hidden", timeout=timeout_restante_ms)
+        except PlaywrightTimeoutError:
+            return False
+        except Exception:
+            continue
+
+    return not _existe_carregamento_visivel(janela_sistema)
 
 
 def _aguardar_ciclo_carregamento_consulta(
@@ -412,20 +469,12 @@ def _aguardar_ciclo_carregamento_consulta(
     timeout_ms: int = TEMPO_MAXIMO_CONSULTA_USUARIO_MS,
     deteccao_ms: int = TEMPO_DETECCAO_WIDGET_CARREGAMENTO_MS,
 ) -> bool:
-    widget_carregamento = _widget_carregamento_consulta(janela_sistema)
-
-    try:
-        widget_carregamento.wait_for(state="visible", timeout=deteccao_ms)
-    except PlaywrightTimeoutError:
-        return not _existe_carregamento_visivel(janela_sistema)
-
-    fim = time.monotonic() + (timeout_ms / 1000)
-
-    while time.monotonic() < fim:
-        if not _existe_carregamento_visivel(janela_sistema):
-            return True
-
-        time.sleep(0.15)
+    if _aguardar_carregamento_sumir(
+        janela_sistema,
+        timeout_ms=timeout_ms,
+        deteccao_ms=deteccao_ms,
+    ):
+        return True
 
     raise PlaywrightTimeoutError(
         "Consulta do AGHUX permaneceu em carregamento alem do tempo limite."
@@ -654,7 +703,7 @@ def _preencher_cadastro_usuario(
 
 def _aguardar_mensagem_gravacao(
     janela_sistema: FrameLocator,
-    timeout_ms: int = 10000,
+    timeout_ms: int = TEMPO_MAXIMO_GRAVACAO_USUARIO_MS,
 ) -> tuple[str, str]:
     mensagem_sucesso = janela_sistema.locator("#messagesInDialog div").filter(
         has_text="Usuário incluído com sucesso"
@@ -668,6 +717,14 @@ def _aguardar_mensagem_gravacao(
     fim = time.monotonic() + (timeout_ms / 1000)
 
     while time.monotonic() < fim:
+        if _existe_carregamento_visivel(janela_sistema):
+            timeout_restante_ms = int(max((fim - time.monotonic()) * 1000, 1))
+            _aguardar_carregamento_sumir(
+                janela_sistema,
+                timeout_ms=timeout_restante_ms,
+            )
+            continue
+
         try:
             if mensagem_sucesso.count() > 0 and mensagem_sucesso.first.is_visible(
                 timeout=250
