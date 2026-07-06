@@ -59,6 +59,7 @@ MENSAGEM_ERRO_AUTENTICACAO = (
 SELECTOR_TELA_PRINCIPAL_AGHU = ".usuario-dados .nome-usuario"
 TEXTO_TELA_PRINCIPAL_AGHU = "Olá,"
 TEXTO_MENU_PRINCIPAL_AGHU = "Outros Módulos"
+TIMEOUT_RESULTADO_AUTENTICADOR_MS = 10000
 
 StatusLogin = Literal[
     "sucesso",
@@ -310,7 +311,7 @@ def autenticar_aghu_page(
         except PlaywrightTimeoutError:
             pass
 
-        prazo_final = time.monotonic() + (timeout_ms / 1000)
+        prazo_final = time.monotonic() + (TIMEOUT_RESULTADO_AUTENTICADOR_MS / 1000)
 
         while time.monotonic() < prazo_final:
             if _erro_autenticacao_visivel(page, timeout_ms=500):
@@ -345,7 +346,7 @@ def autenticar_aghu_page(
 
         return ResultadoLogin(
             status="timeout",
-            mensagem="Não foi possível confirmar o login dentro do tempo limite.",
+            mensagem="Não foi possível confirmar o login dentro do limite fixo de 10s.",
             url_final=_url_atual(page),
         )
 
