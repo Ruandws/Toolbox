@@ -13,6 +13,7 @@ from concessor_aghu import (
 class FakeEntry:
     def __init__(self, valor=""):
         self.valor = valor
+        self.configuracoes = {}
 
     def get(self):
         return self.valor
@@ -22,6 +23,9 @@ class FakeEntry:
 
     def insert(self, indice, valor):
         self.valor = valor
+
+    def configure(self, **kwargs):
+        self.configuracoes.update(kwargs)
 
 
 class FakeWidget:
