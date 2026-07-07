@@ -15,8 +15,17 @@ from criar_pessoa_aghu import (
 )
 
 
-class FakeEntry:
+class FakeWidget:
+    def __init__(self):
+        self.configuracoes = {}
+
+    def configure(self, **kwargs):
+        self.configuracoes.update(kwargs)
+
+
+class FakeEntry(FakeWidget):
     def __init__(self, valor=""):
+        super().__init__()
         self.valor = valor
 
     def get(self):
@@ -30,14 +39,6 @@ class FakeEntry:
             self.valor = valor + self.valor
             return
         self.valor = self.valor[:indice] + valor + self.valor[indice:]
-
-
-class FakeWidget:
-    def __init__(self):
-        self.configuracoes = {}
-
-    def configure(self, **kwargs):
-        self.configuracoes.update(kwargs)
 
 
 class FakeFrame:
@@ -148,7 +149,6 @@ def preencher_cadastro_individual(app, **sobrescritas):
         "nacionalidade": " Brasileira ",
         "naturalidade": " Brasilia/DF ",
         "rg": " 123456 ",
-        "orgao_emissor": " SSP ",
         "uf_rg": " DF ",
         "cpf": " 123.456.789-01 ",
         "ddd": " 61 ",
@@ -586,7 +586,6 @@ def test_iniciar_execucao_individual_inicia_thread_com_dados_da_tela(
         nacionalidade="Brasileira",
         naturalidade="Brasilia/DF",
         rg="123456",
-        orgao_emissor="SSP",
         uf_rg="DF",
         cpf="123.456.789-01",
         ddd="61",
