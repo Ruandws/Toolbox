@@ -16,9 +16,13 @@ class ExtratorApp(ctk.CTk):
     def __init__(self):
         super().__init__()
 
-        self.title("Extrator - Interface Visual")
+        self.title("Extrator - Pesquisa de Usuário")
         self.geometry("720x650")
+        self.minsize(640, 520)
+        self.resizable(True, True)
         self.grid_columnconfigure(0, weight=1)
+        self.grid_rowconfigure(1, weight=1)
+
         self.collect_email_var = BooleanVar(value=False)
         self.var_tipo_execucao = StringVar(value=TIPO_INDIVIDUAL)
         self.em_execucao = False
@@ -28,10 +32,14 @@ class ExtratorApp(ctk.CTk):
             text="Extrator: Pesquisa de Usuário",
             font=ctk.CTkFont(size=20, weight="bold"),
         )
-        self.label_title.grid(row=0, column=0, padx=20, pady=(30, 20))
+        self.label_title.grid(row=0, column=0, padx=20, pady=(22, 10))
 
-        self.frame_inputs = ctk.CTkFrame(self)
-        self.frame_inputs.grid(row=1, column=0, padx=20, pady=10, sticky="ew")
+        self.frame_conteudo = ctk.CTkScrollableFrame(self)
+        self.frame_conteudo.grid(row=1, column=0, padx=20, pady=8, sticky="nsew")
+        self.frame_conteudo.grid_columnconfigure(0, weight=1)
+
+        self.frame_inputs = ctk.CTkFrame(self.frame_conteudo)
+        self.frame_inputs.grid(row=0, column=0, padx=0, pady=8, sticky="ew")
         self.frame_inputs.grid_columnconfigure(1, weight=1)
 
         self.create_login_fields()
@@ -42,20 +50,22 @@ class ExtratorApp(ctk.CTk):
         self._atualizar_tipo_execucao(TIPO_INDIVIDUAL)
 
         self.button_run = ctk.CTkButton(
-            self,
+            self.frame_conteudo,
             text="Executar Automação",
             command=self.start_automation,
+            height=40,
             font=ctk.CTkFont(weight="bold"),
         )
-        self.button_run.grid(row=2, column=0, padx=20, pady=30)
+        self.button_run.grid(row=1, column=0, padx=0, pady=(12, 8), sticky="e")
 
         self.label_status = ctk.CTkLabel(
             self,
             text="Pronto para execução.",
             text_color="gray",
-            wraplength=640,
+            wraplength=680,
+            justify="left",
         )
-        self.label_status.grid(row=3, column=0, padx=20, pady=10)
+        self.label_status.grid(row=2, column=0, padx=20, pady=(8, 18), sticky="ew")
 
     # -----------------------------
     # Interface - Componentes
@@ -361,8 +371,7 @@ class ExtratorApp(ctk.CTk):
         file_path = filedialog.askopenfilename(
             title="Selecione a planilha",
             filetypes=(
-                ("Planilhas", "*.xlsx"),
-                ("Excel", "*.xlsx"),
+                ("Excel / Planilhas", "*.xlsx"),
             ),
         )
 
