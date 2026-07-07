@@ -3,6 +3,7 @@ import os
 import sys
 import threading
 from tkinter import BooleanVar, StringVar, filedialog
+from pathlib import Path
 
 import customtkinter as ctk  # type: ignore[import-untyped]
 from prorrogador_sti import (
@@ -515,18 +516,21 @@ class ExtratorApp(ctk.CTk):
             else:
                 button.configure(text_color=("#1F6AA5", "#3B8ED0"))
 
-    # Seleciona arquivo de planilha.
+     # Seleciona arquivo de planilha e sugere pasta padrão do relatório.
     def select_spreadsheet(self):
         file_path = filedialog.askopenfilename(
             title="Selecione a planilha",
             filetypes=(
-                ("Planilhas", "*.xlsx"),
-            )
+                ("Excel / Planilhas", "*.xlsx"),
+            ),
         )
 
         if file_path:
             self.entry_spreadsheet.delete(0, "end")
             self.entry_spreadsheet.insert(0, file_path)
+
+            if not self.entry_report_dir.get().strip():
+                self.entry_report_dir.insert(0, str(Path(file_path).parent))
 
     # Seleciona pasta para relatório.
     def select_report_directory(self):
