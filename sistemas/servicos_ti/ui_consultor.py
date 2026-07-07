@@ -1,7 +1,10 @@
 import threading
-from tkinter import BooleanVar, filedialog
+from tkinter import BooleanVar, StringVar, filedialog
 import customtkinter as ctk
 from consultor_sti import prepare_search_value, run_automation, run_batch_automation
+
+TIPO_INDIVIDUAL = "Unitária"
+TIPO_LOTE = "Lote"
 
 
 class ExtratorApp(ctk.CTk):
@@ -17,6 +20,8 @@ class ExtratorApp(ctk.CTk):
         self.geometry("720x650")
         self.grid_columnconfigure(0, weight=1)
         self.collect_email_var = BooleanVar(value=False)
+        self.var_tipo_execucao = StringVar(value=TIPO_INDIVIDUAL)
+        self.em_execucao = False
 
         self.label_title = ctk.CTkLabel(
             self,
@@ -31,8 +36,10 @@ class ExtratorApp(ctk.CTk):
 
         self.create_login_fields()
         self.create_search_type_field()
+        self.create_execution_type_selector()
         self.create_single_search_fields()
         self.create_batch_fields()
+        self._atualizar_tipo_execucao(TIPO_INDIVIDUAL)
 
         self.button_run = ctk.CTkButton(
             self,
@@ -124,15 +131,44 @@ class ExtratorApp(ctk.CTk):
             sticky="w",
         )
 
-    # Cria campos de pesquisa única.
+    # Cria seletor explicito entre execucao unitaria e lote.
+    def create_execution_type_selector(self):
+        self.label_tipo_execucao = ctk.CTkLabel(
+            self.frame_inputs,
+            text="Tipo de execução:",
+        )
+        self.label_tipo_execucao.grid(row=3, column=0, padx=10, pady=10, sticky="e")
+
+        self.segment_tipo_execucao = ctk.CTkSegmentedButton(
+            self.frame_inputs,
+            values=[TIPO_INDIVIDUAL, TIPO_LOTE],
+            variable=self.var_tipo_execucao,
+            command=self._atualizar_tipo_execucao,
+            height=36,
+            selected_color=("#1F6AA5", "#144870"),
+            selected_hover_color=("#155E96", "#0F3A5A"),
+            unselected_color=("#D9D9D9", "#333333"),
+            unselected_hover_color=("#C9C9C9", "#3D3D3D"),
+        )
+        self.segment_tipo_execucao.grid(
+            row=3,
+            column=1,
+            columnspan=2,
+            padx=10,
+            pady=10,
+            sticky="ew",
+        )
+        self.segment_tipo_execucao.set(TIPO_INDIVIDUAL)
+
+    # Cria campos de pesquisa unitaria.
     def create_single_search_fields(self):
         self.label_single_title = ctk.CTkLabel(
             self.frame_inputs,
-            text="Execução individual",
+            text="Execução unitária",
             font=ctk.CTkFont(weight="bold"),
         )
         self.label_single_title.grid(
-            row=3,
+            row=4,
             column=0,
             columnspan=3,
             padx=10,
@@ -144,20 +180,26 @@ class ExtratorApp(ctk.CTk):
             self.frame_inputs,
             text="Valor da Pesquisa:",
         )
-        self.label_search.grid(row=4, column=0, padx=10, pady=10, sticky="e")
+        self.label_search.grid(row=5, column=0, padx=10, pady=10, sticky="e")
 
         self.entry_search = ctk.CTkEntry(
             self.frame_inputs,
             placeholder_text="Digite CPF com ou sem pontuação",
         )
         self.entry_search.grid(
-            row=4,
+            row=5,
             column=1,
             columnspan=2,
             padx=10,
             pady=10,
             sticky="ew",
         )
+
+        self.widgets_individuais = [
+            self.label_single_title,
+            self.label_search,
+            self.entry_search,
+        ]
 
     # Cria campos para lote.
     def create_batch_fields(self):
@@ -179,7 +221,7 @@ class ExtratorApp(ctk.CTk):
             wraplength=620,
         )
         self.label_batch_title.grid(
-            row=5,
+            row=6,
             column=0,
             columnspan=3,
             padx=10,
@@ -191,14 +233,14 @@ class ExtratorApp(ctk.CTk):
             self.frame_inputs,
             text="Planilha:",
         )
-        self.label_spreadsheet.grid(row=6, column=0, padx=10, pady=10, sticky="e")
+        self.label_spreadsheet.grid(row=7, column=0, padx=10, pady=10, sticky="e")
 
         self.entry_spreadsheet = ctk.CTkEntry(
             self.frame_inputs,
             placeholder_text="Caminho do arquivo .xlsx",
         )
         self.entry_spreadsheet.grid(
-            row=6,
+            row=7,
             column=1,
             padx=10,
             pady=10,
@@ -211,20 +253,20 @@ class ExtratorApp(ctk.CTk):
             width=100,
             command=self.select_spreadsheet,
         )
-        self.button_select_spreadsheet.grid(row=6, column=2, padx=10, pady=10)
+        self.button_select_spreadsheet.grid(row=7, column=2, padx=10, pady=10)
 
         self.label_report_dir = ctk.CTkLabel(
             self.frame_inputs,
             text="Pasta relatório:",
         )
-        self.label_report_dir.grid(row=7, column=0, padx=10, pady=10, sticky="e")
+        self.label_report_dir.grid(row=8, column=0, padx=10, pady=10, sticky="e")
 
         self.entry_report_dir = ctk.CTkEntry(
             self.frame_inputs,
             placeholder_text="Pasta onde o relatório será salvo",
         )
         self.entry_report_dir.grid(
-            row=7,
+            row=8,
             column=1,
             padx=10,
             pady=10,
@@ -237,7 +279,7 @@ class ExtratorApp(ctk.CTk):
             width=100,
             command=self.select_report_directory,
         )
-        self.button_select_report_dir.grid(row=7, column=2, padx=10, pady=10)
+        self.button_select_report_dir.grid(row=8, column=2, padx=10, pady=10)
 
         self.label_batch_info = ctk.CTkLabel(
             self.frame_inputs,
@@ -251,7 +293,7 @@ class ExtratorApp(ctk.CTk):
             wraplength=620,
         )
         self.label_batch_info.grid(
-            row=8,
+            row=9,
             column=0,
             columnspan=3,
             padx=10,
@@ -259,11 +301,51 @@ class ExtratorApp(ctk.CTk):
             sticky="w",
         )
 
+        self.widgets_lote = [
+            self.label_batch_title,
+            self.label_spreadsheet,
+            self.entry_spreadsheet,
+            self.button_select_spreadsheet,
+            self.label_report_dir,
+            self.entry_report_dir,
+            self.button_select_report_dir,
+            self.label_batch_info,
+        ]
+
     # -----------------------------
     # Lógica - Eventos
     # -----------------------------
 
-    # Atualiza estado do tipo.
+    # Alterna campos visiveis conforme tipo de execucao selecionado.
+    def _atualizar_tipo_execucao(self, tipo: str):
+        for widget in self.widgets_individuais:
+            widget.grid_remove()
+
+        for widget in self.widgets_lote:
+            widget.grid_remove()
+
+        widgets_visiveis = (
+            self.widgets_individuais
+            if tipo == TIPO_INDIVIDUAL
+            else self.widgets_lote
+        )
+
+        for widget in widgets_visiveis:
+            widget.grid()
+
+        self._atualizar_visual_segmented_button(tipo)
+
+    # Ajusta contraste do CTkSegmentedButton no tema claro/escuro.
+    def _atualizar_visual_segmented_button(self, valor_selecionado: str):
+        if "segment_tipo_execucao" not in self.__dict__:
+            return
+
+        for valor, button in self.segment_tipo_execucao._buttons_dict.items():
+            if valor == valor_selecionado:
+                button.configure(text_color="white")
+            else:
+                button.configure(text_color=("#1F6AA5", "#3B8ED0"))
+
     def on_search_type_change(self, selected_type):
         if selected_type == "CPF":
             self.entry_search.configure(
@@ -300,13 +382,17 @@ class ExtratorApp(ctk.CTk):
 
     # Inicia processo de automação.
     def start_automation(self):
+        if self.em_execucao:
+            return
+
         login = self.entry_login.get().strip()
-        password = self.entry_password.get().strip()
+        password = self.entry_password.get()
         search_type = self.combo_search_type.get()
         search_value = self.entry_search.get().strip()
         spreadsheet_path = self.entry_spreadsheet.get().strip()
         report_directory = self.entry_report_dir.get().strip()
         collect_email = self.collect_email_var.get()
+        tipo_execucao = self.var_tipo_execucao.get()
 
         if not login or not password:
             self.show_status(
@@ -315,9 +401,7 @@ class ExtratorApp(ctk.CTk):
             )
             return
 
-        is_batch = bool(spreadsheet_path or report_directory)
-
-        if is_batch:
+        if tipo_execucao == TIPO_LOTE:
             if not spreadsheet_path or not report_directory:
                 self.show_status(
                     "Erro: Para lote, informe planilha e pasta de relatório.",
@@ -339,7 +423,7 @@ class ExtratorApp(ctk.CTk):
         else:
             if not search_value:
                 self.show_status(
-                    "Erro: Informe o valor da pesquisa ou uma planilha para lote.",
+                    "Erro: Informe o valor da pesquisa.",
                     "red",
                 )
                 return
@@ -361,16 +445,16 @@ class ExtratorApp(ctk.CTk):
                 clean_search_value,
                 collect_email,
             )
-            status_text = "Iniciando automação individual..."
+            status_text = "Iniciando automação unitária..."
 
         self.show_status(status_text, "blue")
-        self.button_run.configure(state="disabled", text="Executando...")
+        self._bloquear_execucao()
 
         thread = threading.Thread(
             target=self.run_playwright_task,
             args=args,
+            daemon=True,
         )
-        thread.daemon = True
         thread.start()
 
     # Executa tarefa no Playwright.
@@ -393,10 +477,40 @@ class ExtratorApp(ctk.CTk):
 
             self.after(0, self.finish_automation, error_msg, "red")
 
-    # Finaliza execução e atualiza UI.
+    # Bloqueia controles durante a execucao da automacao.
+    def _bloquear_execucao(self):
+        self.em_execucao = True
+        self.button_run.configure(state="disabled", text="Executando...")
+        self.segment_tipo_execucao.configure(state="disabled")
+        self.entry_login.configure(state="disabled")
+        self.entry_password.configure(state="disabled")
+        self.combo_search_type.configure(state="disabled")
+        self.checkbox_collect_email.configure(state="disabled")
+        self.entry_search.configure(state="disabled")
+        self.entry_spreadsheet.configure(state="disabled")
+        self.entry_report_dir.configure(state="disabled")
+        self.button_select_spreadsheet.configure(state="disabled")
+        self.button_select_report_dir.configure(state="disabled")
+
+    # Libera controles apos sucesso ou erro.
+    def _liberar_execucao(self):
+        self.em_execucao = False
+        self.button_run.configure(state="normal", text="Executar Automação")
+        self.segment_tipo_execucao.configure(state="normal")
+        self.entry_login.configure(state="normal")
+        self.entry_password.configure(state="normal")
+        self.combo_search_type.configure(state="normal")
+        self.checkbox_collect_email.configure(state="normal")
+        self.entry_search.configure(state="normal")
+        self.entry_spreadsheet.configure(state="normal")
+        self.entry_report_dir.configure(state="normal")
+        self.button_select_spreadsheet.configure(state="normal")
+        self.button_select_report_dir.configure(state="normal")
+
+    # Finaliza execucao e atualiza UI.
     def finish_automation(self, message, color):
         self.show_status(message, color)
-        self.button_run.configure(state="normal", text="Executar Automação")
+        self._liberar_execucao()
 
     # Atualiza mensagem de status.
     def show_status(self, message, color):
