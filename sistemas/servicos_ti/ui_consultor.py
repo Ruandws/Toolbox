@@ -24,6 +24,7 @@ class ConsultorSTI(ctk.CTk):
         self.grid_rowconfigure(1, weight=1)
 
         self.collect_email_var = BooleanVar(value=False)
+        self.var_browser = BooleanVar(value=True)
         self.var_tipo_execucao = StringVar(value=TIPO_INDIVIDUAL)
         self.em_execucao = False
 
@@ -44,6 +45,7 @@ class ConsultorSTI(ctk.CTk):
 
         self.create_login_fields()
         self.create_search_type_field()
+        self.create_execution_options()
         self.create_execution_type_selector()
         self.create_single_search_fields()
         self.create_batch_fields()
@@ -141,13 +143,29 @@ class ConsultorSTI(ctk.CTk):
             sticky="w",
         )
 
+    # Cria opcoes de execucao.
+    def create_execution_options(self):
+        self.checkbox_browser = ctk.CTkCheckBox(
+            self.frame_inputs,
+            text="Exibir Navegador (Modo Visual)",
+            variable=self.var_browser,
+        )
+        self.checkbox_browser.grid(
+            row=3,
+            column=1,
+            columnspan=2,
+            padx=10,
+            pady=10,
+            sticky="w",
+        )
+
     # Cria seletor explicito entre execucao unitaria e lote.
     def create_execution_type_selector(self):
         self.label_tipo_execucao = ctk.CTkLabel(
             self.frame_inputs,
             text="Tipo de execução:",
         )
-        self.label_tipo_execucao.grid(row=3, column=0, padx=10, pady=10, sticky="e")
+        self.label_tipo_execucao.grid(row=4, column=0, padx=10, pady=10, sticky="e")
 
         self.segment_tipo_execucao = ctk.CTkSegmentedButton(
             self.frame_inputs,
@@ -161,7 +179,7 @@ class ConsultorSTI(ctk.CTk):
             unselected_hover_color=("#C9C9C9", "#3D3D3D"),
         )
         self.segment_tipo_execucao.grid(
-            row=3,
+            row=4,
             column=1,
             columnspan=2,
             padx=10,
@@ -178,7 +196,7 @@ class ConsultorSTI(ctk.CTk):
             font=ctk.CTkFont(weight="bold"),
         )
         self.label_single_title.grid(
-            row=4,
+            row=5,
             column=0,
             columnspan=3,
             padx=10,
@@ -190,14 +208,14 @@ class ConsultorSTI(ctk.CTk):
             self.frame_inputs,
             text="Valor da Pesquisa:",
         )
-        self.label_search.grid(row=5, column=0, padx=10, pady=10, sticky="e")
+        self.label_search.grid(row=6, column=0, padx=10, pady=10, sticky="e")
 
         self.entry_search = ctk.CTkEntry(
             self.frame_inputs,
             placeholder_text="Digite CPF com ou sem pontuação",
         )
         self.entry_search.grid(
-            row=5,
+            row=6,
             column=1,
             columnspan=2,
             padx=10,
@@ -217,14 +235,14 @@ class ConsultorSTI(ctk.CTk):
             self.frame_inputs,
             text="Planilha:",
         )
-        self.label_spreadsheet.grid(row=6, column=0, padx=10, pady=10, sticky="e")
+        self.label_spreadsheet.grid(row=7, column=0, padx=10, pady=10, sticky="e")
 
         self.entry_spreadsheet = ctk.CTkEntry(
             self.frame_inputs,
             placeholder_text="Caminho do arquivo .xlsx",
         )
         self.entry_spreadsheet.grid(
-            row=6,
+            row=7,
             column=1,
             padx=10,
             pady=10,
@@ -237,20 +255,20 @@ class ConsultorSTI(ctk.CTk):
             width=100,
             command=self.select_spreadsheet,
         )
-        self.button_select_spreadsheet.grid(row=6, column=2, padx=10, pady=10)
+        self.button_select_spreadsheet.grid(row=7, column=2, padx=10, pady=10)
 
         self.label_report_dir = ctk.CTkLabel(
             self.frame_inputs,
             text="Pasta relatório:",
         )
-        self.label_report_dir.grid(row=7, column=0, padx=10, pady=10, sticky="e")
+        self.label_report_dir.grid(row=8, column=0, padx=10, pady=10, sticky="e")
 
         self.entry_report_dir = ctk.CTkEntry(
             self.frame_inputs,
             placeholder_text="Pasta onde o relatório será salvo",
         )
         self.entry_report_dir.grid(
-            row=7,
+            row=8,
             column=1,
             padx=10,
             pady=10,
@@ -263,7 +281,7 @@ class ConsultorSTI(ctk.CTk):
             width=100,
             command=self.select_report_directory,
         )
-        self.button_select_report_dir.grid(row=7, column=2, padx=10, pady=10)
+        self.button_select_report_dir.grid(row=8, column=2, padx=10, pady=10)
 
         self.label_batch_info = ctk.CTkLabel(
             self.frame_inputs,
@@ -276,7 +294,7 @@ class ConsultorSTI(ctk.CTk):
             wraplength=620,
         )
         self.label_batch_info.grid(
-            row=8,
+            row=9,
             column=0,
             columnspan=3,
             padx=10,
@@ -361,26 +379,35 @@ class ConsultorSTI(ctk.CTk):
             self.entry_report_dir.delete(0, "end")
             self.entry_report_dir.insert(0, directory)
 
+     # Coleta e valida credenciais.
+    def _credenciais_e_url(self) -> tuple[str, str]:
+        login = self.entry_login.get().strip()
+        # Senhas podem conter espacos significativos; nao normalizar com strip().
+        password = self.entry_password.get()
+
+        if not login or not password:
+            raise ValueError("Preencha login e senha.")
+
+        return login, password
+
     # Inicia processo de automação.
     def start_automation(self):
         if self.em_execucao:
             return
 
-        login = self.entry_login.get().strip()
-        password = self.entry_password.get()
+        try:
+            login, password = self._credenciais_e_url()
+        except ValueError as exc:
+            self.show_status(f"Erro: {exc}", "red")
+            return
+
         search_type = self.combo_search_type.get()
         search_value = self.entry_search.get().strip()
         spreadsheet_path = self.entry_spreadsheet.get().strip()
         report_directory = self.entry_report_dir.get().strip()
         collect_email = self.collect_email_var.get()
+        mostrar_browser = bool(self.var_browser.get())
         tipo_execucao = self.var_tipo_execucao.get()
-
-        if not login or not password:
-            self.show_status(
-                "Erro: Preencha login e senha.",
-                "red",
-            )
-            return
 
         if tipo_execucao == TIPO_LOTE:
             if not spreadsheet_path or not report_directory:
@@ -398,6 +425,7 @@ class ConsultorSTI(ctk.CTk):
                 spreadsheet_path,
                 report_directory,
                 collect_email,
+                mostrar_browser,
             )
             status_text = "Iniciando automação em lote..."
         
@@ -425,6 +453,7 @@ class ConsultorSTI(ctk.CTk):
                 search_type,
                 clean_search_value,
                 collect_email,
+                mostrar_browser,
             )
             status_text = "Iniciando automação unitária..."
 
@@ -467,6 +496,7 @@ class ConsultorSTI(ctk.CTk):
         self.entry_password.configure(state="disabled")
         self.combo_search_type.configure(state="disabled")
         self.checkbox_collect_email.configure(state="disabled")
+        self.checkbox_browser.configure(state="disabled")
         self.entry_search.configure(state="disabled")
         self.entry_spreadsheet.configure(state="disabled")
         self.entry_report_dir.configure(state="disabled")
@@ -482,6 +512,7 @@ class ConsultorSTI(ctk.CTk):
         self.entry_password.configure(state="normal")
         self.combo_search_type.configure(state="normal")
         self.checkbox_collect_email.configure(state="normal")
+        self.checkbox_browser.configure(state="normal")
         self.entry_search.configure(state="normal")
         self.entry_spreadsheet.configure(state="normal")
         self.entry_report_dir.configure(state="normal")

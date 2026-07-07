@@ -78,6 +78,7 @@ def criar_app_fake():
     app = object.__new__(ui.ConsultorSTI)
     app.em_execucao = False
     app.collect_email_var = FakeVar(False)
+    app.var_browser = FakeVar(True)
     app.var_tipo_execucao = FakeVar(ui.TIPO_INDIVIDUAL)
     app.entry_login = FakeEntry()
     app.entry_password = FakeEntry()
@@ -86,6 +87,7 @@ def criar_app_fake():
     app.entry_report_dir = FakeEntry()
     app.combo_search_type = FakeEntry("CPF")
     app.checkbox_collect_email = FakeWidget()
+    app.checkbox_browser = FakeWidget()
     app.button_run = FakeWidget()
     app.segment_tipo_execucao = FakeSegment()
     app.button_select_spreadsheet = FakeWidget()
@@ -159,6 +161,7 @@ def test_bloquear_e_liberar_execucao_alteram_controles():
     assert app.segment_tipo_execucao.configuracoes["state"] == "disabled"
     assert app.entry_password.configuracoes["state"] == "disabled"
     assert app.checkbox_collect_email.configuracoes["state"] == "disabled"
+    assert app.checkbox_browser.configuracoes["state"] == "disabled"
     assert app.button_select_report_dir.configuracoes["state"] == "disabled"
 
     ui.ConsultorSTI._liberar_execucao(app)
@@ -169,6 +172,7 @@ def test_bloquear_e_liberar_execucao_alteram_controles():
     assert app.segment_tipo_execucao.configuracoes["state"] == "normal"
     assert app.entry_password.configuracoes["state"] == "normal"
     assert app.checkbox_collect_email.configuracoes["state"] == "normal"
+    assert app.checkbox_browser.configuracoes["state"] == "normal"
     assert app.button_select_report_dir.configuracoes["state"] == "normal"
 
 
@@ -253,12 +257,35 @@ def test_start_automation_unitaria_inicia_thread_com_valor_preparado(monkeypatch
         "CPF",
         "52998224725",
         True,
+        True,
     )
     assert app.em_execucao is True
     assert app.label_status.configuracoes == {
         "text": "Iniciando automação unitária...",
         "text_color": "blue",
     }
+
+
+def test_start_automation_unitaria_propaga_modo_headless(monkeypatch):
+    monkeypatch.setattr(ui.threading, "Thread", FakeThread)
+    monkeypatch.setattr(ui, "prepare_search_value", lambda _tipo, _valor: "52998224725")
+    app = criar_app_fake()
+    app.entry_login.valor = "tecnico"
+    app.entry_password.valor = "senha"
+    app.entry_search.valor = "529.982.247-25"
+    app.var_browser.set(False)
+
+    ui.ConsultorSTI.start_automation(app)
+
+    assert FakeThread.criadas[0].args == (
+        "single",
+        "tecnico",
+        "senha",
+        "CPF",
+        "52998224725",
+        False,
+        False,
+    )
 
 
 def test_start_automation_lote_usa_tipo_explicito(monkeypatch):
@@ -283,11 +310,36 @@ def test_start_automation_lote_usa_tipo_explicito(monkeypatch):
         "C:/entrada.xlsx",
         "C:/relatorios",
         False,
+        True,
     )
     assert app.label_status.configuracoes == {
         "text": "Iniciando automação em lote...",
         "text_color": "blue",
     }
+
+
+def test_start_automation_lote_propaga_modo_headless(monkeypatch):
+    monkeypatch.setattr(ui.threading, "Thread", FakeThread)
+    app = criar_app_fake()
+    app.var_tipo_execucao.set(ui.TIPO_LOTE)
+    app.var_browser.set(False)
+    app.entry_login.valor = "tecnico"
+    app.entry_password.valor = "senha"
+    app.entry_spreadsheet.valor = "C:/entrada.xlsx"
+    app.entry_report_dir.valor = "C:/relatorios"
+
+    ui.ConsultorSTI.start_automation(app)
+
+    assert FakeThread.criadas[0].args == (
+        "batch",
+        "tecnico",
+        "senha",
+        "CPF",
+        "C:/entrada.xlsx",
+        "C:/relatorios",
+        False,
+        False,
+    )
 
 
 def test_start_automation_lote_valida_planilha_e_relatorio(monkeypatch):

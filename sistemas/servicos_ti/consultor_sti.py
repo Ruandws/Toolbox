@@ -875,6 +875,7 @@ def run_automation(
     search_type: str,
     search_value: str,
     collect_email: bool = False,
+    mostrar_browser: bool = True,
 ) -> str:
     normalized_search_type = normalize_search_type(search_type)
     clean_search_value = prepare_search_value(
@@ -883,7 +884,7 @@ def run_automation(
     )
 
     with sync_playwright() as playwright:
-        browser = playwright.chromium.launch(headless=False)
+        browser = playwright.chromium.launch(headless=not mostrar_browser)
         context = browser.new_context()
 
         try:
@@ -909,6 +910,7 @@ def run_batch_automation(
     spreadsheet_path: str,
     report_directory: str,
     collect_email: bool = False,
+    mostrar_browser: bool = True,
 ) -> str:
     normalized_search_type = normalize_search_type(search_type)
     headers, source_rows = read_spreadsheet(spreadsheet_path)
@@ -917,7 +919,7 @@ def run_batch_automation(
     report_rows: List[Row] = []
 
     with sync_playwright() as playwright:
-        browser = playwright.chromium.launch(headless=False)
+        browser = playwright.chromium.launch(headless=not mostrar_browser)
         context = browser.new_context()
 
         try:

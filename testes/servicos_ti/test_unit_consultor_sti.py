@@ -3,13 +3,11 @@
 # Testa funções puras de validação, normalização, planilha e relatório.
 
 from datetime import datetime
-from pathlib import Path
 
 import pytest
 
+import consultor_sti
 from consultor_sti import (
-    CPF_SEARCH_COLUMN_ALIASES,
-    FULL_NAME_SEARCH_COLUMN_ALIASES,
     NO_USER_FOUND_MESSAGE,
     SEARCH_TYPE_CPF,
     SEARCH_TYPE_FULL_NAME,
@@ -33,6 +31,51 @@ from consultor_sti import (
     prepare_search_value,
     validate_spreadsheet_extension,
 )
+
+
+class FakeBrowser:
+    def __init__(self):
+        self.context = FakeContext()
+        self.closed = False
+
+    def new_context(self):
+        return self.context
+
+    def close(self):
+        self.closed = True
+
+
+class FakeChromium:
+    def __init__(self):
+        self.launch_kwargs = None
+        self.browser = FakeBrowser()
+
+    def launch(self, **kwargs):
+        self.launch_kwargs = kwargs
+        return self.browser
+
+
+class FakeContext:
+    def __init__(self):
+        self.page = object()
+        self.closed = False
+
+    def new_page(self):
+        return self.page
+
+    def close(self):
+        self.closed = True
+
+
+class FakePlaywrightManager:
+    def __init__(self):
+        self.chromium = FakeChromium()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, _exc_type, _exc, _traceback):
+        return False
 
 
 # ---------------------------------------------------------------------------
@@ -177,6 +220,65 @@ class TestValidateSpreadsheetExtension:
     def test_csv_invalido(self):
         with pytest.raises(ValueError, match="não suportado"):
             validate_spreadsheet_extension("dados.csv")
+
+
+class TestHeadlessMode:
+    def test_run_automation_usa_headless_quando_browser_oculto(self, monkeypatch):
+        playwright = FakePlaywrightManager()
+        monkeypatch.setattr(consultor_sti, "sync_playwright", lambda: playwright)
+        monkeypatch.setattr(consultor_sti, "login_to_system", lambda *_args: None)
+        monkeypatch.setattr(consultor_sti, "open_search_users_page", lambda *_args: None)
+        monkeypatch.setattr(
+            consultor_sti,
+            "search_user_prepared_value",
+            lambda *_args: SearchResult(message=NO_USER_FOUND_MESSAGE),
+        )
+
+        consultor_sti.run_automation(
+            "tecnico",
+            "senha",
+            "cpf",
+            "52998224725",
+            mostrar_browser=False,
+        )
+
+        assert playwright.chromium.launch_kwargs["headless"] is True
+
+    def test_run_batch_automation_usa_browser_visual_por_padrao(
+        self,
+        monkeypatch,
+        tmp_path,
+    ):
+        playwright = FakePlaywrightManager()
+        monkeypatch.setattr(consultor_sti, "sync_playwright", lambda: playwright)
+        monkeypatch.setattr(
+            consultor_sti,
+            "read_spreadsheet",
+            lambda _path: (["cpf"], [{"cpf": "52998224725"}]),
+        )
+        monkeypatch.setattr(
+            consultor_sti,
+            "build_report_path",
+            lambda *_args: tmp_path / "relatorio.xlsx",
+        )
+        monkeypatch.setattr(consultor_sti, "login_to_system", lambda *_args: None)
+        monkeypatch.setattr(consultor_sti, "open_search_users_page", lambda *_args: None)
+        monkeypatch.setattr(
+            consultor_sti,
+            "search_user_prepared_value",
+            lambda *_args: SearchResult(message=NO_USER_FOUND_MESSAGE),
+        )
+        monkeypatch.setattr(consultor_sti, "write_report", lambda *_args: None)
+
+        consultor_sti.run_batch_automation(
+            "tecnico",
+            "senha",
+            "cpf",
+            "entrada.xlsx",
+            str(tmp_path),
+        )
+
+        assert playwright.chromium.launch_kwargs["headless"] is False
 
 
 # ---------------------------------------------------------------------------
