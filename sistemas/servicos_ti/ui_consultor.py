@@ -7,7 +7,7 @@ TIPO_INDIVIDUAL = "Unitária"
 TIPO_LOTE = "Lote"
 
 
-class ExtratorApp(ctk.CTk):
+class ConsultorSTI(ctk.CTk):
     # -----------------------------
     # Interface - Inicialização
     # -----------------------------
@@ -16,7 +16,7 @@ class ExtratorApp(ctk.CTk):
     def __init__(self):
         super().__init__()
 
-        self.title("Extrator - Pesquisa de Usuário")
+        self.title("Serviços TI - Consultor de Usuário")
         self.geometry("720x650")
         self.minsize(640, 520)
         self.resizable(True, True)
@@ -29,7 +29,7 @@ class ExtratorApp(ctk.CTk):
 
         self.label_title = ctk.CTkLabel(
             self,
-            text="Extrator: Pesquisa de Usuário",
+            text="Serviços TI: Consultor de Usuário",
             font=ctk.CTkFont(size=20, weight="bold"),
         )
         self.label_title.grid(row=0, column=0, padx=20, pady=(22, 10))
@@ -213,44 +213,18 @@ class ExtratorApp(ctk.CTk):
 
     # Cria campos para lote.
     def create_batch_fields(self):
-        self.label_batch_title = ctk.CTkLabel(
-            self.frame_inputs,
-            text=(
-                "Para lote, selecione a planilha e a pasta de relatório. "
-                "O tipo CPF/Nome Completo acima será usado para todas as linhas. "
-                "A coluna de entrada será identificada automaticamente. "
-                "Para CPF em lote, valores com menos de 11 dígitos serão "
-                "completados com zeros à esquerda somente se os dígitos "
-                "verificadores conferirem. Na execução individual, o CPF deve "
-                "ser informado completo. "
-                "Cabeçalhos aceitos: cpf, c.p.f, cpf usuário, cpf do usuário, "
-                "documento. Relatórios XLSX recebem filtros, cabeçalho "
-                "congelado e largura automática."
-            ),
-            text_color="gray",
-            wraplength=620,
-        )
-        self.label_batch_title.grid(
-            row=6,
-            column=0,
-            columnspan=3,
-            padx=10,
-            pady=(20, 5),
-            sticky="w",
-        )
-
         self.label_spreadsheet = ctk.CTkLabel(
             self.frame_inputs,
             text="Planilha:",
         )
-        self.label_spreadsheet.grid(row=7, column=0, padx=10, pady=10, sticky="e")
+        self.label_spreadsheet.grid(row=6, column=0, padx=10, pady=10, sticky="e")
 
         self.entry_spreadsheet = ctk.CTkEntry(
             self.frame_inputs,
             placeholder_text="Caminho do arquivo .xlsx",
         )
         self.entry_spreadsheet.grid(
-            row=7,
+            row=6,
             column=1,
             padx=10,
             pady=10,
@@ -263,20 +237,20 @@ class ExtratorApp(ctk.CTk):
             width=100,
             command=self.select_spreadsheet,
         )
-        self.button_select_spreadsheet.grid(row=7, column=2, padx=10, pady=10)
+        self.button_select_spreadsheet.grid(row=6, column=2, padx=10, pady=10)
 
         self.label_report_dir = ctk.CTkLabel(
             self.frame_inputs,
             text="Pasta relatório:",
         )
-        self.label_report_dir.grid(row=8, column=0, padx=10, pady=10, sticky="e")
+        self.label_report_dir.grid(row=7, column=0, padx=10, pady=10, sticky="e")
 
         self.entry_report_dir = ctk.CTkEntry(
             self.frame_inputs,
             placeholder_text="Pasta onde o relatório será salvo",
         )
         self.entry_report_dir.grid(
-            row=8,
+            row=7,
             column=1,
             padx=10,
             pady=10,
@@ -289,21 +263,20 @@ class ExtratorApp(ctk.CTk):
             width=100,
             command=self.select_report_directory,
         )
-        self.button_select_report_dir.grid(row=8, column=2, padx=10, pady=10)
+        self.button_select_report_dir.grid(row=7, column=2, padx=10, pady=10)
 
         self.label_batch_info = ctk.CTkLabel(
             self.frame_inputs,
             text=(
-                "Para lote, selecione a planilha e a pasta de relatório. "
-                "O tipo CPF/Nome Completo acima será usado para todas as linhas. "
-                "A coluna de entrada será identificada automaticamente. "
-                "Zeros à esquerda em CPF são completados apenas no lote."
+                "Tipo CPF/Nome aplicado a todas as linhas. "
+                "Coluna de entrada identificada automaticamente. "
+                "Zeros à esquerda em CPF completados apenas no lote."
             ),
             text_color="gray",
             wraplength=620,
         )
         self.label_batch_info.grid(
-            row=9,
+            row=8,
             column=0,
             columnspan=3,
             padx=10,
@@ -312,7 +285,6 @@ class ExtratorApp(ctk.CTk):
         )
 
         self.widgets_lote = [
-            self.label_batch_title,
             self.label_spreadsheet,
             self.entry_spreadsheet,
             self.button_select_spreadsheet,
@@ -529,5 +501,5 @@ class ExtratorApp(ctk.CTk):
 if __name__ == "__main__":
     ctk.set_appearance_mode("System")
     ctk.set_default_color_theme("blue")
-    app = ExtratorApp()
+    app = ConsultorSTI()
     app.mainloop()
