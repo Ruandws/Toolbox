@@ -73,7 +73,7 @@ class FakeThread:
 
 
 def criar_app_fake():
-    app = object.__new__(ui.ExtratorApp)
+    app = object.__new__(ui.ProrrogadorSTI)
     app.em_execucao = False
     app.var_tipo_execucao = FakeVar(ui.TIPO_INDIVIDUAL)
     app.var_show_terminal_logs = FakeVar(False)
@@ -99,7 +99,7 @@ def criar_app_fake():
 def test_atualizar_tipo_execucao_alterna_visibilidade_e_contraste():
     app = criar_app_fake()
 
-    ui.ExtratorApp._atualizar_tipo_execucao(app, ui.TIPO_LOTE)
+    ui.ProrrogadorSTI._atualizar_tipo_execucao(app, ui.TIPO_LOTE)
 
     assert all(not widget.visivel for widget in app.widgets_individuais)
     assert all(widget.visivel for widget in app.widgets_lote)
@@ -109,7 +109,7 @@ def test_atualizar_tipo_execucao_alterna_visibilidade_e_contraste():
         == "white"
     )
 
-    ui.ExtratorApp._atualizar_tipo_execucao(app, ui.TIPO_INDIVIDUAL)
+    ui.ProrrogadorSTI._atualizar_tipo_execucao(app, ui.TIPO_INDIVIDUAL)
 
     assert all(widget.visivel for widget in app.widgets_individuais)
     assert all(not widget.visivel for widget in app.widgets_lote)
@@ -123,7 +123,7 @@ def test_atualizar_tipo_execucao_alterna_visibilidade_e_contraste():
 def test_bloquear_e_liberar_execucao_alteram_controles():
     app = criar_app_fake()
 
-    ui.ExtratorApp._bloquear_execucao(app)
+    ui.ProrrogadorSTI._bloquear_execucao(app)
 
     assert app.em_execucao is True
     assert app.button_run.configuracoes["state"] == "disabled"
@@ -132,7 +132,7 @@ def test_bloquear_e_liberar_execucao_alteram_controles():
     assert app.checkbox_browser.configuracoes["state"] == "disabled"
     assert app.switch_terminal_logs.configuracoes["state"] == "disabled"
 
-    ui.ExtratorApp._liberar_execucao(app)
+    ui.ProrrogadorSTI._liberar_execucao(app)
 
     assert app.em_execucao is False
     assert app.button_run.configuracoes["state"] == "normal"
@@ -151,7 +151,7 @@ def test_start_automation_rejeita_senha_apenas_com_espacos(monkeypatch):
     app.entry_date.valor = "22/06/2026"
     app.entry_search.valor = "usuario"
 
-    ui.ExtratorApp.start_automation(app)
+    ui.ProrrogadorSTI.start_automation(app)
 
     assert FakeThread.criadas == []
     assert app.label_status.configuracoes["text"] == (
@@ -171,7 +171,7 @@ def test_start_automation_unitaria_inicia_thread_com_dados(monkeypatch):
     app.entry_date.valor = "22062026"
     app.entry_search.valor = " usuario.alvo "
 
-    ui.ExtratorApp.start_automation(app)
+    ui.ProrrogadorSTI.start_automation(app)
 
     thread = FakeThread.criadas[0]
     assert thread.iniciada is True
@@ -203,7 +203,7 @@ def test_start_automation_lote_usa_tipo_explicito(monkeypatch):
     app.entry_spreadsheet.valor = "C:/entrada.xlsx"
     app.entry_report_dir.valor = "C:/relatorios"
 
-    ui.ExtratorApp.start_automation(app)
+    ui.ProrrogadorSTI.start_automation(app)
 
     thread = FakeThread.criadas[0]
     assert thread.iniciada is True
@@ -231,7 +231,7 @@ def test_start_automation_headless_exige_terminal_logs(monkeypatch):
     app.entry_date.valor = "22/06/2026"
     app.entry_search.valor = "usuario"
 
-    ui.ExtratorApp.start_automation(app)
+    ui.ProrrogadorSTI.start_automation(app)
 
     assert FakeThread.criadas == []
     assert app.label_status.configuracoes["text"] == (

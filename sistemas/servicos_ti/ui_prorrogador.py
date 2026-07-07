@@ -57,7 +57,7 @@ def set_terminal_visibility(show_terminal: bool) -> None:
     except Exception:
         return
 
-class ExtratorApp(ctk.CTk):
+class ProrrogadorSTI(ctk.CTk):
 
     # -----------------------------
     # Interface - Inicialização
@@ -67,31 +67,45 @@ class ExtratorApp(ctk.CTk):
     def __init__(self):
         super().__init__()
 
-        self.title("Extrator - Interface Visual")
+        self.title("Serviços TI - Prorrogação de Usuário")
         self.geometry("720x760")
+        self.minsize(640, 520)
+        self.resizable(True, True)
         self.grid_columnconfigure(0, weight=1)
+        self.grid_rowconfigure(1, weight=1)
+
         self.var_browser = BooleanVar(value=True)
         self.var_tipo_execucao = StringVar(value=TIPO_INDIVIDUAL)
         self.em_execucao = False
 
         self.label_title = ctk.CTkLabel(
             self,
-            text="Extrator: Prorrogação de Usuário",
+            text="Serviços TI: Prorrogação de Usuário",
             font=ctk.CTkFont(size=20, weight="bold")
         )
         self.label_title.grid(
             row=0,
             column=0,
             padx=20,
-            pady=(30, 20)
+            pady=(22, 10)
         )
 
-        self.frame_inputs = ctk.CTkFrame(self)
-        self.frame_inputs.grid(
+        self.frame_conteudo = ctk.CTkScrollableFrame(self)
+        self.frame_conteudo.grid(
             row=1,
             column=0,
             padx=20,
-            pady=10,
+            pady=8,
+            sticky="nsew"
+        )
+        self.frame_conteudo.grid_columnconfigure(0, weight=1)
+
+        self.frame_inputs = ctk.CTkFrame(self.frame_conteudo)
+        self.frame_inputs.grid(
+            row=0,
+            column=0,
+            padx=0,
+            pady=8,
             sticky="ew"
         )
         self.frame_inputs.grid_columnconfigure(1, weight=1)
@@ -104,29 +118,33 @@ class ExtratorApp(ctk.CTk):
         self._atualizar_tipo_execucao(TIPO_INDIVIDUAL)
 
         self.button_run = ctk.CTkButton(
-            self,
+            self.frame_conteudo,
             text="Executar Automação",
             command=self.start_automation,
+            height=40,
             font=ctk.CTkFont(weight="bold")
         )
         self.button_run.grid(
-            row=2,
+            row=1,
             column=0,
-            padx=20,
-            pady=30
+            padx=0,
+            pady=(12, 8),
+            sticky="e"
         )
 
         self.label_status = ctk.CTkLabel(
             self,
             text="Pronto para execução.",
             text_color="gray",
-            wraplength=640
+            wraplength=680,
+            justify="left"
         )
         self.label_status.grid(
-            row=3,
+            row=2,
             column=0,
             padx=20,
-            pady=10
+            pady=(8, 18),
+            sticky="ew"
         )
 
     # -----------------------------
@@ -366,26 +384,12 @@ class ExtratorApp(ctk.CTk):
 
     # Cria campos para lote.
     def create_batch_fields(self):
-        self.label_batch_title = ctk.CTkLabel(
-            self.frame_inputs,
-            text="Execução em lote via planilha",
-            font=ctk.CTkFont(weight="bold")
-        )
-        self.label_batch_title.grid(
-            row=9,
-            column=0,
-            columnspan=3,
-            padx=10,
-            pady=(20, 5),
-            sticky="w"
-        )
-
         self.label_spreadsheet = ctk.CTkLabel(
             self.frame_inputs,
             text="Planilha:"
         )
         self.label_spreadsheet.grid(
-            row=10,
+            row=9,
             column=0,
             padx=10,
             pady=10,
@@ -397,7 +401,7 @@ class ExtratorApp(ctk.CTk):
             placeholder_text="Caminho do arquivo .xlsx"
         )
         self.entry_spreadsheet.grid(
-            row=10,
+            row=9,
             column=1,
             padx=10,
             pady=10,
@@ -411,7 +415,7 @@ class ExtratorApp(ctk.CTk):
             command=self.select_spreadsheet
         )
         self.button_select_spreadsheet.grid(
-            row=10,
+            row=9,
             column=2,
             padx=10,
             pady=10
@@ -422,7 +426,7 @@ class ExtratorApp(ctk.CTk):
             text="Pasta relatório:"
         )
         self.label_report_dir.grid(
-            row=11,
+            row=10,
             column=0,
             padx=10,
             pady=10,
@@ -434,7 +438,7 @@ class ExtratorApp(ctk.CTk):
             placeholder_text="Pasta onde o relatório será salvo"
         )
         self.entry_report_dir.grid(
-            row=11,
+            row=10,
             column=1,
             padx=10,
             pady=10,
@@ -448,7 +452,7 @@ class ExtratorApp(ctk.CTk):
             command=self.select_report_directory
         )
         self.button_select_report_dir.grid(
-            row=11,
+            row=10,
             column=2,
             padx=10,
             pady=10
@@ -463,7 +467,7 @@ class ExtratorApp(ctk.CTk):
             wraplength=620
         )
         self.label_batch_info.grid(
-            row=12,
+            row=11,
             column=0,
             columnspan=3,
             padx=10,
@@ -472,7 +476,6 @@ class ExtratorApp(ctk.CTk):
         )
 
         self.widgets_lote = [
-            self.label_batch_title,
             self.label_spreadsheet,
             self.entry_spreadsheet,
             self.button_select_spreadsheet,
@@ -718,5 +721,5 @@ if __name__ == "__main__":
     ctk.set_appearance_mode("System")
     ctk.set_default_color_theme("blue")
 
-    app = ExtratorApp()
+    app = ProrrogadorSTI()
     app.mainloop()
