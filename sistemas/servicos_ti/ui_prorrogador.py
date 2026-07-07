@@ -69,6 +69,7 @@ class ExtratorApp(ctk.CTk):
         self.title("Extrator - Interface Visual")
         self.geometry("720x760")
         self.grid_columnconfigure(0, weight=1)
+        self.var_browser = BooleanVar(value=True)
         self.var_tipo_execucao = StringVar(value=TIPO_INDIVIDUAL)
         self.em_execucao = False
 
@@ -229,6 +230,20 @@ class ExtratorApp(ctk.CTk):
             sticky="w"
         )
 
+        self.checkbox_browser = ctk.CTkCheckBox(
+            self.frame_inputs,
+            text="Exibir navegador (Modo Visual)",
+            variable=self.var_browser
+        )
+        self.checkbox_browser.grid(
+            row=4,
+            column=1,
+            columnspan=2,
+            padx=10,
+            pady=8,
+            sticky="w"
+        )
+
         self.var_show_terminal_logs = BooleanVar(value=False)
         self.switch_terminal_logs = ctk.CTkSwitch(
             self.frame_inputs,
@@ -236,7 +251,7 @@ class ExtratorApp(ctk.CTk):
             variable=self.var_show_terminal_logs
         )
         self.switch_terminal_logs.grid(
-            row=4,
+            row=5,
             column=1,
             columnspan=2,
             padx=10,
@@ -251,7 +266,7 @@ class ExtratorApp(ctk.CTk):
             text="Tipo de execução:"
         )
         self.label_tipo_execucao.grid(
-            row=5,
+            row=6,
             column=0,
             padx=10,
             pady=10,
@@ -270,7 +285,7 @@ class ExtratorApp(ctk.CTk):
             unselected_hover_color=("#C9C9C9", "#3D3D3D"),
         )
         self.segment_tipo_execucao.grid(
-            row=5,
+            row=6,
             column=1,
             columnspan=2,
             padx=10,
@@ -309,7 +324,7 @@ class ExtratorApp(ctk.CTk):
             font=ctk.CTkFont(weight="bold")
         )
         self.label_single_title.grid(
-            row=6,
+            row=7,
             column=0,
             columnspan=3,
             padx=10,
@@ -322,7 +337,7 @@ class ExtratorApp(ctk.CTk):
             text="Usuário alvo:"
         )
         self.label_search.grid(
-            row=7,
+            row=8,
             column=0,
             padx=10,
             pady=10,
@@ -334,7 +349,7 @@ class ExtratorApp(ctk.CTk):
             placeholder_text="Digite o usuário alvo"
         )
         self.entry_search.grid(
-            row=7,
+            row=8,
             column=1,
             columnspan=2,
             padx=10,
@@ -356,7 +371,7 @@ class ExtratorApp(ctk.CTk):
             font=ctk.CTkFont(weight="bold")
         )
         self.label_batch_title.grid(
-            row=8,
+            row=9,
             column=0,
             columnspan=3,
             padx=10,
@@ -369,7 +384,7 @@ class ExtratorApp(ctk.CTk):
             text="Planilha:"
         )
         self.label_spreadsheet.grid(
-            row=9,
+            row=10,
             column=0,
             padx=10,
             pady=10,
@@ -381,7 +396,7 @@ class ExtratorApp(ctk.CTk):
             placeholder_text="Caminho do arquivo .xlsx"
         )
         self.entry_spreadsheet.grid(
-            row=9,
+            row=10,
             column=1,
             padx=10,
             pady=10,
@@ -395,7 +410,7 @@ class ExtratorApp(ctk.CTk):
             command=self.select_spreadsheet
         )
         self.button_select_spreadsheet.grid(
-            row=9,
+            row=10,
             column=2,
             padx=10,
             pady=10
@@ -406,7 +421,7 @@ class ExtratorApp(ctk.CTk):
             text="Pasta relatório:"
         )
         self.label_report_dir.grid(
-            row=10,
+            row=11,
             column=0,
             padx=10,
             pady=10,
@@ -418,7 +433,7 @@ class ExtratorApp(ctk.CTk):
             placeholder_text="Pasta onde o relatório será salvo"
         )
         self.entry_report_dir.grid(
-            row=10,
+            row=11,
             column=1,
             padx=10,
             pady=10,
@@ -432,7 +447,7 @@ class ExtratorApp(ctk.CTk):
             command=self.select_report_directory
         )
         self.button_select_report_dir.grid(
-            row=10,
+            row=11,
             column=2,
             padx=10,
             pady=10
@@ -447,7 +462,7 @@ class ExtratorApp(ctk.CTk):
             wraplength=620
         )
         self.label_batch_info.grid(
-            row=11,
+            row=12,
             column=0,
             columnspan=3,
             padx=10,
@@ -535,11 +550,20 @@ class ExtratorApp(ctk.CTk):
         spreadsheet_path = self.entry_spreadsheet.get().strip()
         report_directory = self.entry_report_dir.get().strip()
         show_terminal_logs = bool(self.var_show_terminal_logs.get())
+        mostrar_browser = bool(self.var_browser.get())
         tipo_execucao = self.var_tipo_execucao.get()
 
         if not login or not password.strip() or not expiration_date:
             self.show_status(
                 "Erro: Preencha login, senha e nova data.",
+                "red"
+            )
+            return
+
+        if not mostrar_browser and not show_terminal_logs:
+            self.show_status(
+                "Erro: Para executar em modo headless, habilite também "
+                "terminal/logs de execução.",
                 "red"
             )
             return
@@ -570,7 +594,8 @@ class ExtratorApp(ctk.CTk):
                 spreadsheet_path,
                 report_directory,
                 normalized_expiration_date,
-                show_terminal_logs
+                show_terminal_logs,
+                mostrar_browser
             )
             status_text = "Iniciando automação em lote..."
         else:
@@ -597,6 +622,7 @@ class ExtratorApp(ctk.CTk):
                 prepared_search_value,
                 normalized_expiration_date,
                 show_terminal_logs,
+                mostrar_browser,
             )
             status_text = "Iniciando automação unitária..."
         set_terminal_visibility(show_terminal_logs)
@@ -650,6 +676,7 @@ class ExtratorApp(ctk.CTk):
         self.entry_report_dir.configure(state="disabled")
         self.button_select_spreadsheet.configure(state="disabled")
         self.button_select_report_dir.configure(state="disabled")
+        self.checkbox_browser.configure(state="disabled")
         self.switch_terminal_logs.configure(state="disabled")
 
     # Libera controles apos sucesso ou erro.
@@ -668,6 +695,7 @@ class ExtratorApp(ctk.CTk):
         self.entry_report_dir.configure(state="normal")
         self.button_select_spreadsheet.configure(state="normal")
         self.button_select_report_dir.configure(state="normal")
+        self.checkbox_browser.configure(state="normal")
         self.switch_terminal_logs.configure(state="normal")
 
     # Finaliza execucao e atualiza UI.

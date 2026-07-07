@@ -904,7 +904,8 @@ def run_automation(
     password: str,
     search_value: str,
     expiration_date: str,
-    show_terminal_logs: bool = False
+    show_terminal_logs: bool = False,
+    mostrar_browser: bool = True
 ) -> str:
     automation_logger = configure_automation_logging(
         show_terminal_logs=show_terminal_logs
@@ -915,13 +916,15 @@ def run_automation(
         normalized_expiration_date = normalize_expiration_date(expiration_date)
 
         automation_logger.info(
-            "Iniciando automação individual. Usuário: %s.",
-            prepared_user
+            "Iniciando automação individual. Usuário: %s. "
+            "Navegador visível: %s.",
+            prepared_user,
+            "sim" if mostrar_browser else "não"
         )
 
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch(
-                headless=False
+                headless=not mostrar_browser
             )
             context = browser.new_context()
 
@@ -960,7 +963,8 @@ def run_batch_automation(
     spreadsheet_path: str,
     report_directory: str,
     expiration_date: str,
-    show_terminal_logs: bool = False
+    show_terminal_logs: bool = False,
+    mostrar_browser: bool = True
 ) -> str:
     automation_logger = configure_automation_logging(
         show_terminal_logs=show_terminal_logs
@@ -971,9 +975,10 @@ def run_batch_automation(
 
         automation_logger.info(
             "Iniciando automação em lote. Planilha: %s. "
-            "Pasta relatório: %s.",
+            "Pasta relatório: %s. Navegador visível: %s.",
             spreadsheet_path,
-            report_directory
+            report_directory,
+            "sim" if mostrar_browser else "não"
         )
 
         headers, source_rows = read_spreadsheet(spreadsheet_path)
@@ -1029,7 +1034,7 @@ def run_batch_automation(
         if prepared_rows:
             with sync_playwright() as playwright:
                 browser = playwright.chromium.launch(
-                    headless=False
+                    headless=not mostrar_browser
                 )
                 context = browser.new_context()
 
