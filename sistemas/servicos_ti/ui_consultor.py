@@ -2,6 +2,7 @@ import threading
 from tkinter import BooleanVar, StringVar, filedialog
 import customtkinter as ctk
 from consultor_sti import prepare_search_value, run_automation, run_batch_automation
+from pathlib import Path
 
 TIPO_INDIVIDUAL = "Unitária"
 TIPO_LOTE = "Lote"
@@ -368,6 +369,9 @@ class ConsultorSTI(ctk.CTk):
         if file_path:
             self.entry_spreadsheet.delete(0, "end")
             self.entry_spreadsheet.insert(0, file_path)
+
+            if not self.entry_report_dir.get().strip():
+                self.entry_report_dir.insert(0, str(Path(file_path).parent))
 
     # Seleciona pasta para relatório.
     def select_report_directory(self):
