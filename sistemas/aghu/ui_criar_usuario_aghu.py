@@ -649,23 +649,32 @@ class AghuImportUserApp(ctk.CTk):
         self.em_execucao = True
         self.button_executar.configure(state="disabled", text=texto_botao)
         self.segment_tipo_execucao.configure(state="disabled")
+        self.option_ambiente.configure(state="disabled")
+        self.entry_usuario_rede.configure(state="disabled")
+        self.entry_senha.configure(state="disabled")
+        self.entry_planilha_lote.configure(state="disabled")
+        self.entry_relatorio_lote.configure(state="disabled")
         self.checkbox_browser.configure(state="disabled")
         self.checkbox_console.configure(state="disabled")
         self.button_planilha_lote.configure(state="disabled")
         self.button_relatorio_lote.configure(state="disabled")
         self._atualizar_estado_lista_usuarios()
 
-
     def _liberar_execucao(self) -> None:
         self.em_execucao = False
         self.button_executar.configure(state="normal", text="Executar importação")
         self.segment_tipo_execucao.configure(state="normal")
+        self.option_ambiente.configure(state="normal")
+        self.entry_usuario_rede.configure(state="normal")
+        self.entry_senha.configure(state="normal")
+        self.entry_planilha_lote.configure(state="normal")
+        self.entry_relatorio_lote.configure(state="normal")
         self.checkbox_browser.configure(state="normal")
         self.checkbox_console.configure(state="normal")
         self.button_planilha_lote.configure(state="normal")
         self.button_relatorio_lote.configure(state="normal")
         self._atualizar_estado_lista_usuarios()
-
+        
     def iniciar_execucao_individual(self) -> None:
         if self.em_execucao:
             return
@@ -711,12 +720,8 @@ class AghuImportUserApp(ctk.CTk):
                 usuario_rede=usuario_rede,
                 senha=senha,
                 url_aghu=url_aghu,
-<<<<<<< HEAD
                 mostrar_browser=mostrar_browser,
                 mostrar_console=mostrar_console,
-=======
-                mostrar_browser=True,
->>>>>>> e2d6b15 (fix (ui_criar_usuario_aghu) : Definido ambiente 'Homologação'como padrão na criacão de usuario. Incrementado alerta ao selecionar ambiente de 'Produção'.)
                 diretorio_logs=LOGS_DIR,
             )
             if len(resultados) == 1:
@@ -792,12 +797,8 @@ class AghuImportUserApp(ctk.CTk):
                 caminho_planilha=caminho_planilha,
                 caminho_relatorio=caminho_relatorio,
                 url_aghu=url_aghu,
-<<<<<<< HEAD
                 mostrar_browser=mostrar_browser,
                 mostrar_console=mostrar_console,
-=======
-                mostrar_browser=True,
->>>>>>> e2d6b15 (fix (ui_criar_usuario_aghu) : Definido ambiente 'Homologação'como padrão na criacão de usuario. Incrementado alerta ao selecionar ambiente de 'Produção'.)
                 diretorio_logs=LOGS_DIR,
             )
             resumo = self._resumir_resultados(resultados)
