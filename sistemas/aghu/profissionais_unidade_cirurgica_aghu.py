@@ -12,7 +12,6 @@ from typing import Iterator, Literal
 import pandas as pd
 from playwright.sync_api import BrowserContext, FrameLocator, Locator, Page
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
-from playwright.sync_api import sync_playwright
 
 from autenticador import AGHU_URL, autenticar_aghu_page, exigir_login_valido
 from menu import navegar_menu_aghu
@@ -1233,8 +1232,9 @@ def executar_cadastros_profissionais(
     usuario_rede: str,
     senha: str,
     *,
+    context: BrowserContext,
+    page: Page,
     url_aghu: str = AGHU_URL,
-    mostrar_browser: bool = True,
     mostrar_console: bool = True,
     diretorio_logs: str | os.PathLike | None = None,
     gerar_csv_log: bool = True,
@@ -1252,8 +1252,9 @@ def executar_cadastros_profissionais(
             cadastros=cadastros,
             usuario_rede=usuario_rede,
             senha=senha,
+            context=context,
+            page=page,
             url_aghu=url_aghu,
-            mostrar_browser=mostrar_browser,
             diretorio_logs=diretorio_logs,
             gerar_csv_log=gerar_csv_log,
         )
@@ -1264,8 +1265,9 @@ def _executar_cadastros_profissionais_com_saida_configurada(
     usuario_rede: str,
     senha: str,
     *,
+    context: BrowserContext,
+    page: Page,
     url_aghu: str,
-    mostrar_browser: bool,
     diretorio_logs: str | os.PathLike | None,
     gerar_csv_log: bool,
 ) -> list[ResultadoCadastroProfissional]:
@@ -1292,36 +1294,28 @@ def _executar_cadastros_profissionais_com_saida_configurada(
             gerar_csv_logs(resultados, usuario_rede, diretorio_logs)
         return resultados
 
-    with sync_playwright() as playwright:
-        browser = playwright.chromium.launch(headless=not mostrar_browser, slow_mo=500)
-        context = browser.new_context(ignore_https_errors=True)
-        page = context.new_page()
-
-        try:
-            page.goto(url_aghu)
-            fazer_login(page, usuario_rede, senha, url_aghu=url_aghu)
-            page, janela_sistema = navegar_ate_cadastro_profissional_unidade(
-                context=context,
-                page_atual=page,
-                usuario_rede=usuario_rede,
-                senha=senha,
-                url_aghu=url_aghu,
-            )
-            resultados = processar_cadastros(
-                context=context,
-                page_inicial=page,
-                janela_sistema_inicial=janela_sistema,
-                cadastros=cadastros,
-                resultados_prevalidacao=resultados_prevalidacao,
-                usuario_rede=usuario_rede,
-                senha=senha,
-                url_aghu=url_aghu,
-            )
-            if gerar_csv_log:
-                gerar_csv_logs(resultados, usuario_rede, diretorio_logs)
-            return resultados
-        finally:
-            browser.close()
+    page.goto(url_aghu)
+    fazer_login(page, usuario_rede, senha, url_aghu=url_aghu)
+    page, janela_sistema = navegar_ate_cadastro_profissional_unidade(
+        context=context,
+        page_atual=page,
+        usuario_rede=usuario_rede,
+        senha=senha,
+        url_aghu=url_aghu,
+    )
+    resultados = processar_cadastros(
+        context=context,
+        page_inicial=page,
+        janela_sistema_inicial=janela_sistema,
+        cadastros=cadastros,
+        resultados_prevalidacao=resultados_prevalidacao,
+        usuario_rede=usuario_rede,
+        senha=senha,
+        url_aghu=url_aghu,
+    )
+    if gerar_csv_log:
+        gerar_csv_logs(resultados, usuario_rede, diretorio_logs)
+    return resultados
 
 
 def executar_cadastro_lote(
@@ -1330,8 +1324,9 @@ def executar_cadastro_lote(
     caminho_planilha: str | os.PathLike,
     caminho_relatorio: str | os.PathLike,
     *,
+    context: BrowserContext,
+    page: Page,
     url_aghu: str = AGHU_URL,
-    mostrar_browser: bool = True,
     mostrar_console: bool = True,
     diretorio_logs: str | os.PathLike | None = None,
 ) -> tuple[list[ResultadoCadastroProfissional], Path]:
@@ -1340,8 +1335,9 @@ def executar_cadastro_lote(
         cadastros=cadastros,
         usuario_rede=usuario_rede,
         senha=senha,
+        context=context,
+        page=page,
         url_aghu=url_aghu,
-        mostrar_browser=mostrar_browser,
         mostrar_console=mostrar_console,
         diretorio_logs=diretorio_logs,
     )
@@ -1354,8 +1350,9 @@ def executar_cadastro_individual(
     senha: str,
     cadastro: CadastroProfissionalUnidadeEntrada,
     *,
+    context: BrowserContext,
+    page: Page,
     url_aghu: str = AGHU_URL,
-    mostrar_browser: bool = True,
     mostrar_console: bool = True,
     diretorio_logs: str | os.PathLike | None = None,
 ) -> ResultadoCadastroProfissional:
@@ -1363,8 +1360,9 @@ def executar_cadastro_individual(
         cadastros=[cadastro],
         usuario_rede=usuario_rede,
         senha=senha,
+        context=context,
+        page=page,
         url_aghu=url_aghu,
-        mostrar_browser=mostrar_browser,
         mostrar_console=mostrar_console,
         diretorio_logs=diretorio_logs,
     )
