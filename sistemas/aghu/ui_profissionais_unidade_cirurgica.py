@@ -6,11 +6,12 @@ import tkinter as tk
 from tkinter import filedialog, messagebox
 
 import customtkinter as ctk
+from playwright.sync_api import sync_playwright
 
 from autenticador import AGHU_URL, AGHU_URL_HOMOLOGACAO
 from profissionais_unidade_cirurgica_aghu import (
     CadastroProfissionalUnidadeEntrada,
-    FUNCOES_PROFISSIONAL,
+    FUNCAO_MEDICO_RESIDENTE,
     LOGS_DIR,
     STATUS_CONFERIR_MANUAL,
     STATUS_CRIADO,
@@ -19,7 +20,7 @@ from profissionais_unidade_cirurgica_aghu import (
     STATUS_IGNORADO,
     STATUS_MANTIDO,
     UNIDADES_FUNCIONAIS,
-    executar_cadastro_individual,
+    executar_cadastros_profissionais,
     executar_cadastro_lote,
     validar_entrada,
 )
@@ -34,6 +35,8 @@ URLS_AMBIENTE_AGHU = {
     AMBIENTE_PRODUCAO: AGHU_URL,
     AMBIENTE_HOMOLOGACAO: AGHU_URL_HOMOLOGACAO,
 }
+MAX_USUARIOS_UNITARIOS = 5
+COLUNAS_ACESSOS_UNITARIOS = 3
 
 
 def obter_url_ambiente_aghu(ambiente: str) -> str:
@@ -58,9 +61,6 @@ class AghuProfissionaisUnidadeCirurgicaApp(ctk.CTk):
     def __init__(self):
         super().__init__()
 
-        unidade_inicial = UNIDADES_FUNCIONAIS[0]
-        funcao_inicial = FUNCOES_PROFISSIONAL[0]
-
         self.title("AGHUX Bot - Profissionais da Unidade Cirúrgica")
         self.geometry("900x720")
         self.minsize(760, 620)
@@ -72,8 +72,9 @@ class AghuProfissionaisUnidadeCirurgicaApp(ctk.CTk):
         self.var_tipo_execucao = tk.StringVar(value=TIPO_INDIVIDUAL)
         self.var_browser = tk.BooleanVar(value=True)
         self.var_console = tk.BooleanVar(value=True)
-        self.var_unidade_funcional = tk.StringVar(value=unidade_inicial)
-        self.var_funcao = tk.StringVar(value=funcao_inicial)
+        self.vars_unidades_funcionais = {}
+        self.checkboxes_unidades_funcionais = []
+        self.linhas_profissionais_individual = []
         self.em_execucao = False
 
         self.label_title = ctk.CTkLabel(
@@ -299,49 +300,262 @@ class AghuProfissionaisUnidadeCirurgicaApp(ctk.CTk):
         )
 
     def _criar_campos_individual(self) -> None:
-        self.entry_profissional = self._criar_linha_entry(
-            self.frame_individual,
+        self.frame_individual.grid_columnconfigure(0, weight=1)
+        self._criar_secao_acessos_individual()
+        self._criar_secao_usuarios_individual()
+
+    def _criar_secao_acessos_individual(self) -> None:
+        self.frame_acessos_individual = ctk.CTkFrame(self.frame_individual)
+        self.frame_acessos_individual.grid(
             row=1,
-            label="Profissional:",
-            placeholder="Nome do profissional no AGHUX",
+            column=0,
+            columnspan=3,
+            padx=14,
+            pady=(0, 10),
+            sticky="ew",
         )
 
-        self.label_unidade = ctk.CTkLabel(
-            self.frame_individual,
-            text="Unidade Funcional:",
-        )
-        self.label_unidade.grid(row=2, column=0, padx=14, pady=8, sticky="e")
+        for coluna in range(COLUNAS_ACESSOS_UNITARIOS):
+            self.frame_acessos_individual.grid_columnconfigure(coluna, weight=1)
 
-        self.option_unidade_funcional = ctk.CTkOptionMenu(
-            self.frame_individual,
-            values=list(UNIDADES_FUNCIONAIS),
-            variable=self.var_unidade_funcional,
+        self.label_acessos_individual = ctk.CTkLabel(
+            self.frame_acessos_individual,
+            text="ACESSOS (serão aplicados a todos os usuários abaixo)",
+            font=ctk.CTkFont(size=13, weight="bold"),
         )
-        self.option_unidade_funcional.grid(
+        self.label_acessos_individual.grid(
+            row=0,
+            column=0,
+            columnspan=COLUNAS_ACESSOS_UNITARIOS,
+            padx=12,
+            pady=(12, 6),
+            sticky="w",
+        )
+
+        self.vars_unidades_funcionais = {}
+        self.checkboxes_unidades_funcionais = []
+
+        for indice, unidade in enumerate(UNIDADES_FUNCIONAIS):
+            variavel = tk.BooleanVar(value=indice == 0)
+            checkbox = ctk.CTkCheckBox(
+                self.frame_acessos_individual,
+                text=unidade,
+                variable=variavel,
+            )
+            checkbox.grid(
+                row=1 + indice // COLUNAS_ACESSOS_UNITARIOS,
+                column=indice % COLUNAS_ACESSOS_UNITARIOS,
+                padx=12,
+                pady=4,
+                sticky="w",
+            )
+            self.vars_unidades_funcionais[unidade] = variavel
+            self.checkboxes_unidades_funcionais.append(checkbox)
+
+        linha_aviso = (
+            1
+            + ((len(UNIDADES_FUNCIONAIS) - 1) // COLUNAS_ACESSOS_UNITARIOS)
+            + 1
+        )
+        self.label_aviso_acessos_individual = ctk.CTkLabel(
+            self.frame_acessos_individual,
+            text="As seleções acima serão aplicadas a todos os usuários abaixo.",
+            text_color="gray",
+            font=ctk.CTkFont(size=12),
+        )
+        self.label_aviso_acessos_individual.grid(
+            row=linha_aviso,
+            column=0,
+            columnspan=COLUNAS_ACESSOS_UNITARIOS,
+            padx=12,
+            pady=(6, 12),
+            sticky="w",
+        )
+
+    def _criar_secao_usuarios_individual(self) -> None:
+        self.frame_usuarios_individual = ctk.CTkFrame(self.frame_individual)
+        self.frame_usuarios_individual.grid(
             row=2,
-            column=1,
-            columnspan=2,
+            column=0,
+            columnspan=3,
             padx=14,
-            pady=8,
+            pady=(0, 14),
             sticky="ew",
         )
+        self.frame_usuarios_individual.grid_columnconfigure(0, weight=1)
 
-        self.label_funcao = ctk.CTkLabel(self.frame_individual, text="Função:")
-        self.label_funcao.grid(row=3, column=0, padx=14, pady=8, sticky="e")
-
-        self.option_funcao = ctk.CTkOptionMenu(
-            self.frame_individual,
-            values=list(FUNCOES_PROFISSIONAL),
-            variable=self.var_funcao,
+        self.label_usuarios_individual = ctk.CTkLabel(
+            self.frame_usuarios_individual,
+            text="USUÁRIOS (até 5)",
+            font=ctk.CTkFont(size=13, weight="bold"),
         )
-        self.option_funcao.grid(
+        self.label_usuarios_individual.grid(
+            row=0,
+            column=0,
+            padx=12,
+            pady=(12, 6),
+            sticky="w",
+        )
+
+        self.frame_cabecalho_profissionais = ctk.CTkFrame(
+            self.frame_usuarios_individual,
+            fg_color="transparent",
+        )
+        self.frame_cabecalho_profissionais.grid(row=1, column=0, padx=12, sticky="ew")
+        self.frame_cabecalho_profissionais.grid_columnconfigure(0, minsize=42)
+        self.frame_cabecalho_profissionais.grid_columnconfigure(1, weight=1)
+        self.frame_cabecalho_profissionais.grid_columnconfigure(2, minsize=42)
+
+        for coluna, texto in enumerate(("#", "Profissional")):
+            label = ctk.CTkLabel(
+                self.frame_cabecalho_profissionais,
+                text=texto,
+                text_color="gray",
+                font=ctk.CTkFont(size=12, weight="bold"),
+            )
+            label.grid(row=0, column=coluna, padx=(0, 8), pady=(0, 2), sticky="w")
+
+        self.frame_linhas_profissionais = ctk.CTkFrame(
+            self.frame_usuarios_individual,
+            fg_color="transparent",
+        )
+        self.frame_linhas_profissionais.grid(row=2, column=0, padx=12, sticky="ew")
+        self.frame_linhas_profissionais.grid_columnconfigure(0, weight=1)
+
+        self.frame_acoes_profissionais = ctk.CTkFrame(
+            self.frame_usuarios_individual,
+            fg_color="transparent",
+        )
+        self.frame_acoes_profissionais.grid(
             row=3,
-            column=1,
-            columnspan=2,
-            padx=14,
-            pady=(8, 14),
+            column=0,
+            padx=12,
+            pady=(8, 12),
             sticky="ew",
         )
+        self.frame_acoes_profissionais.grid_columnconfigure(1, weight=1)
+
+        self.button_adicionar_usuario = ctk.CTkButton(
+            self.frame_acoes_profissionais,
+            text="+ Adicionar usuário",
+            width=170,
+            height=32,
+            command=self._adicionar_linha_profissional,
+        )
+        self.button_adicionar_usuario.grid(row=0, column=0, sticky="w")
+
+        self.label_contador_usuarios = ctk.CTkLabel(
+            self.frame_acoes_profissionais,
+            text="",
+            text_color="gray",
+        )
+        self.label_contador_usuarios.grid(row=0, column=1, sticky="e")
+
+        self._adicionar_linha_profissional()
+
+    def _adicionar_linha_profissional(self) -> None:
+        if len(self.linhas_profissionais_individual) >= MAX_USUARIOS_UNITARIOS:
+            self._atualizar_estado_linhas_profissionais()
+            return
+
+        frame_linha = ctk.CTkFrame(
+            self.frame_linhas_profissionais,
+            fg_color="transparent",
+        )
+        frame_linha.grid(
+            row=len(self.linhas_profissionais_individual),
+            column=0,
+            pady=3,
+            sticky="ew",
+        )
+        frame_linha.grid_columnconfigure(0, minsize=42)
+        frame_linha.grid_columnconfigure(1, weight=1)
+        frame_linha.grid_columnconfigure(2, minsize=42)
+
+        linha = {"frame": frame_linha}
+
+        label_indice = ctk.CTkLabel(
+            frame_linha,
+            text=str(len(self.linhas_profissionais_individual) + 1),
+            text_color="gray",
+            width=30,
+        )
+        label_indice.grid(row=0, column=0, padx=(0, 8), sticky="w")
+
+        entry_profissional = ctk.CTkEntry(
+            frame_linha,
+            placeholder_text="Nome do profissional no AGHUX",
+            height=32,
+        )
+        entry_profissional.grid(row=0, column=1, padx=(0, 8), sticky="ew")
+
+        button_remover = ctk.CTkButton(
+            frame_linha,
+            text="\U0001F5D1",
+            width=36,
+            height=32,
+            fg_color=("#E5E7EB", "#2B2B2B"),
+            hover_color=("#D1D5DB", "#3A3A3A"),
+            text_color=("#991B1B", "#FCA5A5"),
+            command=lambda linha=linha: self._remover_linha_profissional(linha),
+        )
+        button_remover.grid(row=0, column=2, sticky="e")
+
+        linha.update(
+            {
+                "indice": label_indice,
+                "profissional": entry_profissional,
+                "remover": button_remover,
+            }
+        )
+        self.linhas_profissionais_individual.append(linha)
+        self._atualizar_estado_linhas_profissionais()
+
+        if len(self.linhas_profissionais_individual) > 1:
+            entry_profissional.focus()
+
+    def _remover_linha_profissional(self, linha_profissional) -> None:
+        if len(self.linhas_profissionais_individual) <= 1:
+            self._atualizar_estado_linhas_profissionais()
+            return
+
+        if linha_profissional not in self.linhas_profissionais_individual:
+            return
+
+        linha_profissional["frame"].destroy()
+        self.linhas_profissionais_individual.remove(linha_profissional)
+
+        for indice, linha in enumerate(self.linhas_profissionais_individual):
+            linha["frame"].grid_configure(row=indice)
+
+        self._atualizar_estado_linhas_profissionais()
+
+    def _atualizar_estado_linhas_profissionais(self) -> None:
+        limite_atingido = (
+            len(self.linhas_profissionais_individual) >= MAX_USUARIOS_UNITARIOS
+        )
+        estado_campos = "disabled" if self.em_execucao else "normal"
+        estado_adicionar = (
+            "disabled" if self.em_execucao or limite_atingido else "normal"
+        )
+        estado_remover = (
+            "normal"
+            if not self.em_execucao and len(self.linhas_profissionais_individual) > 1
+            else "disabled"
+        )
+
+        self.button_adicionar_usuario.configure(state=estado_adicionar)
+        self.label_contador_usuarios.configure(
+            text=(
+                f"{len(self.linhas_profissionais_individual)} / "
+                f"{MAX_USUARIOS_UNITARIOS} usuários"
+            )
+        )
+
+        for indice, linha in enumerate(self.linhas_profissionais_individual, start=1):
+            linha["indice"].configure(text=str(indice))
+            linha["profissional"].configure(state=estado_campos)
+            linha["remover"].configure(state=estado_remover)
 
     def _criar_campos_lote(self) -> None:
         self.label_planilha_lote = ctk.CTkLabel(
@@ -477,35 +691,84 @@ class AghuProfissionaisUnidadeCirurgicaApp(ctk.CTk):
 
         return usuario_rede, senha, url_aghu
 
+    def _unidades_funcionais_selecionadas(self) -> list[str]:
+        return [
+            unidade
+            for unidade, variavel in self.vars_unidades_funcionais.items()
+            if variavel.get()
+        ]
+
+    def _profissionais_unitarios(self) -> list[str]:
+        profissionais = [
+            linha["profissional"].get().strip()
+            for linha in self.linhas_profissionais_individual
+            if linha["profissional"].get().strip()
+        ]
+
+        if not profissionais:
+            raise ValueError("Informe ao menos um profissional.")
+
+        return profissionais
+
+    def _cadastros_individuais(self) -> list[CadastroProfissionalUnidadeEntrada]:
+        profissionais = self._profissionais_unitarios()
+        unidades_funcionais = self._unidades_funcionais_selecionadas()
+
+        if not unidades_funcionais:
+            raise ValueError("Selecione ao menos uma Unidade Funcional.")
+
+        cadastros = [
+            CadastroProfissionalUnidadeEntrada(
+                profissional=profissional,
+                unidade_funcional=unidade_funcional,
+                funcao=FUNCAO_MEDICO_RESIDENTE,
+            )
+            for profissional in profissionais
+            for unidade_funcional in unidades_funcionais
+        ]
+
+        for cadastro in cadastros:
+            erros = validar_entrada(cadastro)
+            if erros:
+                raise ValueError("; ".join(erros))
+
+        return cadastros
+
     def _cadastro_individual(self) -> CadastroProfissionalUnidadeEntrada:
-        return CadastroProfissionalUnidadeEntrada(
-            profissional=self.entry_profissional.get().strip(),
-            unidade_funcional=self.var_unidade_funcional.get(),
-            funcao=self.var_funcao.get(),
-        )
+        return self._cadastros_individuais()[0]
 
     def _bloquear_execucao(self, texto_botao: str) -> None:
         self.em_execucao = True
         self.button_executar.configure(state="disabled", text=texto_botao)
         self.segment_tipo_execucao.configure(state="disabled")
+        self.entry_usuario_rede.configure(state="disabled")
+        self.entry_senha.configure(state="disabled")
+        self.option_ambiente.configure(state="disabled")
         self.checkbox_browser.configure(state="disabled")
         self.checkbox_console.configure(state="disabled")
-        self.option_ambiente.configure(state="disabled")
-        self.option_unidade_funcional.configure(state="disabled")
-        self.option_funcao.configure(state="disabled")
+        for checkbox in self.checkboxes_unidades_funcionais:
+            checkbox.configure(state="disabled")
+        self._atualizar_estado_linhas_profissionais()
+        self.entry_planilha_lote.configure(state="disabled")
         self.button_planilha_lote.configure(state="disabled")
+        self.entry_relatorio_lote.configure(state="disabled")
         self.button_relatorio_lote.configure(state="disabled")
 
     def _liberar_execucao(self) -> None:
         self.em_execucao = False
         self.button_executar.configure(state="normal", text="Executar cadastro")
         self.segment_tipo_execucao.configure(state="normal")
+        self.entry_usuario_rede.configure(state="normal")
+        self.entry_senha.configure(state="normal")
+        self.option_ambiente.configure(state="normal")
         self.checkbox_browser.configure(state="normal")
         self.checkbox_console.configure(state="normal")
-        self.option_ambiente.configure(state="normal")
-        self.option_unidade_funcional.configure(state="normal")
-        self.option_funcao.configure(state="normal")
+        for checkbox in self.checkboxes_unidades_funcionais:
+            checkbox.configure(state="normal")
+        self._atualizar_estado_linhas_profissionais()
+        self.entry_planilha_lote.configure(state="normal")
         self.button_planilha_lote.configure(state="normal")
+        self.entry_relatorio_lote.configure(state="normal")
         self.button_relatorio_lote.configure(state="normal")
 
     def iniciar_execucao_individual(self) -> None:
@@ -514,18 +777,17 @@ class AghuProfissionaisUnidadeCirurgicaApp(ctk.CTk):
 
         try:
             usuario_rede, senha, url_aghu = self._credenciais_e_url()
-            cadastro = self._cadastro_individual()
-            erros = validar_entrada(cadastro)
-            if erros:
-                raise ValueError("; ".join(erros))
-
+            cadastros = self._cadastros_individuais()
             mostrar_browser = bool(self.var_browser.get())
             mostrar_console = bool(self.var_console.get())
         except Exception as exc:
             self._mostrar_status(f"Erro: {exc}", "red")
             return
 
-        self._mostrar_status("Executando cadastro de profissional...", "blue")
+        self._mostrar_status(
+            "Executando cadastro unitário de profissionais...",
+            "blue",
+        )
         self._bloquear_execucao("Executando...")
 
         thread = threading.Thread(
@@ -533,7 +795,7 @@ class AghuProfissionaisUnidadeCirurgicaApp(ctk.CTk):
             args=(
                 usuario_rede,
                 senha,
-                cadastro,
+                cadastros,
                 url_aghu,
                 mostrar_browser,
                 mostrar_console,
@@ -546,40 +808,61 @@ class AghuProfissionaisUnidadeCirurgicaApp(ctk.CTk):
         self,
         usuario_rede: str,
         senha: str,
-        cadastro: CadastroProfissionalUnidadeEntrada,
+        cadastros: list[CadastroProfissionalUnidadeEntrada],
         url_aghu: str,
         mostrar_browser: bool,
         mostrar_console: bool,
     ) -> None:
         try:
-            resultado = executar_cadastro_individual(
-                usuario_rede=usuario_rede,
-                senha=senha,
-                cadastro=cadastro,
-                url_aghu=url_aghu,
-                mostrar_browser=mostrar_browser,
-                mostrar_console=mostrar_console,
-                diretorio_logs=LOGS_DIR,
+            resultados = self._executar_com_playwright(
+                mostrar_browser,
+                lambda context, page: executar_cadastros_profissionais(
+                    cadastros=cadastros,
+                    usuario_rede=usuario_rede,
+                    senha=senha,
+                    context=context,
+                    page=page,
+                    url_aghu=url_aghu,
+                    mostrar_console=mostrar_console,
+                    diretorio_logs=LOGS_DIR,
+                ),
             )
-            mensagem = (
-                f"{resultado.profissional}: {resultado.status} - "
-                f"{resultado.detalhes}"
+            mensagem = self._resumir_resultados(
+                resultados,
+                prefixo="Execução unitária concluída",
+                rotulo_total="Total processado",
             )
-            if resultado.status == STATUS_FUNCIONARIO_NAO_ENCONTRADO:
-                mensagem = "Execução Encerrada : Funcionário não encontrado"
             cor = (
                 "red"
-                if resultado.status in {
-                    STATUS_ERRO,
-                    STATUS_CONFERIR_MANUAL,
-                    STATUS_IGNORADO,
-                    STATUS_FUNCIONARIO_NAO_ENCONTRADO,
-                }
+                if any(
+                    resultado.status
+                    in {
+                        STATUS_ERRO,
+                        STATUS_CONFERIR_MANUAL,
+                        STATUS_IGNORADO,
+                        STATUS_FUNCIONARIO_NAO_ENCONTRADO,
+                    }
+                    for resultado in resultados
+                )
                 else "green"
             )
             self.after(0, self._finalizar_execucao, mensagem, cor)
         except Exception as exc:
             self.after(0, self._finalizar_execucao, f"Erro: {exc}", "red")
+
+    def _executar_com_playwright(self, mostrar_browser: bool, acao):
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(
+                headless=not mostrar_browser,
+                slow_mo=500,
+            )
+            context = browser.new_context(ignore_https_errors=True)
+            page = context.new_page()
+
+            try:
+                return acao(context, page)
+            finally:
+                browser.close()
 
     def iniciar_execucao_lote(self) -> None:
         if self.em_execucao:
@@ -637,39 +920,47 @@ class AghuProfissionaisUnidadeCirurgicaApp(ctk.CTk):
         mostrar_console: bool,
     ) -> None:
         try:
-            resultados, relatorio = executar_cadastro_lote(
-                usuario_rede=usuario_rede,
-                senha=senha,
-                caminho_planilha=caminho_planilha,
-                caminho_relatorio=caminho_relatorio,
-                url_aghu=url_aghu,
-                mostrar_browser=mostrar_browser,
-                mostrar_console=mostrar_console,
-                diretorio_logs=LOGS_DIR,
+            resultados, relatorio = self._executar_com_playwright(
+                mostrar_browser,
+                lambda context, page: executar_cadastro_lote(
+                    usuario_rede=usuario_rede,
+                    senha=senha,
+                    caminho_planilha=caminho_planilha,
+                    caminho_relatorio=caminho_relatorio,
+                    context=context,
+                    page=page,
+                    url_aghu=url_aghu,
+                    mostrar_console=mostrar_console,
+                    diretorio_logs=LOGS_DIR,
+                ),
             )
             resumo = self._resumir_resultados(resultados)
             mensagem = f"{resumo} Relatório: {relatorio}"
-            cor = (
-                "red"
-                if any(
-                    resultado.status in {
-                        STATUS_ERRO,
-                        STATUS_CONFERIR_MANUAL,
-                    }
-                    for resultado in resultados
-                )
-                else "green"
-            )
+            status_resultados = {resultado.status for resultado in resultados}
+            if status_resultados & {STATUS_ERRO, STATUS_CONFERIR_MANUAL}:
+                cor = "red"
+            elif status_resultados & {
+                STATUS_FUNCIONARIO_NAO_ENCONTRADO,
+                STATUS_IGNORADO,
+            }:
+                cor = "yellow"
+            else:
+                cor = "green"
             self.after(0, self._finalizar_execucao, mensagem, cor)
         except Exception as exc:
             self.after(0, self._finalizar_execucao, f"Erro: {exc}", "red")
 
-    def _resumir_resultados(self, resultados) -> str:
+    def _resumir_resultados(
+        self,
+        resultados,
+        prefixo: str = "Lote concluído",
+        rotulo_total: str = "Total",
+    ) -> str:
         contagem = Counter(resultado.status for resultado in resultados)
         total = len(resultados)
 
         return (
-            f"Lote concluído. Total: {total}. "
+            f"{prefixo}. {rotulo_total}: {total}. "
             f"Criados: {contagem[STATUS_CRIADO]}. "
             f"Mantidos: {contagem[STATUS_MANTIDO]}. "
             f"Funcionários não encontrados: "

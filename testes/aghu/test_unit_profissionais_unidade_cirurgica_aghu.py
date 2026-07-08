@@ -76,6 +76,14 @@ class FakeLinhas:
         return self.linhas[indice]
 
 
+class FakePage:
+    def __init__(self):
+        self.urls = []
+
+    def goto(self, url):
+        self.urls.append(url)
+
+
 class FakeFlow(aghu.ProfissionalUnidadeCirurgicaFlow):
     def __init__(
         self,
@@ -206,11 +214,13 @@ def test_salvar_relatorio_resultados_cria_xlsx(tmp_path: Path):
     assert retorno.suffix == ".xlsx"
 
 
-def test_executar_cadastros_invalidos_nao_abre_playwright(monkeypatch):
-    def falhar_sync_playwright():
-        raise AssertionError("Playwright nao deveria ser iniciado")
-
-    monkeypatch.setattr(aghu, "sync_playwright", falhar_sync_playwright)
+def test_executar_cadastros_invalidos_nao_navega(monkeypatch):
+    page = FakePage()
+    monkeypatch.setattr(
+        aghu,
+        "processar_cadastros",
+        lambda *args, **kwargs: pytest.fail("Nao deveria processar cadastros"),
+    )
 
     resultados = aghu.executar_cadastros_profissionais(
         cadastros=[
@@ -222,12 +232,67 @@ def test_executar_cadastros_invalidos_nao_abre_playwright(monkeypatch):
         ],
         usuario_rede="usuario",
         senha="senha",
+        context=object(),
+        page=page,
         gerar_csv_log=False,
     )
 
     assert len(resultados) == 1
     assert resultados[0].status == STATUS_IGNORADO
     assert "Linha ignorada:" in resultados[0].detalhes
+    assert page.urls == []
+
+
+def test_executar_cadastros_usa_contexto_e_page_do_chamador(monkeypatch):
+    page = FakePage()
+    context = object()
+    cadastro = cadastro_valido(profissional="Ana")
+    resultado = ResultadoCadastroProfissional(
+        profissional="Ana",
+        unidade_funcional=cadastro.unidade_funcional,
+        funcao=cadastro.funcao,
+        status=STATUS_CRIADO,
+        detalhes="OK",
+    )
+    chamadas = {}
+
+    def fazer_login_fake(page, usuario_rede, senha, *, url_aghu):
+        chamadas["login"] = (page, usuario_rede, senha, url_aghu)
+
+    def navegar_fake(**kwargs):
+        chamadas["navegar"] = kwargs
+        return kwargs["page_atual"], "janela"
+
+    def processar_fake(**kwargs):
+        chamadas["processar"] = kwargs
+        return [resultado]
+
+    monkeypatch.setattr(aghu, "fazer_login", fazer_login_fake)
+    monkeypatch.setattr(
+        aghu,
+        "navegar_ate_cadastro_profissional_unidade",
+        navegar_fake,
+    )
+    monkeypatch.setattr(aghu, "processar_cadastros", processar_fake)
+
+    resultados = aghu.executar_cadastros_profissionais(
+        cadastros=[cadastro],
+        usuario_rede="usuario",
+        senha="senha",
+        context=context,
+        page=page,
+        url_aghu="url",
+        gerar_csv_log=False,
+    )
+
+    assert resultados == [resultado]
+    assert page.urls == ["url"]
+    assert chamadas["login"] == (page, "usuario", "senha", "url")
+    assert chamadas["navegar"]["context"] is context
+    assert chamadas["navegar"]["page_atual"] is page
+    assert chamadas["processar"]["context"] is context
+    assert chamadas["processar"]["page_inicial"] is page
+    assert chamadas["processar"]["janela_sistema_inicial"] == "janela"
 
 
 def test_estado_vinculo_identifica_vinculo_ativo_com_normalizacao():
