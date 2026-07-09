@@ -225,9 +225,12 @@ def esconder_console_windows() -> None:
     if os.name != "nt":
         return
 
-    hwnd = ctypes.windll.kernel32.GetConsoleWindow()
-    if hwnd:
-        ctypes.windll.user32.ShowWindow(hwnd, 0)
+    try:
+        hwnd = ctypes.windll.kernel32.GetConsoleWindow()
+        if hwnd:
+            ctypes.windll.user32.ShowWindow(hwnd, 0)
+    except Exception:
+        pass
 
 
 @contextmanager
@@ -587,11 +590,7 @@ def linha_vazia_visivel(linhas: Locator) -> bool:
 
 
 def preencher_input(locator: Locator, valor: str, timeout_ms: int = 5000) -> None:
-    locator.wait_for(state="visible", timeout=timeout_ms)
-    locator.click(timeout=timeout_ms)
-    locator.fill("", timeout=timeout_ms)
-    if valor:
-        locator.fill(valor, timeout=timeout_ms)
+    locator.fill(valor, timeout=timeout_ms)
 
 
 def selecionar_autocomplete(
