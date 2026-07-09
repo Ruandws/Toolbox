@@ -5,6 +5,7 @@ import pytest
 
 import ui_criar_usuario_aghu as ui
 from criar_usuario_aghu import (
+    STATUS_CONFERIR_MANUALMENTE,
     STATUS_ERRO,
     STATUS_IGNORADO,
     STATUS_IMPORTADO,
@@ -625,6 +626,25 @@ def test_iniciar_execucao_individual_mostra_erro_sem_credenciais(app_fake):
     assert app_fake.label_status.configuracoes["text_color"] == "red"
 
 
+def test_iniciar_execucao_individual_mostra_erro_com_campo_em_branco(
+    app_fake,
+    monkeypatch,
+):
+    FakeThread.criadas = []
+    monkeypatch.setattr(ui.threading, "Thread", FakeThread)
+    app_fake.entry_usuario_rede.valor = "usuario"
+    app_fake.entry_senha.valor = "senha"
+    app_fake.linhas_usuarios_individual = [
+        linha_usuario_fake("login1", "", "email1@x.com"),
+    ]
+
+    ui.AghuImportUserApp.iniciar_execucao_individual(app_fake)
+
+    assert FakeThread.criadas == []
+    assert app_fake.label_status.configuracoes["text"].startswith("Erro:")
+    assert app_fake.label_status.configuracoes["text_color"] == "red"
+
+
 def test_iniciar_execucao_individual_inicia_thread_com_dados_da_tela(
     app_fake,
     monkeypatch,
@@ -685,6 +705,20 @@ def test_iniciar_execucao_lote_valida_extensao_xlsx(app_fake):
     )
 
 
+def test_iniciar_execucao_lote_valida_extensao_xlsx_do_relatorio(app_fake):
+    app_fake.entry_usuario_rede.valor = "usuario"
+    app_fake.entry_senha.valor = "senha"
+    app_fake.entry_planilha_lote.valor = "usuarios.xlsx"
+    app_fake.entry_relatorio_lote.valor = "relatorio.txt"
+
+    ui.AghuImportUserApp.iniciar_execucao_lote(app_fake)
+
+    assert app_fake.label_status.configuracoes["text"] == (
+        "Erro: O relatório de saída deve ser um arquivo .xlsx."
+    )
+    assert app_fake.label_status.configuracoes["text_color"] == "red"
+
+
 def test_iniciar_execucao_lote_gera_relatorio_padrao_e_inicia_thread(
     app_fake,
     monkeypatch,
@@ -722,19 +756,57 @@ def test_resumir_resultados_conta_status_conhecidos(app_fake):
         ResultadoImportacao("b", "B", "b@x.com", STATUS_JA_IMPORTADO, "ok"),
         ResultadoImportacao("c", "C", "c@x.com", STATUS_NAO_ENCONTRADO, "ok"),
         ResultadoImportacao("d", "D", "d@x.com", STATUS_IGNORADO, "ok"),
-        ResultadoImportacao("e", "E", "e@x.com", STATUS_ERRO, "ok"),
+        ResultadoImportacao("e", "E", "e@x.com", STATUS_CONFERIR_MANUALMENTE, "ok"),
+        ResultadoImportacao("f", "F", "f@x.com", STATUS_ERRO, "ok"),
     ]
 
     resumo = ui.AghuImportUserApp._resumir_resultados(app_fake, resultados)
 
     assert resumo == (
-        "Lote concluído. Total: 5. "
+        "Lote concluído. Total: 6. "
         "Importados: 1. "
         "Já importados: 1. "
         "Não encontrados: 1. "
         "Ignorados: 1. "
+        "Conferir manualmente: 1. "
         "Erros: 1."
     )
+
+
+class TestCorResultado:
+    def test_verde_quando_tudo_importado(self, app_fake):
+        resultados = [
+            ResultadoImportacao("a", "A", "a@x.com", STATUS_IMPORTADO, "ok"),
+            ResultadoImportacao("b", "B", "b@x.com", STATUS_JA_IMPORTADO, "ok"),
+        ]
+
+        assert ui.AghuImportUserApp._cor_resultado(app_fake, resultados) == "green"
+
+    def test_laranja_quando_ha_ignorado_sem_erro(self, app_fake):
+        resultados = [
+            ResultadoImportacao("a", "A", "a@x.com", STATUS_IMPORTADO, "ok"),
+            ResultadoImportacao("b", "B", "b@x.com", STATUS_IGNORADO, "faltou campo"),
+        ]
+
+        assert ui.AghuImportUserApp._cor_resultado(app_fake, resultados) == "orange"
+
+    def test_laranja_quando_ha_conferir_manualmente_sem_erro(self, app_fake):
+        resultados = [
+            ResultadoImportacao(
+                "a", "A", "a@x.com", STATUS_CONFERIR_MANUALMENTE, "indefinido"
+            ),
+        ]
+
+        assert ui.AghuImportUserApp._cor_resultado(app_fake, resultados) == "orange"
+
+    def test_vermelho_quando_ha_erro(self, app_fake):
+        resultados = [
+            ResultadoImportacao("a", "A", "a@x.com", STATUS_IMPORTADO, "ok"),
+            ResultadoImportacao("b", "B", "b@x.com", STATUS_IGNORADO, "faltou campo"),
+            ResultadoImportacao("c", "C", "c@x.com", STATUS_ERRO, "falha tecnica"),
+        ]
+
+        assert ui.AghuImportUserApp._cor_resultado(app_fake, resultados) == "red"
 
 
 def test_executar_individual_thread_agenda_finalizacao_em_sucesso(
@@ -818,8 +890,9 @@ def test_executar_individual_thread_resume_multiplos_resultados(
         "Já importados: 0. "
         "Não encontrados: 0. "
         "Ignorados: 0. "
+        "Conferir manualmente: 0. "
         "Erros: 1.",
-        "green",
+        "red",
     )
 
 
@@ -887,6 +960,7 @@ def test_executar_lote_thread_agenda_finalizacao_com_resumo(app_fake, monkeypatc
         "Já importados: 0. "
         "Não encontrados: 0. "
         "Ignorados: 0. "
+        "Conferir manualmente: 0. "
         "Erros: 0. Relatório: relatorio.xlsx",
         "green",
     )

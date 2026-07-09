@@ -8,6 +8,7 @@ from tkinter import filedialog, messagebox
 import customtkinter as ctk
 
 from criar_usuario_aghu import (
+    STATUS_CONFERIR_MANUALMENTE,
     STATUS_ERRO,
     STATUS_IGNORADO,
     STATUS_IMPORTADO,
@@ -675,6 +676,17 @@ class AghuImportUserApp(ctk.CTk):
         self.button_relatorio_lote.configure(state="normal")
         self._atualizar_estado_lista_usuarios()
         
+    def _usuarios_individuais_incompletos(
+        self,
+        usuarios: list[UsuarioImportacao],
+    ) -> bool:
+        return any(
+            not usuario.login.strip()
+            or not usuario.nome_completo.strip()
+            or not usuario.email.strip()
+            for usuario in usuarios
+        )
+
     def iniciar_execucao_individual(self) -> None:
         if self.em_execucao:
             return
@@ -684,6 +696,11 @@ class AghuImportUserApp(ctk.CTk):
             usuarios = self.coletar_usuarios_individuais()
             mostrar_browser = bool(self.var_browser.get())
             mostrar_console = bool(self.var_console.get())
+
+            if self._usuarios_individuais_incompletos(usuarios):
+                raise ValueError(
+                    "Preencha login, nome completo e e-mail de todos os usuários."
+                )
         except Exception as exc:
             self._mostrar_status(f"Erro: {exc}", "red")
             return
@@ -734,7 +751,7 @@ class AghuImportUserApp(ctk.CTk):
                     resultados,
                     prefixo="Execução unitária concluída",
                 )
-            self.after(0, self._finalizar_execucao, mensagem, "green")
+            self.after(0, self._finalizar_execucao, mensagem, self._cor_resultado(resultados))
         except Exception as exc:
             self.after(0, self._finalizar_execucao, f"Erro: {exc}", "red")
 
@@ -758,6 +775,9 @@ class AghuImportUserApp(ctk.CTk):
 
             if Path(caminho_planilha).suffix.lower() != ".xlsx":
                 raise ValueError("A planilha de lote deve ser um arquivo .xlsx.")
+
+            if Path(caminho_relatorio).suffix.lower() != ".xlsx":
+                raise ValueError("O relatório de saída deve ser um arquivo .xlsx.")
         except Exception as exc:
             self._mostrar_status(f"Erro: {exc}", "red")
             return
@@ -803,7 +823,7 @@ class AghuImportUserApp(ctk.CTk):
             )
             resumo = self._resumir_resultados(resultados)
             mensagem = f"{resumo} Relatório: {relatorio}"
-            self.after(0, self._finalizar_execucao, mensagem, "green")
+            self.after(0, self._finalizar_execucao, mensagem, self._cor_resultado(resultados))
         except Exception as exc:
             self.after(0, self._finalizar_execucao, f"Erro: {exc}", "red")
 
@@ -821,8 +841,20 @@ class AghuImportUserApp(ctk.CTk):
             f"Já importados: {contagem[STATUS_JA_IMPORTADO]}. "
             f"Não encontrados: {contagem[STATUS_NAO_ENCONTRADO]}. "
             f"Ignorados: {contagem[STATUS_IGNORADO]}. "
+            f"Conferir manualmente: {contagem[STATUS_CONFERIR_MANUALMENTE]}. "
             f"Erros: {contagem[STATUS_ERRO]}."
         )
+
+    def _cor_resultado(self, resultados) -> str:
+        contagem = Counter(resultado.status for resultado in resultados)
+
+        if contagem[STATUS_ERRO]:
+            return "red"
+
+        if contagem[STATUS_IGNORADO] or contagem[STATUS_CONFERIR_MANUALMENTE]:
+            return "orange"
+
+        return "green"
 
     def _finalizar_execucao(self, mensagem: str, cor: str) -> None:
         self._mostrar_status(mensagem, cor)
