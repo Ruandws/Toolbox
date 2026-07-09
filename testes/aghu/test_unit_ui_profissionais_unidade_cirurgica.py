@@ -547,11 +547,30 @@ def test_executar_com_playwright_cria_contexto_e_fecha_browser(app_fake, monkeyp
 
     assert fake_playwright.chromium.launch_kwargs == {
         "headless": True,
-        "slow_mo": 500,
+        "slow_mo": 0,
     }
     assert contexto.kwargs == {"ignore_https_errors": True}
     assert retorno == (contexto, contexto.pages[0])
     assert browser.fechado is True
+
+
+def test_executar_com_playwright_usa_slow_mo_com_navegador_visivel(
+    app_fake,
+    monkeypatch,
+):
+    fake_playwright = FakeSyncPlaywright()
+    monkeypatch.setattr(ui, "sync_playwright", lambda: fake_playwright)
+
+    ui.AghuProfissionaisUnidadeCirurgicaApp._executar_com_playwright(
+        app_fake,
+        True,
+        lambda context, page: (context, page),
+    )
+
+    assert fake_playwright.chromium.launch_kwargs == {
+        "headless": False,
+        "slow_mo": 500,
+    }
 
 
 def test_resumir_resultados_conta_status_conhecidos(app_fake):
