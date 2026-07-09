@@ -72,6 +72,8 @@ ALIASES_COLUNAS_PLANILHA = {
         "User",
         "Usuário/Login",
         "Usuario/Login",
+        "Usuário alvo",
+        "Usuario alvo",
     ),
     "protocolo": (
         "Protocolo",
