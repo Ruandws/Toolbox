@@ -59,6 +59,7 @@ STATUS_JA_IMPORTADO = "ja_importado"
 STATUS_NAO_ENCONTRADO = "nao_encontrado"
 STATUS_ERRO = "erro"
 STATUS_IGNORADO = "ignorado"
+STATUS_CONFERIR_MANUALMENTE = "conferir_manualmente"
 
 StatusImportacao = Literal[
     "importado",
@@ -66,6 +67,7 @@ StatusImportacao = Literal[
     "nao_encontrado",
     "erro",
     "ignorado",
+    "conferir_manualmente",
 ]
 
 SELECTOR_PESQUISA_LOGIN = '[id="nomeOuLogin:nomeOuLogin:inputId"]'
@@ -91,9 +93,12 @@ def esconder_console_windows() -> None:
     if os.name != "nt":
         return
 
-    hwnd = ctypes.windll.kernel32.GetConsoleWindow()
-    if hwnd:
-        ctypes.windll.user32.ShowWindow(hwnd, 0)
+    try:
+        hwnd = ctypes.windll.kernel32.GetConsoleWindow()
+        if hwnd:
+            ctypes.windll.user32.ShowWindow(hwnd, 0)
+    except Exception:
+        pass
 
 
 @contextmanager
@@ -576,7 +581,6 @@ def _pesquisar_usuario_importado(
 ) -> tuple[str, Locator | None]:
     campo_login = _primeiro_visivel(janela_sistema, (SELECTOR_PESQUISA_LOGIN,))
     campo_login.click()
-    campo_login.fill("")
     campo_login.fill(login)
 
     _clicar_botao(janela_sistema, "Pesquisar")
@@ -594,7 +598,6 @@ def _pesquisar_usuario_identity(
 ) -> tuple[str, Locator | None]:
     campo_login = _primeiro_visivel(janela_sistema, (SELECTOR_IMPORTACAO_LOGIN,))
     campo_login.click()
-    campo_login.fill("")
     campo_login.fill(login)
 
     _clicar_botao(janela_sistema, "Pesquisar")
@@ -612,7 +615,7 @@ def _abrir_importacao_usuario(janela_sistema: FrameLocator) -> None:
 
 
 def _clicar_adicionar_identity(linha_identity: Locator) -> None:
-    candidatos = (
+    candidato = _primeiro_entre_locators(
         linha_identity.get_by_role("link", name=re.compile("Adicionar", re.I)).first,
         linha_identity.get_by_role("button", name=re.compile("Adicionar", re.I)).first,
         linha_identity.locator("a[title*='Adicionar' i]").first,
@@ -622,19 +625,14 @@ def _clicar_adicionar_identity(linha_identity: Locator) -> None:
         linha_identity.locator("a.ui-commandlink, button.ui-button").first,
     )
 
-    ultimo_erro: Exception | None = None
+    try:
+        candidato.wait_for(state="visible", timeout=5000)
+    except PlaywrightTimeoutError as exc:
+        raise PlaywrightTimeoutError(
+            "Botao/acao 'Adicionar' nao localizado na linha do Identity Manager."
+        ) from exc
 
-    for candidato in candidatos:
-        try:
-            candidato.wait_for(state="visible", timeout=2000)
-            candidato.click(timeout=5000)
-            return
-        except Exception as exc:
-            ultimo_erro = exc
-
-    raise PlaywrightTimeoutError(
-        "Botao/acao 'Adicionar' nao localizado na linha do Identity Manager."
-    ) from ultimo_erro
+    candidato.click(timeout=5000)
 
 
 def _marcar_usuario_ativo(janela_sistema: FrameLocator) -> None:
@@ -657,9 +655,7 @@ def _preencher_cadastro_usuario(
     campo_nome = _primeiro_visivel(janela_sistema, (SELECTOR_CADASTRO_NOME,))
     campo_email = _primeiro_visivel(janela_sistema, (SELECTOR_CADASTRO_EMAIL,))
 
-    campo_nome.fill("")
     campo_nome.fill(usuario.nome_completo)
-    campo_email.fill("")
     campo_email.fill(usuario.email)
     _marcar_usuario_ativo(janela_sistema)
 
@@ -978,7 +974,7 @@ def importar_usuario(
         print("Pesquisa inicial sem retorno conclusivo.")
         return _resultado(
             usuario,
-            STATUS_ERRO,
+            STATUS_CONFERIR_MANUALMENTE,
             "Pesquisa inicial nao retornou estado conclusivo.",
         )
 
@@ -993,7 +989,7 @@ def importar_usuario(
         print("Pesquisa no Identity Manager sem retorno conclusivo.")
         return _resultado(
             usuario,
-            STATUS_ERRO,
+            STATUS_CONFERIR_MANUALMENTE,
             "Pesquisa no Identity Manager nao retornou estado conclusivo.",
         )
 
@@ -1017,6 +1013,10 @@ def importar_usuario(
     if estado_gravacao == "duplicado":
         print("AGHUX informou usuario duplicado/ja importado.")
         return _resultado(usuario, STATUS_JA_IMPORTADO, mensagem)
+
+    if estado_gravacao == "indefinido":
+        print(f"Gravacao sem retorno conclusivo: {mensagem}")
+        return _resultado(usuario, STATUS_CONFERIR_MANUALMENTE, mensagem)
 
     print(f"Erro retornado pelo AGHUX: {mensagem}")
     return _resultado(usuario, STATUS_ERRO, mensagem)
@@ -1272,7 +1272,7 @@ def _executar_importacao_usuarios_com_saida_configurada(
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(
             headless=not mostrar_browser,
-            slow_mo=500,
+            slow_mo=500 if mostrar_browser else 0,
         )
         context = browser.new_context(ignore_https_errors=True)
         page = context.new_page()

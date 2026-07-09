@@ -5,7 +5,7 @@
 
 from criar_usuario_aghu import (
     COLUNAS_OBRIGATORIAS_PLANILHA,
-    STATUS_ERRO,
+    STATUS_CONFERIR_MANUALMENTE,
     UsuarioImportacao,
     _normalizar_login,
     _normalizar_texto,
@@ -342,7 +342,7 @@ class TestRegressaoConsultaLenta:
         assert linha is linha_encontrada
         assert 100 in linha_encontrada.timeouts
 
-    def test_identity_indefinido_retorna_erro_em_vez_de_nao_encontrado(
+    def test_identity_indefinido_retorna_conferir_manualmente_em_vez_de_nao_encontrado(
         self,
         monkeypatch,
     ):
@@ -366,7 +366,7 @@ class TestRegressaoConsultaLenta:
 
         resultado = aghu.importar_usuario(object(), usuario)
 
-        assert resultado.status == STATUS_ERRO
+        assert resultado.status == STATUS_CONFERIR_MANUALMENTE
         assert "Identity Manager nao retornou estado conclusivo" in resultado.detalhes
 
     def test_importar_usuario_abre_importacao_apos_pesquisa_sem_registros(
@@ -398,8 +398,64 @@ class TestRegressaoConsultaLenta:
         resultado = aghu.importar_usuario(object(), usuario)
 
         assert chamadas["abrir_importacao"] == 1
-        assert resultado.status == STATUS_ERRO
+        assert resultado.status == STATUS_CONFERIR_MANUALMENTE
         assert "Identity Manager nao retornou estado conclusivo" in resultado.detalhes
+
+    def test_pesquisa_inicial_indefinida_retorna_conferir_manualmente(
+        self,
+        monkeypatch,
+    ):
+        usuario = UsuarioImportacao(
+            login="joao.silva",
+            nome_completo="Joao Silva",
+            email="joao@email.com",
+        )
+
+        monkeypatch.setattr(
+            aghu,
+            "_pesquisar_usuario_importado",
+            lambda *_args, **_kwargs: ("indefinido", None),
+        )
+
+        resultado = aghu.importar_usuario(object(), usuario)
+
+        assert resultado.status == STATUS_CONFERIR_MANUALMENTE
+        assert "Pesquisa inicial nao retornou estado conclusivo" in resultado.detalhes
+
+    def test_gravacao_indefinida_retorna_conferir_manualmente(self, monkeypatch):
+        usuario = UsuarioImportacao(
+            login="joao.silva",
+            nome_completo="Joao Silva",
+            email="joao@email.com",
+        )
+
+        monkeypatch.setattr(
+            aghu,
+            "_pesquisar_usuario_importado",
+            lambda *_args, **_kwargs: ("nao_encontrado", None),
+        )
+        monkeypatch.setattr(aghu, "_abrir_importacao_usuario", lambda *_args: None)
+        monkeypatch.setattr(
+            aghu,
+            "_pesquisar_usuario_identity",
+            lambda *_args, **_kwargs: ("encontrado", object()),
+        )
+        monkeypatch.setattr(aghu, "_clicar_adicionar_identity", lambda *_args: None)
+        monkeypatch.setattr(
+            aghu,
+            "_preencher_cadastro_usuario",
+            lambda *_args, **_kwargs: None,
+        )
+        monkeypatch.setattr(
+            aghu,
+            "_gravar_cadastro_usuario",
+            lambda *_args: ("indefinido", "A gravacao nao retornou mensagem."),
+        )
+
+        resultado = aghu.importar_usuario(object(), usuario)
+
+        assert resultado.status == STATUS_CONFERIR_MANUALMENTE
+        assert resultado.detalhes == "A gravacao nao retornou mensagem."
 
     def test_gravacao_aguarda_carregamento_sumir_antes_de_ler_mensagem(
         self,
