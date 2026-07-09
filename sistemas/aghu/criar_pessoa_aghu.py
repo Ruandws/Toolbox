@@ -1273,7 +1273,10 @@ def _executar_cadastro_pessoas_com_saida_configurada(
         return resultados
 
     with sync_playwright() as playwright:
-        browser = playwright.chromium.launch(headless=not mostrar_browser, slow_mo=500)
+        browser = playwright.chromium.launch(
+            headless=not mostrar_browser,
+            slow_mo=500 if mostrar_browser else 0,
+        )
         context = browser.new_context(ignore_https_errors=True)
         page = context.new_page()
 
