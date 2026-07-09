@@ -64,7 +64,7 @@ def executar_automacao_aghu(
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(
             headless=not mostrar_browser,
-            slow_mo=500,
+            slow_mo=500 if mostrar_browser else 0,
         )
         context = browser.new_context(ignore_https_errors=True)
         page = context.new_page()
