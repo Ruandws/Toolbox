@@ -19,7 +19,7 @@ from concessor_aghu import (
     STATUS_USUARIO_NAO_ENCONTRADO,
     carregar_catalogo_regras,
     executar_concessao_lote,
-    executar_concessao_perfis,
+    executar_concessoes_perfis,
     validar_entrada,
 )
 
@@ -37,6 +37,7 @@ def obter_url_ambiente_aghu(ambiente: str) -> str:
 
 TIPO_INDIVIDUAL = "Unitaria"
 TIPO_LOTE = "Lote"
+MAX_USUARIOS_UNITARIOS = 5
 
 
 def caminho_relatorio_padrao(base: str = "") -> str:
@@ -64,7 +65,7 @@ class AghuConcessorPerfisApp(ctk.CTk):
         categoria_inicial = categorias[0] if categorias else ""
 
         self.title("AGHUX Bot - Concessão de Perfis")
-        self.geometry("900x760")
+        self.geometry("900x780")
         self.minsize(780, 640)
         self.resizable(True, True)
         self.grid_columnconfigure(0, weight=1)
@@ -76,6 +77,7 @@ class AghuConcessorPerfisApp(ctk.CTk):
         self.var_console = tk.BooleanVar(value=True)
         self.var_escopo = tk.StringVar(value=escopo_inicial)
         self.var_categoria = tk.StringVar(value=categoria_inicial)
+        self.linhas_usuarios_concessao = []
         self.em_execucao = False
 
         self.label_title = ctk.CTkLabel(
@@ -91,7 +93,7 @@ class AghuConcessorPerfisApp(ctk.CTk):
 
         self.frame_acesso = self._criar_secao("Acesso", 0)
         self.frame_concessao = self._criar_secao("Tipo de Execucao", 1)
-        self.frame_perfis = self._criar_secao("Perfis da regra", 2)
+        self.frame_perfis = self._criar_secao("Perfis da regra (Acesso padrão)", 2)
         self.frame_tipo_execucao = self.frame_concessao
 
         self.frame_execucao = ctk.CTkFrame(
@@ -104,12 +106,14 @@ class AghuConcessorPerfisApp(ctk.CTk):
         self.frame_individual = self._criar_secao_execucao("Concessao unitaria")
         self.frame_lote = self._criar_secao_execucao("Concessao em lote")
         self.frame_concessao = self.frame_individual
+        self.frame_concessao.grid_columnconfigure(0, weight=1)
         self.frame_perfis.grid(row=3, column=0, padx=0, pady=8, sticky="ew")
 
         self._criar_campos_acesso()
         self._criar_opcoes_execucao()
         self._criar_seletor_tipo_execucao()
-        self._criar_campos_concessao(escopos, categorias)
+        self._criar_secao_acesso_padrao(escopos, categorias)
+        self._criar_secao_usuarios_individual()
         self._criar_campos_lote()
         self._criar_previa_perfis()
         self._atualizar_previa_perfis()
@@ -312,59 +316,367 @@ class AghuConcessorPerfisApp(ctk.CTk):
             sticky="w",
         )
 
-    def _criar_campos_concessao(
+    def _criar_secao_acesso_padrao(
         self,
         escopos: list[str],
         categorias: list[str],
     ) -> None:
-        self.entry_login_alvo = self._criar_linha_entry(
-            self.frame_concessao,
+        self.frame_acesso_padrao = ctk.CTkFrame(self.frame_concessao)
+        self.frame_acesso_padrao.grid(
             row=1,
-            label="Usuário alvo:",
-            placeholder="Login do usuário",
+            column=0,
+            columnspan=3,
+            padx=14,
+            pady=(0, 10),
+            sticky="ew",
         )
-        self.entry_protocolo = self._criar_linha_entry(
-            self.frame_concessao,
-            row=2,
-            label="Protocolo:",
-            placeholder="Somente dígitos",
+        self.frame_acesso_padrao.grid_columnconfigure(1, weight=1)
+
+        self.label_acesso_padrao = ctk.CTkLabel(
+            self.frame_acesso_padrao,
+            text="ACESSO PADRÃO (aplicado a todos os usuários abaixo)",
+            font=ctk.CTkFont(size=13, weight="bold"),
+        )
+        self.label_acesso_padrao.grid(
+            row=0,
+            column=0,
+            columnspan=3,
+            padx=12,
+            pady=(12, 6),
+            sticky="w",
         )
 
-        self.label_escopo = ctk.CTkLabel(self.frame_concessao, text="Escopo:")
-        self.label_escopo.grid(row=3, column=0, padx=14, pady=8, sticky="e")
+        self.label_escopo = ctk.CTkLabel(self.frame_acesso_padrao, text="Escopo:")
+        self.label_escopo.grid(row=1, column=0, padx=12, pady=6, sticky="e")
 
         self.option_escopo = ctk.CTkOptionMenu(
-            self.frame_concessao,
+            self.frame_acesso_padrao,
             values=escopos,
             variable=self.var_escopo,
             command=self._on_escopo_changed,
         )
         self.option_escopo.grid(
-            row=3,
+            row=1,
             column=1,
             columnspan=2,
-            padx=14,
-            pady=8,
+            padx=12,
+            pady=6,
             sticky="ew",
         )
 
-        self.label_categoria = ctk.CTkLabel(self.frame_concessao, text="Categoria:")
-        self.label_categoria.grid(row=4, column=0, padx=14, pady=8, sticky="e")
+        self.label_categoria = ctk.CTkLabel(self.frame_acesso_padrao, text="Categoria:")
+        self.label_categoria.grid(row=2, column=0, padx=12, pady=(6, 12), sticky="e")
 
         self.option_categoria = ctk.CTkOptionMenu(
-            self.frame_concessao,
+            self.frame_acesso_padrao,
             values=categorias,
             variable=self.var_categoria,
             command=lambda _: self._atualizar_previa_perfis(),
         )
         self.option_categoria.grid(
-            row=4,
+            row=2,
             column=1,
             columnspan=2,
-            padx=14,
-            pady=(8, 14),
+            padx=12,
+            pady=(6, 12),
             sticky="ew",
         )
+
+    def _criar_secao_usuarios_individual(self) -> None:
+        self.frame_usuarios_concessao = ctk.CTkFrame(self.frame_concessao)
+        self.frame_usuarios_concessao.grid(
+            row=2,
+            column=0,
+            columnspan=3,
+            padx=14,
+            pady=(0, 14),
+            sticky="ew",
+        )
+        self.frame_usuarios_concessao.grid_columnconfigure(0, weight=1)
+
+        self.label_usuarios_concessao = ctk.CTkLabel(
+            self.frame_usuarios_concessao,
+            text=f"USUÁRIOS (até {MAX_USUARIOS_UNITARIOS})",
+            font=ctk.CTkFont(size=13, weight="bold"),
+        )
+        self.label_usuarios_concessao.grid(
+            row=0,
+            column=0,
+            padx=12,
+            pady=(12, 6),
+            sticky="w",
+        )
+
+        self.frame_cabecalho_usuarios_concessao = ctk.CTkFrame(
+            self.frame_usuarios_concessao,
+            fg_color="transparent",
+        )
+        self.frame_cabecalho_usuarios_concessao.grid(
+            row=1,
+            column=0,
+            padx=12,
+            sticky="ew",
+        )
+        self.frame_cabecalho_usuarios_concessao.grid_columnconfigure(0, minsize=32)
+        self.frame_cabecalho_usuarios_concessao.grid_columnconfigure(1, weight=2)
+        self.frame_cabecalho_usuarios_concessao.grid_columnconfigure(2, weight=1)
+        self.frame_cabecalho_usuarios_concessao.grid_columnconfigure(3, minsize=120)
+
+        for coluna, texto in enumerate(("#", "Usuário alvo", "Protocolo", "Acesso próprio")):
+            label = ctk.CTkLabel(
+                self.frame_cabecalho_usuarios_concessao,
+                text=texto,
+                text_color="gray",
+                font=ctk.CTkFont(size=12, weight="bold"),
+            )
+            label.grid(row=0, column=coluna, padx=(0, 8), pady=(0, 2), sticky="w")
+
+        self.frame_linhas_usuarios_concessao = ctk.CTkFrame(
+            self.frame_usuarios_concessao,
+            fg_color="transparent",
+        )
+        self.frame_linhas_usuarios_concessao.grid(row=2, column=0, padx=12, sticky="ew")
+        self.frame_linhas_usuarios_concessao.grid_columnconfigure(0, weight=1)
+
+        self.frame_acoes_usuarios_concessao = ctk.CTkFrame(
+            self.frame_usuarios_concessao,
+            fg_color="transparent",
+        )
+        self.frame_acoes_usuarios_concessao.grid(
+            row=3,
+            column=0,
+            padx=12,
+            pady=(8, 12),
+            sticky="ew",
+        )
+        self.frame_acoes_usuarios_concessao.grid_columnconfigure(1, weight=1)
+
+        self.button_adicionar_usuario = ctk.CTkButton(
+            self.frame_acoes_usuarios_concessao,
+            text="+ Adicionar usuário",
+            width=170,
+            height=32,
+            command=self._adicionar_linha_usuario_concessao,
+        )
+        self.button_adicionar_usuario.grid(row=0, column=0, sticky="w")
+
+        self.label_contador_usuarios = ctk.CTkLabel(
+            self.frame_acoes_usuarios_concessao,
+            text="",
+            text_color="gray",
+        )
+        self.label_contador_usuarios.grid(row=0, column=1, sticky="e")
+
+        self.linhas_usuarios_concessao = []
+        self._adicionar_linha_usuario_concessao()
+
+    def _adicionar_linha_usuario_concessao(self) -> None:
+        if len(self.linhas_usuarios_concessao) >= MAX_USUARIOS_UNITARIOS:
+            self._atualizar_estado_linhas_usuarios_concessao()
+            return
+
+        indice = len(self.linhas_usuarios_concessao)
+
+        frame_linha = ctk.CTkFrame(
+            self.frame_linhas_usuarios_concessao,
+            fg_color="transparent",
+        )
+        frame_linha.grid(row=indice, column=0, pady=3, sticky="ew")
+        frame_linha.grid_columnconfigure(0, weight=1)
+
+        frame_principal = ctk.CTkFrame(frame_linha, fg_color="transparent")
+        frame_principal.grid(row=0, column=0, sticky="ew")
+        frame_principal.grid_columnconfigure(0, minsize=32)
+        frame_principal.grid_columnconfigure(1, weight=2)
+        frame_principal.grid_columnconfigure(2, weight=1)
+        frame_principal.grid_columnconfigure(3, minsize=120)
+        frame_principal.grid_columnconfigure(4, minsize=36)
+        frame_principal.grid_columnconfigure(5, minsize=36)
+
+        linha: dict = {"container": frame_linha}
+
+        label_indice = ctk.CTkLabel(
+            frame_principal,
+            text=str(indice + 1),
+            text_color="gray",
+            width=30,
+        )
+        label_indice.grid(row=0, column=0, padx=(0, 8), sticky="w")
+
+        entry_login = ctk.CTkEntry(
+            frame_principal,
+            placeholder_text="Login do usuário",
+            height=32,
+        )
+        entry_login.grid(row=0, column=1, padx=(0, 8), sticky="ew")
+
+        entry_protocolo = ctk.CTkEntry(
+            frame_principal,
+            placeholder_text="Protocolo",
+            height=32,
+        )
+        entry_protocolo.grid(row=0, column=2, padx=(0, 8), sticky="ew")
+
+        var_proprio = tk.BooleanVar(value=False)
+        checkbox_proprio = ctk.CTkCheckBox(
+            frame_principal,
+            text="Acesso próprio",
+            variable=var_proprio,
+            command=lambda linha_ref=linha: self._on_toggle_acesso_proprio(linha_ref),
+        )
+        checkbox_proprio.grid(row=0, column=3, padx=(0, 8), sticky="w")
+
+        button_reset = ctk.CTkButton(
+            frame_principal,
+            text="↺",
+            width=36,
+            height=32,
+            fg_color=("#E5E7EB", "#2B2B2B"),
+            hover_color=("#D1D5DB", "#3A3A3A"),
+            command=lambda linha_ref=linha: self._resetar_acesso_proprio(linha_ref),
+        )
+        button_reset.grid(row=0, column=4, sticky="e")
+        button_reset.grid_remove()
+
+        button_remover = ctk.CTkButton(
+            frame_principal,
+            text="\U0001F5D1",
+            width=36,
+            height=32,
+            fg_color=("#E5E7EB", "#2B2B2B"),
+            hover_color=("#D1D5DB", "#3A3A3A"),
+            text_color=("#991B1B", "#FCA5A5"),
+            command=lambda linha_ref=linha: self._remover_linha_usuario_concessao(linha_ref),
+        )
+        button_remover.grid(row=0, column=5, sticky="e")
+
+        escopos = list(self.catalogo.escopos())
+        escopo_inicial = escopos[0] if escopos else ""
+        categorias = list(self.catalogo.categorias(escopo_inicial))
+        categoria_inicial = categorias[0] if categorias else ""
+        var_escopo_proprio = tk.StringVar(value=escopo_inicial)
+        var_categoria_proprio = tk.StringVar(value=categoria_inicial)
+
+        frame_proprio = ctk.CTkFrame(frame_linha, fg_color="transparent")
+        frame_proprio.grid(row=1, column=0, padx=(38, 0), pady=(4, 0), sticky="ew")
+        frame_proprio.grid_columnconfigure(1, weight=1)
+        frame_proprio.grid_columnconfigure(3, weight=1)
+
+        label_escopo_proprio = ctk.CTkLabel(frame_proprio, text="Escopo:")
+        label_escopo_proprio.grid(row=0, column=0, padx=(0, 6), sticky="e")
+
+        option_escopo_proprio = ctk.CTkOptionMenu(
+            frame_proprio,
+            values=escopos,
+            variable=var_escopo_proprio,
+            command=lambda escopo, linha_ref=linha: self._on_escopo_proprio_changed(
+                linha_ref,
+                escopo,
+            ),
+        )
+        option_escopo_proprio.grid(row=0, column=1, padx=(0, 12), sticky="ew")
+
+        label_categoria_proprio = ctk.CTkLabel(frame_proprio, text="Categoria:")
+        label_categoria_proprio.grid(row=0, column=2, padx=(0, 6), sticky="e")
+
+        option_categoria_proprio = ctk.CTkOptionMenu(
+            frame_proprio,
+            values=categorias,
+            variable=var_categoria_proprio,
+        )
+        option_categoria_proprio.grid(row=0, column=3, sticky="ew")
+
+        frame_proprio.grid_remove()
+
+        linha.update(
+            {
+                "principal": frame_principal,
+                "indice": label_indice,
+                "login": entry_login,
+                "protocolo": entry_protocolo,
+                "var_proprio": var_proprio,
+                "checkbox_proprio": checkbox_proprio,
+                "button_reset": button_reset,
+                "button_remover": button_remover,
+                "frame_proprio": frame_proprio,
+                "var_escopo_proprio": var_escopo_proprio,
+                "var_categoria_proprio": var_categoria_proprio,
+                "option_escopo_proprio": option_escopo_proprio,
+                "option_categoria_proprio": option_categoria_proprio,
+            }
+        )
+        self.linhas_usuarios_concessao.append(linha)
+        self._atualizar_estado_linhas_usuarios_concessao()
+
+        if indice > 0:
+            entry_login.focus()
+
+    def _remover_linha_usuario_concessao(self, linha_usuario: dict) -> None:
+        if len(self.linhas_usuarios_concessao) <= 1:
+            self._atualizar_estado_linhas_usuarios_concessao()
+            return
+
+        if linha_usuario not in self.linhas_usuarios_concessao:
+            return
+
+        linha_usuario["container"].destroy()
+        self.linhas_usuarios_concessao.remove(linha_usuario)
+
+        for indice, linha in enumerate(self.linhas_usuarios_concessao):
+            linha["container"].grid_configure(row=indice)
+
+        self._atualizar_estado_linhas_usuarios_concessao()
+
+    def _on_toggle_acesso_proprio(self, linha_usuario: dict) -> None:
+        if linha_usuario["var_proprio"].get():
+            linha_usuario["frame_proprio"].grid()
+            linha_usuario["button_reset"].grid()
+        else:
+            linha_usuario["frame_proprio"].grid_remove()
+            linha_usuario["button_reset"].grid_remove()
+
+    def _resetar_acesso_proprio(self, linha_usuario: dict) -> None:
+        linha_usuario["var_proprio"].set(False)
+        self._on_toggle_acesso_proprio(linha_usuario)
+
+    def _on_escopo_proprio_changed(self, linha_usuario: dict, escopo: str) -> None:
+        categorias = list(self.catalogo.categorias(escopo))
+        categoria = categorias[0] if categorias else ""
+        linha_usuario["option_categoria_proprio"].configure(values=categorias)
+        linha_usuario["var_categoria_proprio"].set(categoria)
+        linha_usuario["option_categoria_proprio"].set(categoria)
+
+    def _atualizar_estado_linhas_usuarios_concessao(self) -> None:
+        limite_atingido = (
+            len(self.linhas_usuarios_concessao) >= MAX_USUARIOS_UNITARIOS
+        )
+        estado_campos = "disabled" if self.em_execucao else "normal"
+        estado_adicionar = (
+            "disabled" if self.em_execucao or limite_atingido else "normal"
+        )
+        estado_remover = (
+            "normal"
+            if not self.em_execucao and len(self.linhas_usuarios_concessao) > 1
+            else "disabled"
+        )
+
+        self.button_adicionar_usuario.configure(state=estado_adicionar)
+        self.label_contador_usuarios.configure(
+            text=(
+                f"{len(self.linhas_usuarios_concessao)} / "
+                f"{MAX_USUARIOS_UNITARIOS} usuários"
+            )
+        )
+
+        for indice, linha in enumerate(self.linhas_usuarios_concessao, start=1):
+            linha["indice"].configure(text=str(indice))
+            linha["login"].configure(state=estado_campos)
+            linha["protocolo"].configure(state=estado_campos)
+            linha["checkbox_proprio"].configure(state=estado_campos)
+            linha["option_escopo_proprio"].configure(state=estado_campos)
+            linha["option_categoria_proprio"].configure(state=estado_campos)
+            linha["button_reset"].configure(state=estado_campos)
+            linha["button_remover"].configure(state=estado_remover)
 
     def _criar_campos_lote(self) -> None:
         self.label_planilha_lote = ctk.CTkLabel(
@@ -430,20 +742,6 @@ class AghuConcessorPerfisApp(ctk.CTk):
             sticky="ew",
         )
         self.text_perfis.configure(state="disabled")
-
-    def _criar_linha_entry(
-        self,
-        frame: ctk.CTkFrame,
-        row: int,
-        label: str,
-        placeholder: str,
-    ) -> ctk.CTkEntry:
-        label_widget = ctk.CTkLabel(frame, text=label)
-        label_widget.grid(row=row, column=0, padx=14, pady=8, sticky="e")
-
-        entry = ctk.CTkEntry(frame, placeholder_text=placeholder)
-        entry.grid(row=row, column=1, columnspan=2, padx=14, pady=8, sticky="ew")
-        return entry
 
     def _validar_opcoes_visibilidade(self, variavel_alvo: tk.BooleanVar) -> None:
         if not self.var_browser.get() and not self.var_console.get():
@@ -558,13 +856,44 @@ class AghuConcessorPerfisApp(ctk.CTk):
 
         return usuario_rede, senha, url_aghu
 
-    def _entrada_concessao(self) -> ConcessaoPerfisEntrada:
-        return ConcessaoPerfisEntrada(
-            login=self.entry_login_alvo.get(),
-            protocolo=self.entry_protocolo.get(),
-            escopo=self.var_escopo.get(),
-            categoria=self.var_categoria.get(),
-        )
+    def _resolver_acesso_efetivo(self, linha_usuario: dict) -> tuple[str, str]:
+        if linha_usuario["var_proprio"].get():
+            return (
+                linha_usuario["var_escopo_proprio"].get(),
+                linha_usuario["var_categoria_proprio"].get(),
+            )
+
+        return self.var_escopo.get(), self.var_categoria.get()
+
+    def _entradas_concessao_individuais(self) -> list[ConcessaoPerfisEntrada]:
+        entradas: list[ConcessaoPerfisEntrada] = []
+
+        for linha in self.linhas_usuarios_concessao:
+            login = linha["login"].get().strip()
+            protocolo = linha["protocolo"].get().strip()
+
+            if not login and not protocolo:
+                continue
+
+            escopo, categoria = self._resolver_acesso_efetivo(linha)
+            entradas.append(
+                ConcessaoPerfisEntrada(
+                    login=login,
+                    protocolo=protocolo,
+                    escopo=escopo,
+                    categoria=categoria,
+                )
+            )
+
+        if not entradas:
+            raise ValueError("Informe ao menos um usuário.")
+
+        for entrada in entradas:
+            erros = validar_entrada(entrada)
+            if erros:
+                raise ValueError("; ".join(erros))
+
+        return entradas
 
     def _bloquear_execucao(self, texto_botao: str) -> None:
         self.em_execucao = True
@@ -575,10 +904,9 @@ class AghuConcessorPerfisApp(ctk.CTk):
         self.option_ambiente.configure(state="disabled")
         self.entry_usuario_rede.configure(state="disabled")
         self.entry_senha.configure(state="disabled")
-        self.entry_login_alvo.configure(state="disabled")
-        self.entry_protocolo.configure(state="disabled")
         self.option_escopo.configure(state="disabled")
         self.option_categoria.configure(state="disabled")
+        self._atualizar_estado_linhas_usuarios_concessao()
         self.entry_planilha_lote.configure(state="disabled")
         self.entry_relatorio_lote.configure(state="disabled")
         self.button_planilha_lote.configure(state="disabled")
@@ -593,10 +921,9 @@ class AghuConcessorPerfisApp(ctk.CTk):
         self.option_ambiente.configure(state="normal")
         self.entry_usuario_rede.configure(state="normal")
         self.entry_senha.configure(state="normal")
-        self.entry_login_alvo.configure(state="normal")
-        self.entry_protocolo.configure(state="normal")
         self.option_escopo.configure(state="normal")
         self.option_categoria.configure(state="normal")
+        self._atualizar_estado_linhas_usuarios_concessao()
         self.entry_planilha_lote.configure(state="normal")
         self.entry_relatorio_lote.configure(state="normal")
         self.button_planilha_lote.configure(state="normal")
@@ -614,12 +941,7 @@ class AghuConcessorPerfisApp(ctk.CTk):
 
         try:
             usuario_rede, senha, url_aghu = self._credenciais_e_url()
-            entrada = self._entrada_concessao()
-            erros = validar_entrada(entrada)
-
-            if erros:
-                raise ValueError("; ".join(erros))
-
+            entradas = self._entradas_concessao_individuais()
             mostrar_browser = bool(self.var_browser.get())
             mostrar_console = bool(self.var_console.get())
         except Exception as exc:
@@ -634,7 +956,7 @@ class AghuConcessorPerfisApp(ctk.CTk):
             args=(
                 usuario_rede,
                 senha,
-                entrada,
+                entradas,
                 url_aghu,
                 mostrar_browser,
                 mostrar_console,
@@ -647,14 +969,14 @@ class AghuConcessorPerfisApp(ctk.CTk):
         self,
         usuario_rede: str,
         senha: str,
-        entrada: ConcessaoPerfisEntrada,
+        entradas: list[ConcessaoPerfisEntrada],
         url_aghu: str,
         mostrar_browser: bool,
         mostrar_console: bool,
     ) -> None:
         try:
-            resultado = executar_concessao_perfis(
-                entrada=entrada,
+            resultados = executar_concessoes_perfis(
+                concessoes=entradas,
                 usuario_rede=usuario_rede,
                 senha=senha,
                 url_aghu=url_aghu,
@@ -662,14 +984,29 @@ class AghuConcessorPerfisApp(ctk.CTk):
                 mostrar_console=mostrar_console,
                 diretorio_logs=LOGS_DIR,
             )
-            cor = (
-                "red"
-                if resultado.status in {STATUS_ERRO, STATUS_CONFERIR_MANUAL}
-                else "green"
-            )
-            mensagem = (
-                f"{resultado.login}: {resultado.status} - {resultado.detalhes}"
-            )
+
+            if len(resultados) == 1:
+                resultado = resultados[0]
+                cor = (
+                    "red"
+                    if resultado.status in {STATUS_ERRO, STATUS_CONFERIR_MANUAL}
+                    else "green"
+                )
+                mensagem = (
+                    f"{resultado.login}: {resultado.status} - {resultado.detalhes}"
+                )
+            else:
+                mensagem = self._resumir_resultados(
+                    resultados,
+                    prefixo="Execução unitária concluída",
+                    rotulo_total="Total processado",
+                )
+                cor = (
+                    "red"
+                    if any(resultado.status == STATUS_ERRO for resultado in resultados)
+                    else "green"
+                )
+
             self.after(0, self._finalizar_execucao, mensagem, cor)
         except Exception as exc:
             self.after(0, self._finalizar_execucao, f"Erro: {exc}", "red")
@@ -751,12 +1088,17 @@ class AghuConcessorPerfisApp(ctk.CTk):
         except Exception as exc:
             self.after(0, self._finalizar_execucao, f"Erro: {exc}", "red")
 
-    def _resumir_resultados(self, resultados) -> str:
+    def _resumir_resultados(
+        self,
+        resultados,
+        prefixo: str = "Lote concluido",
+        rotulo_total: str = "Total",
+    ) -> str:
         contagem = Counter(resultado.status for resultado in resultados)
         total = len(resultados)
 
         return (
-            f"Lote concluido. Total: {total}. "
+            f"{prefixo}. {rotulo_total}: {total}. "
             f"Concedidos: {contagem[STATUS_CONCEDIDO]}. "
             f"Ja existentes: {contagem[STATUS_JA_EXISTENTE]}. "
             f"Usuarios nao encontrados: {contagem[STATUS_USUARIO_NAO_ENCONTRADO]}. "
