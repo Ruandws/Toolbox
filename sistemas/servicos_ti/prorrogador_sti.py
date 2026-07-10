@@ -1105,7 +1105,8 @@ def run_batch_automation(
 
         result = (
             f"Lote finalizado. {len(prepared_rows)} usuário(s) processado(s). "
-            f"{len(report_rows)} linha(s) avaliadas."
+            f"{len(report_rows)} linha(s) avaliadas. "
+            f"Relatório: {report_path}"
         )
 
         automation_logger.info("Relatório gerado: %s.", report_path)
