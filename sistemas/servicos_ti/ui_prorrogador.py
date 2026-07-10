@@ -651,11 +651,17 @@ class ProrrogadorSTI(ctk.CTk):
             else:
                 result_msg = run_automation(*args)
 
+            color = (
+                "orange"
+                if "não encontrado" in result_msg.lower()
+                else "green"
+            )
+
             self.after(
                 0,
                 self.finish_automation,
                 result_msg,
-                "green"
+                color
             )
         except Exception as e:
             error_msg = f"Erro: {str(e)}"
