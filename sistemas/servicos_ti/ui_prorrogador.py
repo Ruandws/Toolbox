@@ -14,13 +14,15 @@ from prorrogador_sti import (
 )
 
 _TERMINAL_ALLOCATED_BY_APP = False
+_STDOUT_BEFORE_CONSOLE = None
+_STDERR_BEFORE_CONSOLE = None
 
 TIPO_INDIVIDUAL = "Unitária"
 TIPO_LOTE = "Lote"
 
 # Exibe terminal no Windows quando o app estiver sem console anexado.
 def set_terminal_visibility(show_terminal: bool) -> None:
-    global _TERMINAL_ALLOCATED_BY_APP
+    global _TERMINAL_ALLOCATED_BY_APP, _STDOUT_BEFORE_CONSOLE, _STDERR_BEFORE_CONSOLE
 
     if os.name != "nt":
         return
@@ -35,6 +37,8 @@ def set_terminal_visibility(show_terminal: bool) -> None:
 
             if kernel32.AllocConsole():
                 _TERMINAL_ALLOCATED_BY_APP = True
+                _STDOUT_BEFORE_CONSOLE = sys.stdout
+                _STDERR_BEFORE_CONSOLE = sys.stderr
                 sys.stdout = open(
                     "CONOUT$",
                     "w",
@@ -51,6 +55,17 @@ def set_terminal_visibility(show_terminal: bool) -> None:
             return
 
         if _TERMINAL_ALLOCATED_BY_APP and has_console:
+            conout_stdout = sys.stdout
+            conout_stderr = sys.stderr
+            sys.stdout = _STDOUT_BEFORE_CONSOLE or sys.__stdout__
+            sys.stderr = _STDERR_BEFORE_CONSOLE or sys.__stderr__
+            _STDOUT_BEFORE_CONSOLE = None
+            _STDERR_BEFORE_CONSOLE = None
+            try:
+                conout_stdout.close()
+                conout_stderr.close()
+            except Exception:
+                pass
             kernel32.FreeConsole()
             _TERMINAL_ALLOCATED_BY_APP = False
 

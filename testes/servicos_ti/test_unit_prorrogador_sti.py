@@ -11,10 +11,15 @@ from prorrogador_sti import (
     REPORT_COLUMN_NAME,
     REPORT_COLUMN_USER,
     REPORT_HEADERS,
+    STATUS_ERRO,
+    STATUS_NAO_ENCONTRADO,
+    STATUS_SUCESSO,
     USER_COLUMN_CANDIDATES,
+    USER_NOT_FOUND_MESSAGE,
     build_report_row,
     build_row,
     build_user_url,
+    classify_batch_row_status,
     generate_report_filename,
     get_available_report_path,
     get_report_headers,
@@ -25,6 +30,7 @@ from prorrogador_sti import (
     normalize_expiration_date,
     normalize_user_value,
     prepare_user_value,
+    summarize_batch_results,
     validate_spreadsheet_extension,
 )
 
@@ -235,3 +241,47 @@ class TestValidateExtension:
     def test_csv_invalido(self):
         with pytest.raises(ValueError):
             validate_spreadsheet_extension("a.csv")
+
+
+# ---------------------------------------------------------------------------
+# classify_batch_row_status / summarize_batch_results
+# ---------------------------------------------------------------------------
+
+
+class TestResumoLote:
+    def test_classify_batch_row_status_sucesso(self):
+        assert (
+            classify_batch_row_status("Data prorrogada para 22/06/2026")
+            == STATUS_SUCESSO
+        )
+
+    def test_classify_batch_row_status_nao_encontrado(self):
+        assert (
+            classify_batch_row_status(USER_NOT_FOUND_MESSAGE)
+            == STATUS_NAO_ENCONTRADO
+        )
+
+    def test_classify_batch_row_status_erro(self):
+        assert (
+            classify_batch_row_status("Erro: falha ao processar")
+            == STATUS_ERRO
+        )
+
+    def test_summarize_batch_results_quebra_por_status(self):
+        batch_rows = [
+            {REPORT_COLUMN_NAME: "Data prorrogada para 22/06/2026"},
+            {REPORT_COLUMN_NAME: "Data prorrogada para 22/06/2026"},
+            {REPORT_COLUMN_NAME: USER_NOT_FOUND_MESSAGE},
+            {REPORT_COLUMN_NAME: "Erro: falha ao processar"},
+        ]
+
+        resumo = summarize_batch_results(batch_rows)
+
+        assert resumo == (
+            "Total: 4. Sucesso: 2. Não encontrado: 1. Erro: 1."
+        )
+
+    def test_summarize_batch_results_lista_vazia(self):
+        assert summarize_batch_results([]) == (
+            "Total: 0. Sucesso: 0. Não encontrado: 0. Erro: 0."
+        )

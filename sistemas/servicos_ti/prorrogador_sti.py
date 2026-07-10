@@ -1,6 +1,7 @@
 import re
 import time
 import unicodedata
+from collections import Counter
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
@@ -112,6 +113,14 @@ REPORT_COLUMN_USER = "usuário"
 REPORT_COLUMN_NAME = "relatório"
 REPORT_HEADERS = (REPORT_COLUMN_USER,REPORT_COLUMN_NAME,)
 USER_COLUMN_CANDIDATES = ("usuário","usuario","login","rede",)
+
+#Constantes globais de status de lote
+USER_NOT_FOUND_MESSAGE = "Usuário não Encontrado"
+ERROR_MESSAGE_PREFIX = "Erro:"
+
+STATUS_SUCESSO = "sucesso"
+STATUS_NAO_ENCONTRADO = "nao_encontrado"
+STATUS_ERRO = "erro"
 
 #Constantes globais de usuários
 USER_LOGIN_ALLOWED_PATTERN = re.compile(r"^[A-Za-z0-9._@'-]+$")
@@ -876,7 +885,7 @@ def process_user_prepared_value(
 
     if not wait_for_user_page_ready(page):
         logger.warning("Usuário não encontrado: %s.", user)
-        return "Usuário não Encontrado"
+        return USER_NOT_FOUND_MESSAGE
 
     logger.info(
         "Tela do usuário carregada. Preenchendo nova data: %s.",
@@ -893,6 +902,37 @@ def process_user_prepared_value(
     )
 
     return f"Data prorrogada para {expiration_date}"
+
+# -----------------------------
+# Resumo de lote
+# -----------------------------
+
+# Classifica a mensagem de relatório de uma linha em uma categoria de status.
+def classify_batch_row_status(report_message: str) -> str:
+    if report_message.startswith(ERROR_MESSAGE_PREFIX):
+        return STATUS_ERRO
+
+    if report_message == USER_NOT_FOUND_MESSAGE:
+        return STATUS_NAO_ENCONTRADO
+
+    return STATUS_SUCESSO
+
+
+# Resume as linhas do lote por status.
+def summarize_batch_results(batch_rows: Sequence[Row]) -> str:
+    contagem = Counter(
+        classify_batch_row_status(row.get(REPORT_COLUMN_NAME, ""))
+        for row in batch_rows
+    )
+    total = len(batch_rows)
+
+    return (
+        f"Total: {total}. "
+        f"Sucesso: {contagem[STATUS_SUCESSO]}. "
+        f"Não encontrado: {contagem[STATUS_NAO_ENCONTRADO]}. "
+        f"Erro: {contagem[STATUS_ERRO]}."
+    )
+
 
 # -----------------------------
 # Entry points
@@ -1011,7 +1051,7 @@ def run_batch_automation(
                 batch_row[REPORT_COLUMN_USER] = prepared_user
                 batch_row[BATCH_ENTRY_PREPARED_USER] = prepared_user
             except ValueError as exc:
-                batch_row[REPORT_COLUMN_NAME] = f"Erro: {str(exc)}"
+                batch_row[REPORT_COLUMN_NAME] = f"{ERROR_MESSAGE_PREFIX} {str(exc)}"
 
                 automation_logger.warning(
                     "Usuário inválido no lote: %s. Erro: %s.",
@@ -1071,7 +1111,7 @@ def run_batch_automation(
                                 report_message
                             )
                         except Exception as exc:
-                            report_message = f"Erro: {str(exc)}"
+                            report_message = f"{ERROR_MESSAGE_PREFIX} {str(exc)}"
 
                             automation_logger.exception(
                                 "Erro ao processar usuário %s.",
@@ -1103,9 +1143,10 @@ def run_batch_automation(
             report_rows
         )
 
+        resumo = summarize_batch_results(batch_rows)
+
         result = (
-            f"Lote finalizado. {len(prepared_rows)} usuário(s) processado(s). "
-            f"{len(report_rows)} linha(s) avaliadas. "
+            f"Lote finalizado. {resumo} "
             f"Relatório: {report_path}"
         )
 
