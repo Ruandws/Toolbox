@@ -375,7 +375,11 @@ def test_run_playwright_task_agenda_finalizacao_lote_sem_resultado(monkeypatch):
     app = criar_app_fake()
     chamadas = []
     app.after = lambda delay, func, *args: chamadas.append((delay, func, args))
-    monkeypatch.setattr(ui, "run_batch_automation", lambda *args: "Nenhum usuário")
+    monkeypatch.setattr(
+        ui,
+        "run_batch_automation",
+        lambda *args: ("Nenhum usuário", "orange"),
+    )
 
     ui.ConsultorSTI.run_playwright_task(app, "batch", "arg")
 

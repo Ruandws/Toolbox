@@ -496,11 +496,11 @@ class ConsultorSTI(ctk.CTk):
     def run_playwright_task(self, execution_mode, *args):
         try:
             if execution_mode == "batch":
-                result_msg = run_batch_automation(*args)
+                result_msg, color = run_batch_automation(*args)
             else:
                 result_msg = run_automation(*args)
+                color = "orange" if "Nenhum" in result_msg else "green"
 
-            color = "orange" if "Nenhum" in result_msg else "green"
             self.after(0, self.finish_automation, result_msg, color)
         except Exception as e:
             self.after(0, self.finish_automation, f"Erro: {str(e)}", "red")

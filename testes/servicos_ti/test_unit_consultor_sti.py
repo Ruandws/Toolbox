@@ -11,9 +11,15 @@ from consultor_sti import (
     NO_USER_FOUND_MESSAGE,
     SEARCH_TYPE_CPF,
     SEARCH_TYPE_FULL_NAME,
+    STATUS_ERRO,
+    STATUS_NAO_ENCONTRADO,
+    STATUS_SUCESSO,
+    USER_FOUND_MESSAGE,
     SearchResult,
+    batch_result_color,
     build_report_row,
     build_row,
+    classify_result_status,
     extract_cpf_digits,
     format_cpf,
     format_single_result,
@@ -29,6 +35,7 @@ from consultor_sti import (
     normalize_search_type,
     prepare_batch_search_value,
     prepare_search_value,
+    summarize_batch_results,
     validate_spreadsheet_extension,
 )
 
@@ -422,3 +429,58 @@ class TestSearchResult:
         )
         texto = format_single_result(result, "nome completo")
         assert "ana.maria@hubrasil.gov.br" in texto
+
+
+class TestResumoLote:
+    def test_classify_result_status_sucesso(self):
+        result = SearchResult(message=USER_FOUND_MESSAGE)
+        assert classify_result_status(result) == STATUS_SUCESSO
+
+    def test_classify_result_status_nao_encontrado(self):
+        result = SearchResult(message=NO_USER_FOUND_MESSAGE)
+        assert classify_result_status(result) == STATUS_NAO_ENCONTRADO
+
+    def test_classify_result_status_multiplos_conta_como_nao_encontrado(self):
+        result = SearchResult(message="Mais de um usuário encontrado")
+        assert classify_result_status(result) == STATUS_NAO_ENCONTRADO
+
+    def test_classify_result_status_erro(self):
+        result = SearchResult(message="Erro: falha ao pesquisar")
+        assert classify_result_status(result) == STATUS_ERRO
+
+    def test_summarize_batch_results_quebra_por_status(self):
+        resultados = [
+            SearchResult(message=USER_FOUND_MESSAGE),
+            SearchResult(message=USER_FOUND_MESSAGE),
+            SearchResult(message=NO_USER_FOUND_MESSAGE),
+            SearchResult(message="Erro: falha ao pesquisar"),
+        ]
+
+        resumo = summarize_batch_results(resultados)
+
+        assert resumo == (
+            "Total: 4. Sucesso: 2. Não encontrado: 1. Erro: 1."
+        )
+
+    def test_summarize_batch_results_lista_vazia(self):
+        assert summarize_batch_results([]) == (
+            "Total: 0. Sucesso: 0. Não encontrado: 0. Erro: 0."
+        )
+
+    def test_batch_result_color_vermelho_quando_ha_erro(self):
+        resultados = [
+            SearchResult(message=USER_FOUND_MESSAGE),
+            SearchResult(message="Erro: falha ao pesquisar"),
+        ]
+        assert batch_result_color(resultados) == "red"
+
+    def test_batch_result_color_laranja_quando_nao_encontrado_sem_erro(self):
+        resultados = [
+            SearchResult(message=USER_FOUND_MESSAGE),
+            SearchResult(message=NO_USER_FOUND_MESSAGE),
+        ]
+        assert batch_result_color(resultados) == "orange"
+
+    def test_batch_result_color_verde_quando_tudo_sucesso(self):
+        resultados = [SearchResult(message=USER_FOUND_MESSAGE)]
+        assert batch_result_color(resultados) == "green"

@@ -1,6 +1,7 @@
 import re
 import time
 import unicodedata
+from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -52,6 +53,13 @@ SEARCH_BUTTON_SELECTOR = 'button[type="submit"][ng-disabled="pesquisando"]'
 NO_USER_FOUND_MESSAGE = "Nenhum usuário encontrado"
 NO_USER_FOUND_TEXT = f"{NO_USER_FOUND_MESSAGE}."
 NO_USER_FOUND_SELECTOR = 'div[ng-show*="usuarios.length == 0"] .well b'
+
+USER_FOUND_MESSAGE = "Usuário encontrado"
+ERROR_MESSAGE_PREFIX = "Erro:"
+
+STATUS_SUCESSO = "sucesso"
+STATUS_NAO_ENCONTRADO = "nao_encontrado"
+STATUS_ERRO = "erro"
 
 SEARCH_RESULT_ROW_SELECTOR = (
     'table.table-striped tbody tr[ng-repeat*="usuario in usuarios"]'
@@ -714,7 +722,7 @@ def get_email_input_locator(page):
 
 
 def collect_email_for_result(page, result: SearchResult) -> SearchResult:
-    if result.message != "Usuário encontrado" or not result.user_login:
+    if result.message != USER_FOUND_MESSAGE or not result.user_login:
         return result
 
     open_user_page(page, result.user_login)
@@ -767,7 +775,7 @@ def extract_single_result(row, search_type: str) -> SearchResult:
 
     if normalized_search_type == SEARCH_TYPE_CPF:
         return SearchResult(
-            message="Usuário encontrado",
+            message=USER_FOUND_MESSAGE,
             full_name=full_name,
             user_login=user_login,
         )
@@ -844,7 +852,7 @@ def search_user_prepared_value(
 # Formata resultado da pesquisa.
 def format_single_result(result: SearchResult, search_type: str) -> str:
     
-    if result.message != "Usuário encontrado":
+    if result.message != USER_FOUND_MESSAGE:
         return result.message
 
     email_line = f"\nE-mail: {result.email}" if result.email else ""
@@ -862,6 +870,47 @@ def format_single_result(result: SearchResult, search_type: str) -> str:
         f"Usuário: {result.user_login}"
         f"{email_line}"
     )
+
+
+# -----------------------------
+# Resumo de lote
+# -----------------------------
+
+# Classifica o resultado em uma categoria de status.
+def classify_result_status(result: SearchResult) -> str:
+    if result.message.startswith(ERROR_MESSAGE_PREFIX):
+        return STATUS_ERRO
+
+    if result.message == USER_FOUND_MESSAGE:
+        return STATUS_SUCESSO
+
+    return STATUS_NAO_ENCONTRADO
+
+
+# Resume os resultados do lote por status.
+def summarize_batch_results(results: Sequence[SearchResult]) -> str:
+    contagem = Counter(classify_result_status(result) for result in results)
+    total = len(results)
+
+    return (
+        f"Total: {total}. "
+        f"Sucesso: {contagem[STATUS_SUCESSO]}. "
+        f"Não encontrado: {contagem[STATUS_NAO_ENCONTRADO]}. "
+        f"Erro: {contagem[STATUS_ERRO]}."
+    )
+
+
+# Define a cor de status conforme os resultados do lote.
+def batch_result_color(results: Sequence[SearchResult]) -> str:
+    contagem = Counter(classify_result_status(result) for result in results)
+
+    if contagem[STATUS_ERRO]:
+        return "red"
+
+    if contagem[STATUS_NAO_ENCONTRADO]:
+        return "orange"
+
+    return "green"
 
 
 # -----------------------------
@@ -911,12 +960,13 @@ def run_batch_automation(
     report_directory: str,
     collect_email: bool = False,
     mostrar_browser: bool = True,
-) -> str:
+) -> Tuple[str, str]:
     normalized_search_type = normalize_search_type(search_type)
     headers, source_rows = read_spreadsheet(spreadsheet_path)
     search_column = identify_search_column(headers, normalized_search_type)
     report_path = build_report_path(report_directory, spreadsheet_path)
     report_rows: List[Row] = []
+    results: List[SearchResult] = []
 
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=not mostrar_browser)
@@ -939,7 +989,8 @@ def run_batch_automation(
                         search_value,
                     )
                 except ValueError as exc:
-                    result = SearchResult(message=f"Erro: {str(exc)}")
+                    result = SearchResult(message=f"{ERROR_MESSAGE_PREFIX} {str(exc)}")
+                    results.append(result)
                     report_rows.append(
                         build_report_row(
                             normalized_search_type,
@@ -957,8 +1008,9 @@ def run_batch_automation(
                         collect_email,
                     )
                 except Exception as exc:
-                    result = SearchResult(message=f"Erro: {str(exc)}")
+                    result = SearchResult(message=f"{ERROR_MESSAGE_PREFIX} {str(exc)}")
 
+                results.append(result)
                 report_rows.append(
                     build_report_row(
                         normalized_search_type,
@@ -978,7 +1030,12 @@ def run_batch_automation(
         collect_email,
     )
 
-    return (
-        f"Lote finalizado. {len(report_rows)} registro(s) processado(s). "
+    resumo = summarize_batch_results(results)
+    cor = batch_result_color(results)
+
+    mensagem = (
+        f"Lote finalizado. {resumo} "
         f"Relatório: {report_path}"
     )
+
+    return mensagem, cor
