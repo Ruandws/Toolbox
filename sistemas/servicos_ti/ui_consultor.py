@@ -1,11 +1,71 @@
+import ctypes
+import os
+import sys
 import threading
 from tkinter import BooleanVar, StringVar, filedialog
 import customtkinter as ctk
 from consultor_sti import prepare_search_value, run_automation, run_batch_automation
 from pathlib import Path
 
+_TERMINAL_ALLOCATED_BY_APP = False
+_STDOUT_BEFORE_CONSOLE = None
+_STDERR_BEFORE_CONSOLE = None
+
 TIPO_INDIVIDUAL = "Unitária"
 TIPO_LOTE = "Lote"
+
+
+# Exibe terminal no Windows quando o app estiver sem console anexado.
+def set_terminal_visibility(show_terminal: bool) -> None:
+    global _TERMINAL_ALLOCATED_BY_APP, _STDOUT_BEFORE_CONSOLE, _STDERR_BEFORE_CONSOLE
+
+    if os.name != "nt":
+        return
+
+    try:
+        kernel32 = ctypes.windll.kernel32
+        has_console = bool(kernel32.GetConsoleWindow())
+
+        if show_terminal:
+            if has_console:
+                return
+
+            if kernel32.AllocConsole():
+                _TERMINAL_ALLOCATED_BY_APP = True
+                _STDOUT_BEFORE_CONSOLE = sys.stdout
+                _STDERR_BEFORE_CONSOLE = sys.stderr
+                sys.stdout = open(
+                    "CONOUT$",
+                    "w",
+                    encoding="utf-8",
+                    buffering=1,
+                )
+                sys.stderr = open(
+                    "CONOUT$",
+                    "w",
+                    encoding="utf-8",
+                    buffering=1,
+                )
+
+            return
+
+        if _TERMINAL_ALLOCATED_BY_APP and has_console:
+            conout_stdout = sys.stdout
+            conout_stderr = sys.stderr
+            sys.stdout = _STDOUT_BEFORE_CONSOLE or sys.__stdout__
+            sys.stderr = _STDERR_BEFORE_CONSOLE or sys.__stderr__
+            _STDOUT_BEFORE_CONSOLE = None
+            _STDERR_BEFORE_CONSOLE = None
+            try:
+                conout_stdout.close()
+                conout_stderr.close()
+            except Exception:
+                pass
+            kernel32.FreeConsole()
+            _TERMINAL_ALLOCATED_BY_APP = False
+
+    except Exception:
+        return
 
 
 class ConsultorSTI(ctk.CTk):
@@ -26,6 +86,7 @@ class ConsultorSTI(ctk.CTk):
 
         self.collect_email_var = BooleanVar(value=False)
         self.var_browser = BooleanVar(value=True)
+        self.var_show_terminal_logs = BooleanVar(value=False)
         self.var_tipo_execucao = StringVar(value=TIPO_INDIVIDUAL)
         self.em_execucao = False
 
@@ -154,7 +215,19 @@ class ConsultorSTI(ctk.CTk):
         self.checkbox_browser.grid(
             row=3,
             column=1,
-            columnspan=2,
+            padx=10,
+            pady=10,
+            sticky="w",
+        )
+
+        self.switch_terminal_logs = ctk.CTkSwitch(
+            self.frame_inputs,
+            text="Exibir terminal/logs de execução",
+            variable=self.var_show_terminal_logs,
+        )
+        self.switch_terminal_logs.grid(
+            row=3,
+            column=2,
             padx=10,
             pady=10,
             sticky="w",
@@ -417,10 +490,19 @@ class ConsultorSTI(ctk.CTk):
         search_value = self.entry_search.get().strip()
         collect_email = self.collect_email_var.get()
         mostrar_browser = bool(self.var_browser.get())
+        show_terminal_logs = bool(self.var_show_terminal_logs.get())
 
         if not search_value:
             self.show_status(
                 "Erro: Informe o valor da pesquisa.",
+                "red",
+            )
+            return
+
+        if not mostrar_browser and not show_terminal_logs:
+            self.show_status(
+                "Erro: Para executar em modo headless, habilite também "
+                "terminal/logs de execução.",
                 "red",
             )
             return
@@ -441,9 +523,11 @@ class ConsultorSTI(ctk.CTk):
             search_type,
             clean_search_value,
             collect_email,
+            show_terminal_logs,
             mostrar_browser,
         )
 
+        set_terminal_visibility(show_terminal_logs)
         self._disparar_execucao(args, "Iniciando automação unitária...")
 
     # Inicia automação em lote.
@@ -459,10 +543,19 @@ class ConsultorSTI(ctk.CTk):
         report_directory = self.entry_report_dir.get().strip()
         collect_email = self.collect_email_var.get()
         mostrar_browser = bool(self.var_browser.get())
+        show_terminal_logs = bool(self.var_show_terminal_logs.get())
 
         if not spreadsheet_path or not report_directory:
             self.show_status(
                 "Erro: Para lote, informe planilha e pasta de relatório.",
+                "red",
+            )
+            return
+
+        if not mostrar_browser and not show_terminal_logs:
+            self.show_status(
+                "Erro: Para executar em modo headless, habilite também "
+                "terminal/logs de execução.",
                 "red",
             )
             return
@@ -475,9 +568,11 @@ class ConsultorSTI(ctk.CTk):
             spreadsheet_path,
             report_directory,
             collect_email,
+            show_terminal_logs,
             mostrar_browser,
         )
 
+        set_terminal_visibility(show_terminal_logs)
         self._disparar_execucao(args, "Iniciando automação em lote...")
 
     # Bloqueia controles e dispara thread de execucao.
@@ -498,8 +593,7 @@ class ConsultorSTI(ctk.CTk):
             if execution_mode == "batch":
                 result_msg, color = run_batch_automation(*args)
             else:
-                result_msg = run_automation(*args)
-                color = "orange" if "Nenhum" in result_msg else "green"
+                result_msg, color = run_automation(*args)
 
             self.after(0, self.finish_automation, result_msg, color)
         except Exception as e:
@@ -515,6 +609,7 @@ class ConsultorSTI(ctk.CTk):
         self.combo_search_type.configure(state="disabled")
         self.checkbox_collect_email.configure(state="disabled")
         self.checkbox_browser.configure(state="disabled")
+        self.switch_terminal_logs.configure(state="disabled")
         self.entry_search.configure(state="disabled")
         self.entry_spreadsheet.configure(state="disabled")
         self.entry_report_dir.configure(state="disabled")
@@ -531,6 +626,7 @@ class ConsultorSTI(ctk.CTk):
         self.combo_search_type.configure(state="normal")
         self.checkbox_collect_email.configure(state="normal")
         self.checkbox_browser.configure(state="normal")
+        self.switch_terminal_logs.configure(state="normal")
         self.entry_search.configure(state="normal")
         self.entry_spreadsheet.configure(state="normal")
         self.entry_report_dir.configure(state="normal")

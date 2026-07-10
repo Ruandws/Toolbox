@@ -1,4 +1,6 @@
+import logging
 import re
+import sys
 import time
 import unicodedata
 from collections import Counter
@@ -61,6 +63,14 @@ STATUS_SUCESSO = "sucesso"
 STATUS_NAO_ENCONTRADO = "nao_encontrado"
 STATUS_ERRO = "erro"
 
+# Constantes globais de logging
+LOGGER_NAME = "Consultor"
+LOG_FORMAT = "%(asctime)s [%(levelname)s] %(message)s"
+LOG_DATE_FORMAT = "%d/%m/%Y %H:%M:%S"
+
+logger = logging.getLogger(LOGGER_NAME)
+logger.addHandler(logging.NullHandler())
+
 SEARCH_RESULT_ROW_SELECTOR = (
     'table.table-striped tbody tr[ng-repeat*="usuario in usuarios"]'
 )
@@ -116,6 +126,57 @@ class SearchResult:
     full_name: str = ""
     user_login: str = ""
     email: str = ""
+
+
+# -----------------------------
+# Logging
+# -----------------------------
+
+# Obtém stream disponível para logging em terminal.
+def get_stream_for_logging() -> Optional[Any]:
+    return (
+        sys.stdout
+        or sys.stderr
+        or sys.__stdout__
+        or sys.__stderr__
+    )
+
+
+# Configura logging da automação.
+def configure_automation_logging(
+    show_terminal_logs: bool = False,
+) -> logging.Logger:
+    automation_logger = logging.getLogger(LOGGER_NAME)
+    automation_logger.setLevel(logging.INFO)
+    automation_logger.propagate = False
+
+    for handler in list(automation_logger.handlers):
+        automation_logger.removeHandler(handler)
+        handler.close()
+
+    if show_terminal_logs:
+        formatter = logging.Formatter(
+            LOG_FORMAT,
+            datefmt=LOG_DATE_FORMAT,
+        )
+
+        stream = get_stream_for_logging()
+
+        if stream is not None:
+            stream_handler = logging.StreamHandler(stream)
+            stream_handler.setLevel(logging.INFO)
+            stream_handler.setFormatter(formatter)
+            automation_logger.addHandler(stream_handler)
+
+    else:
+        automation_logger.addHandler(logging.NullHandler())
+
+    automation_logger.info(
+        "Logging configurado. Terminal: %s.",
+        "sim" if show_terminal_logs else "não",
+    )
+
+    return automation_logger
 
 
 # -----------------------------
@@ -643,12 +704,19 @@ def wait_for_login_completion(page) -> None:
 
 # Realiza login no sistema.
 def login_to_system(page, login: str, password: str) -> None:
-    
+    logger.info("Acessando tela de login.")
+
     page.goto(LOGIN_URL, wait_until="domcontentloaded")
     wait_for_login_page_ready(page)
+
+    logger.info("Tela de login carregada. Preenchendo credenciais.")
+
     get_login_textbox_locator(page).fill(login)
     get_login_password_locator(page).fill(password)
     page.get_by_role("button", name=LOGIN_BUTTON_TEXT).click()
+
+    logger.info("Login submetido. Aguardando conclusão.")
+
     wait_for_login_completion(page)
 
 
@@ -781,7 +849,7 @@ def extract_single_result(row, search_type: str) -> SearchResult:
         )
 
     return SearchResult(
-        message="Usuário encontrado",
+        message=USER_FOUND_MESSAGE,
         user_login=user_login,
     )
 
@@ -817,6 +885,8 @@ def search_user_prepared_value(
     if not clean_value:
         raise ValueError("Valor da pesquisa preparado não informado.")
 
+    logger.info("Pesquisando usuário: %s.", clean_value)
+
     input_campo = get_search_input_locator(page)
     input_campo.wait_for(state="visible")
     input_campo.fill("")
@@ -829,15 +899,21 @@ def search_user_prepared_value(
         wait_for_search_response(page)
 
         if get_no_user_found_locator(page).first.is_visible():
+            logger.warning("Usuário não encontrado: %s.", clean_value)
             return SearchResult(message=NO_USER_FOUND_MESSAGE)
 
         rows = get_search_result_rows_locator(page)
         count = rows.count()
 
         if count == 0:
+            logger.warning("Usuário não encontrado: %s.", clean_value)
             return SearchResult(message=NO_USER_FOUND_MESSAGE)
 
         if count > 1:
+            logger.warning(
+                "Mais de um usuário encontrado para: %s.",
+                clean_value,
+            )
             return SearchResult(message="Mais de um usuário encontrado")
 
         result = extract_single_result(rows.first, normalized_search_type)
@@ -845,8 +921,18 @@ def search_user_prepared_value(
         if collect_email:
             result = collect_email_for_result(page, result)
 
+        logger.info(
+            "Usuário encontrado: %s. Login: %s.",
+            clean_value,
+            result.user_login,
+        )
+
         return result
     except PlaywrightTimeoutError:
+        logger.warning(
+            "Tempo de resposta da pesquisa esgotado para: %s.",
+            clean_value,
+        )
         return SearchResult(message=NO_USER_FOUND_MESSAGE)
 
 # Formata resultado da pesquisa.
@@ -900,8 +986,8 @@ def summarize_batch_results(results: Sequence[SearchResult]) -> str:
     )
 
 
-# Define a cor de status conforme os resultados do lote.
-def batch_result_color(results: Sequence[SearchResult]) -> str:
+# Define a cor de status conforme um ou mais resultados (unitário ou lote).
+def result_color(results: Sequence[SearchResult]) -> str:
     contagem = Counter(classify_result_status(result) for result in results)
 
     if contagem[STATUS_ERRO]:
@@ -924,32 +1010,57 @@ def run_automation(
     search_type: str,
     search_value: str,
     collect_email: bool = False,
+    show_terminal_logs: bool = False,
     mostrar_browser: bool = True,
-) -> str:
-    normalized_search_type = normalize_search_type(search_type)
-    clean_search_value = prepare_search_value(
-        normalized_search_type,
-        search_value,
+) -> Tuple[str, str]:
+    automation_logger = configure_automation_logging(
+        show_terminal_logs=show_terminal_logs,
     )
 
-    with sync_playwright() as playwright:
-        browser = playwright.chromium.launch(headless=not mostrar_browser)
-        context = browser.new_context()
+    try:
+        normalized_search_type = normalize_search_type(search_type)
+        clean_search_value = prepare_search_value(
+            normalized_search_type,
+            search_value,
+        )
 
-        try:
-            page = context.new_page()
-            login_to_system(page, login, password)
-            open_search_users_page(page)
-            result = search_user_prepared_value(
-                page,
-                normalized_search_type,
-                clean_search_value,
-                collect_email,
-            )
-            return format_single_result(result, normalized_search_type)
-        finally:
-            context.close()
-            browser.close()
+        automation_logger.info(
+            "Iniciando automação unitária. Navegador visível: %s.",
+            "sim" if mostrar_browser else "não",
+        )
+
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(headless=not mostrar_browser)
+            context = browser.new_context()
+
+            try:
+                page = context.new_page()
+                login_to_system(page, login, password)
+                open_search_users_page(page)
+                result = search_user_prepared_value(
+                    page,
+                    normalized_search_type,
+                    clean_search_value,
+                    collect_email,
+                )
+                mensagem = format_single_result(result, normalized_search_type)
+                cor = result_color([result])
+
+                automation_logger.info(
+                    "Automação unitária finalizada. Resultado: %s.",
+                    mensagem,
+                )
+
+                return mensagem, cor
+            finally:
+                context.close()
+                browser.close()
+                automation_logger.info("Navegador encerrado.")
+    except Exception:
+        automation_logger.exception(
+            "Automação unitária finalizada com erro.",
+        )
+        raise
 
 # Executa automação em lote.
 def run_batch_automation(
@@ -959,37 +1070,102 @@ def run_batch_automation(
     spreadsheet_path: str,
     report_directory: str,
     collect_email: bool = False,
+    show_terminal_logs: bool = False,
     mostrar_browser: bool = True,
 ) -> Tuple[str, str]:
-    normalized_search_type = normalize_search_type(search_type)
-    headers, source_rows = read_spreadsheet(spreadsheet_path)
-    search_column = identify_search_column(headers, normalized_search_type)
-    report_path = build_report_path(report_directory, spreadsheet_path)
-    report_rows: List[Row] = []
-    results: List[SearchResult] = []
+    automation_logger = configure_automation_logging(
+        show_terminal_logs=show_terminal_logs,
+    )
 
-    with sync_playwright() as playwright:
-        browser = playwright.chromium.launch(headless=not mostrar_browser)
-        context = browser.new_context()
+    try:
+        normalized_search_type = normalize_search_type(search_type)
 
-        try:
-            page = context.new_page()
-            login_to_system(page, login, password)
-            open_search_users_page(page)
+        automation_logger.info(
+            "Iniciando automação em lote. Planilha: %s. "
+            "Pasta relatório: %s. Navegador visível: %s.",
+            spreadsheet_path,
+            report_directory,
+            "sim" if mostrar_browser else "não",
+        )
 
-            for source_row in source_rows:
-                if collect_email:
-                    open_search_users_page(page)
+        headers, source_rows = read_spreadsheet(spreadsheet_path)
+        search_column = identify_search_column(headers, normalized_search_type)
+        report_path = build_report_path(report_directory, spreadsheet_path)
+        report_rows: List[Row] = []
+        results: List[SearchResult] = []
 
-                search_value = source_row.get(search_column, "")
+        automation_logger.info(
+            "Planilha carregada. Linhas úteis: %s. Coluna de pesquisa: %s.",
+            len(source_rows),
+            search_column,
+        )
 
-                try:
-                    clean_search_value = prepare_batch_search_value(
-                        normalized_search_type,
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(headless=not mostrar_browser)
+            context = browser.new_context()
+
+            try:
+                page = context.new_page()
+                login_to_system(page, login, password)
+                open_search_users_page(page)
+
+                for index, source_row in enumerate(source_rows, start=1):
+                    if collect_email:
+                        open_search_users_page(page)
+
+                    search_value = source_row.get(search_column, "")
+
+                    automation_logger.info(
+                        "Processando linha %s/%s: %s.",
+                        index,
+                        len(source_rows),
                         search_value,
                     )
-                except ValueError as exc:
-                    result = SearchResult(message=f"{ERROR_MESSAGE_PREFIX} {str(exc)}")
+
+                    try:
+                        clean_search_value = prepare_batch_search_value(
+                            normalized_search_type,
+                            search_value,
+                        )
+                    except ValueError as exc:
+                        result = SearchResult(
+                            message=f"{ERROR_MESSAGE_PREFIX} {str(exc)}",
+                        )
+                        results.append(result)
+                        report_rows.append(
+                            build_report_row(
+                                normalized_search_type,
+                                result,
+                                collect_email,
+                            )
+                        )
+
+                        automation_logger.warning(
+                            "Valor inválido na linha %s: %s. Erro: %s.",
+                            index,
+                            search_value,
+                            str(exc),
+                        )
+                        continue
+
+                    try:
+                        result = search_user_prepared_value(
+                            page,
+                            normalized_search_type,
+                            clean_search_value,
+                            collect_email,
+                        )
+                    except Exception as exc:
+                        result = SearchResult(
+                            message=f"{ERROR_MESSAGE_PREFIX} {str(exc)}",
+                        )
+
+                        automation_logger.exception(
+                            "Erro ao processar linha %s: %s.",
+                            index,
+                            clean_search_value,
+                        )
+
                     results.append(result)
                     report_rows.append(
                         build_report_row(
@@ -998,44 +1174,33 @@ def run_batch_automation(
                             collect_email,
                         )
                     )
-                    continue
+            finally:
+                context.close()
+                browser.close()
+                automation_logger.info("Navegador encerrado.")
 
-                try:
-                    result = search_user_prepared_value(
-                        page,
-                        normalized_search_type,
-                        clean_search_value,
-                        collect_email,
-                    )
-                except Exception as exc:
-                    result = SearchResult(message=f"{ERROR_MESSAGE_PREFIX} {str(exc)}")
+        write_report(
+            spreadsheet_path,
+            report_path,
+            normalized_search_type,
+            report_rows,
+            collect_email,
+        )
 
-                results.append(result)
-                report_rows.append(
-                    build_report_row(
-                        normalized_search_type,
-                        result,
-                        collect_email,
-                    )
-                )
-        finally:
-            context.close()
-            browser.close()
+        resumo = summarize_batch_results(results)
+        cor = result_color(results)
 
-    write_report(
-        spreadsheet_path,
-        report_path,
-        normalized_search_type,
-        report_rows,
-        collect_email,
-    )
+        mensagem = (
+            f"Lote finalizado. {resumo} "
+            f"Relatório: {report_path}"
+        )
 
-    resumo = summarize_batch_results(results)
-    cor = batch_result_color(results)
+        automation_logger.info("Relatório gerado: %s.", report_path)
+        automation_logger.info(mensagem)
 
-    mensagem = (
-        f"Lote finalizado. {resumo} "
-        f"Relatório: {report_path}"
-    )
-
-    return mensagem, cor
+        return mensagem, cor
+    except Exception:
+        automation_logger.exception(
+            "Automação em lote finalizada com erro.",
+        )
+        raise

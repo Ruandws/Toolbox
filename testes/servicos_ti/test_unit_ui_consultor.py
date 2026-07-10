@@ -79,6 +79,7 @@ def criar_app_fake():
     app.em_execucao = False
     app.collect_email_var = FakeVar(False)
     app.var_browser = FakeVar(True)
+    app.var_show_terminal_logs = FakeVar(False)
     app.var_tipo_execucao = FakeVar(ui.TIPO_INDIVIDUAL)
     app.entry_login = FakeEntry()
     app.entry_password = FakeEntry()
@@ -88,6 +89,7 @@ def criar_app_fake():
     app.combo_search_type = FakeEntry("CPF")
     app.checkbox_collect_email = FakeWidget()
     app.checkbox_browser = FakeWidget()
+    app.switch_terminal_logs = FakeWidget()
     app.button_run = FakeWidget()
     app.segment_tipo_execucao = FakeSegment()
     app.button_select_spreadsheet = FakeWidget()
@@ -162,6 +164,7 @@ def test_bloquear_e_liberar_execucao_alteram_controles():
     assert app.entry_password.configuracoes["state"] == "disabled"
     assert app.checkbox_collect_email.configuracoes["state"] == "disabled"
     assert app.checkbox_browser.configuracoes["state"] == "disabled"
+    assert app.switch_terminal_logs.configuracoes["state"] == "disabled"
     assert app.button_select_report_dir.configuracoes["state"] == "disabled"
 
     ui.ConsultorSTI._liberar_execucao(app)
@@ -173,6 +176,7 @@ def test_bloquear_e_liberar_execucao_alteram_controles():
     assert app.entry_password.configuracoes["state"] == "normal"
     assert app.checkbox_collect_email.configuracoes["state"] == "normal"
     assert app.checkbox_browser.configuracoes["state"] == "normal"
+    assert app.switch_terminal_logs.configuracoes["state"] == "normal"
     assert app.button_select_report_dir.configuracoes["state"] == "normal"
 
 
@@ -238,6 +242,7 @@ def test_start_automation_unitaria_exibe_erro_de_preparacao(monkeypatch):
 def test_start_automation_unitaria_inicia_thread_com_valor_preparado(monkeypatch):
     monkeypatch.setattr(ui.threading, "Thread", FakeThread)
     monkeypatch.setattr(ui, "prepare_search_value", lambda _tipo, _valor: "52998224725")
+    monkeypatch.setattr(ui, "set_terminal_visibility", lambda _show: None)
     app = criar_app_fake()
     app.entry_login.valor = " tecnico "
     app.entry_password.valor = " senha "
@@ -257,6 +262,7 @@ def test_start_automation_unitaria_inicia_thread_com_valor_preparado(monkeypatch
         "CPF",
         "52998224725",
         True,
+        False,
         True,
     )
     assert app.em_execucao is True
@@ -269,11 +275,13 @@ def test_start_automation_unitaria_inicia_thread_com_valor_preparado(monkeypatch
 def test_start_automation_unitaria_propaga_modo_headless(monkeypatch):
     monkeypatch.setattr(ui.threading, "Thread", FakeThread)
     monkeypatch.setattr(ui, "prepare_search_value", lambda _tipo, _valor: "52998224725")
+    monkeypatch.setattr(ui, "set_terminal_visibility", lambda _show: None)
     app = criar_app_fake()
     app.entry_login.valor = "tecnico"
     app.entry_password.valor = "senha"
     app.entry_search.valor = "529.982.247-25"
     app.var_browser.set(False)
+    app.var_show_terminal_logs.set(True)
 
     ui.ConsultorSTI.start_automation(app)
 
@@ -284,12 +292,35 @@ def test_start_automation_unitaria_propaga_modo_headless(monkeypatch):
         "CPF",
         "52998224725",
         False,
+        True,
         False,
     )
 
 
+def test_start_automation_unitaria_headless_exige_terminal_logs(monkeypatch):
+    monkeypatch.setattr(ui.threading, "Thread", FakeThread)
+    app = criar_app_fake()
+    app.entry_login.valor = "tecnico"
+    app.entry_password.valor = "senha"
+    app.entry_search.valor = "529.982.247-25"
+    app.var_browser.set(False)
+    app.var_show_terminal_logs.set(False)
+
+    ui.ConsultorSTI.start_automation(app)
+
+    assert FakeThread.criadas == []
+    assert app.label_status.configuracoes == {
+        "text": (
+            "Erro: Para executar em modo headless, habilite também "
+            "terminal/logs de execução."
+        ),
+        "text_color": "red",
+    }
+
+
 def test_start_automation_lote_usa_tipo_explicito(monkeypatch):
     monkeypatch.setattr(ui.threading, "Thread", FakeThread)
+    monkeypatch.setattr(ui, "set_terminal_visibility", lambda _show: None)
     app = criar_app_fake()
     app.var_tipo_execucao.set(ui.TIPO_LOTE)
     app.entry_login.valor = "tecnico"
@@ -310,6 +341,7 @@ def test_start_automation_lote_usa_tipo_explicito(monkeypatch):
         "C:/entrada.xlsx",
         "C:/relatorios",
         False,
+        False,
         True,
     )
     assert app.label_status.configuracoes == {
@@ -320,9 +352,11 @@ def test_start_automation_lote_usa_tipo_explicito(monkeypatch):
 
 def test_start_automation_lote_propaga_modo_headless(monkeypatch):
     monkeypatch.setattr(ui.threading, "Thread", FakeThread)
+    monkeypatch.setattr(ui, "set_terminal_visibility", lambda _show: None)
     app = criar_app_fake()
     app.var_tipo_execucao.set(ui.TIPO_LOTE)
     app.var_browser.set(False)
+    app.var_show_terminal_logs.set(True)
     app.entry_login.valor = "tecnico"
     app.entry_password.valor = "senha"
     app.entry_spreadsheet.valor = "C:/entrada.xlsx"
@@ -338,8 +372,32 @@ def test_start_automation_lote_propaga_modo_headless(monkeypatch):
         "C:/entrada.xlsx",
         "C:/relatorios",
         False,
+        True,
         False,
     )
+
+
+def test_start_automation_lote_headless_exige_terminal_logs(monkeypatch):
+    monkeypatch.setattr(ui.threading, "Thread", FakeThread)
+    app = criar_app_fake()
+    app.var_tipo_execucao.set(ui.TIPO_LOTE)
+    app.var_browser.set(False)
+    app.var_show_terminal_logs.set(False)
+    app.entry_login.valor = "tecnico"
+    app.entry_password.valor = "senha"
+    app.entry_spreadsheet.valor = "C:/entrada.xlsx"
+    app.entry_report_dir.valor = "C:/relatorios"
+
+    ui.ConsultorSTI.start_automation(app)
+
+    assert FakeThread.criadas == []
+    assert app.label_status.configuracoes == {
+        "text": (
+            "Erro: Para executar em modo headless, habilite também "
+            "terminal/logs de execução."
+        ),
+        "text_color": "red",
+    }
 
 
 def test_start_automation_lote_valida_planilha_e_relatorio(monkeypatch):
@@ -362,12 +420,35 @@ def test_run_playwright_task_agenda_finalizacao_unitaria_com_sucesso(monkeypatch
     app = criar_app_fake()
     chamadas = []
     app.after = lambda delay, func, *args: chamadas.append((delay, func, args))
-    monkeypatch.setattr(ui, "run_automation", lambda *args: "Usuário encontrado")
+    monkeypatch.setattr(
+        ui,
+        "run_automation",
+        lambda *args: ("Usuário encontrado", "green"),
+    )
 
     ui.ConsultorSTI.run_playwright_task(app, "single", "arg")
 
     assert chamadas == [
         (0, app.finish_automation, ("Usuário encontrado", "green")),
+    ]
+
+
+def test_run_playwright_task_agenda_finalizacao_unitaria_multiplos_encontrados(
+    monkeypatch,
+):
+    app = criar_app_fake()
+    chamadas = []
+    app.after = lambda delay, func, *args: chamadas.append((delay, func, args))
+    monkeypatch.setattr(
+        ui,
+        "run_automation",
+        lambda *args: ("Mais de um usuário encontrado", "orange"),
+    )
+
+    ui.ConsultorSTI.run_playwright_task(app, "single", "arg")
+
+    assert chamadas == [
+        (0, app.finish_automation, ("Mais de um usuário encontrado", "orange")),
     ]
 
 

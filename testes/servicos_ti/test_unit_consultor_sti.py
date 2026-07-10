@@ -16,7 +16,6 @@ from consultor_sti import (
     STATUS_SUCESSO,
     USER_FOUND_MESSAGE,
     SearchResult,
-    batch_result_color,
     build_report_row,
     build_row,
     classify_result_status,
@@ -35,6 +34,7 @@ from consultor_sti import (
     normalize_search_type,
     prepare_batch_search_value,
     prepare_search_value,
+    result_color,
     summarize_batch_results,
     validate_spreadsheet_extension,
 )
@@ -467,20 +467,28 @@ class TestResumoLote:
             "Total: 0. Sucesso: 0. Não encontrado: 0. Erro: 0."
         )
 
-    def test_batch_result_color_vermelho_quando_ha_erro(self):
+    def test_result_color_vermelho_quando_ha_erro(self):
         resultados = [
             SearchResult(message=USER_FOUND_MESSAGE),
             SearchResult(message="Erro: falha ao pesquisar"),
         ]
-        assert batch_result_color(resultados) == "red"
+        assert result_color(resultados) == "red"
 
-    def test_batch_result_color_laranja_quando_nao_encontrado_sem_erro(self):
+    def test_result_color_laranja_quando_nao_encontrado_sem_erro(self):
         resultados = [
             SearchResult(message=USER_FOUND_MESSAGE),
             SearchResult(message=NO_USER_FOUND_MESSAGE),
         ]
-        assert batch_result_color(resultados) == "orange"
+        assert result_color(resultados) == "orange"
 
-    def test_batch_result_color_verde_quando_tudo_sucesso(self):
+    def test_result_color_verde_quando_tudo_sucesso(self):
         resultados = [SearchResult(message=USER_FOUND_MESSAGE)]
-        assert batch_result_color(resultados) == "green"
+        assert result_color(resultados) == "green"
+
+    def test_result_color_unitario_laranja_para_multiplos_encontrados(self):
+        resultado = [SearchResult(message="Mais de um usuário encontrado")]
+        assert result_color(resultado) == "orange"
+
+    def test_result_color_unitario_vermelho_para_erro(self):
+        resultado = [SearchResult(message="Erro: falha ao pesquisar")]
+        assert result_color(resultado) == "red"
