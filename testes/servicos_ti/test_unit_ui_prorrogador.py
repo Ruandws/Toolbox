@@ -155,7 +155,25 @@ def test_start_automation_rejeita_senha_apenas_com_espacos(monkeypatch):
 
     assert FakeThread.criadas == []
     assert app.label_status.configuracoes["text"] == (
-        "Erro: Preencha login, senha e nova data."
+        "Erro: Preencha login e senha."
+    )
+    assert app.label_status.configuracoes["text_color"] == "red"
+
+
+def test_start_automation_rejeita_data_vazia(monkeypatch):
+    FakeThread.criadas.clear()
+    monkeypatch.setattr(ui.threading, "Thread", FakeThread)
+    app = criar_app_fake()
+    app.entry_login.valor = "tecnico"
+    app.entry_password.valor = "senha"
+    app.entry_date.valor = ""
+    app.entry_search.valor = "usuario"
+
+    ui.ProrrogadorSTI.start_automation(app)
+
+    assert FakeThread.criadas == []
+    assert app.label_status.configuracoes["text"] == (
+        "Erro: Preencha a nova data."
     )
     assert app.label_status.configuracoes["text_color"] == "red"
 

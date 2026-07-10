@@ -545,13 +545,28 @@ class ProrrogadorSTI(ctk.CTk):
             self.entry_report_dir.delete(0, "end")
             self.entry_report_dir.insert(0, directory)
 
+    # Coleta e valida login e senha.
+    def _credenciais_e_url(self) -> tuple[str, str]:
+        login = self.entry_login.get().strip()
+        # Senhas podem conter espacos significativos; nao normalizar com strip().
+        password = self.entry_password.get()
+
+        if not login or not password.strip():
+            raise ValueError("Preencha login e senha.")
+
+        return login, password
+
     # Inicia processo de automação.
     def start_automation(self):
         if self.em_execucao:
             return
 
-        login = self.entry_login.get().strip()
-        password = self.entry_password.get()
+        try:
+            login, password = self._credenciais_e_url()
+        except ValueError as exc:
+            self.show_status(f"Erro: {exc}", "red")
+            return
+
         search_value = self.entry_search.get().strip()
         expiration_date = self.entry_date.get().strip()
         spreadsheet_path = self.entry_spreadsheet.get().strip()
@@ -560,9 +575,9 @@ class ProrrogadorSTI(ctk.CTk):
         mostrar_browser = bool(self.var_browser.get())
         tipo_execucao = self.var_tipo_execucao.get()
 
-        if not login or not password.strip() or not expiration_date:
+        if not expiration_date:
             self.show_status(
-                "Erro: Preencha login, senha e nova data.",
+                "Erro: Preencha a nova data.",
                 "red"
             )
             return
