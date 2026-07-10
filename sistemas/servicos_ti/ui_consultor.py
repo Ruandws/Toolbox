@@ -399,6 +399,14 @@ class ConsultorSTI(ctk.CTk):
         if self.em_execucao:
             return
 
+        tipo_execucao = self.var_tipo_execucao.get()
+        if tipo_execucao == TIPO_LOTE:
+            self.iniciar_execucao_lote()
+        else:
+            self.iniciar_execucao_individual()
+
+    # Inicia automação unitária.
+    def iniciar_execucao_individual(self):
         try:
             login, password = self._credenciais_e_url()
         except ValueError as exc:
@@ -407,60 +415,73 @@ class ConsultorSTI(ctk.CTk):
 
         search_type = self.combo_search_type.get()
         search_value = self.entry_search.get().strip()
+        collect_email = self.collect_email_var.get()
+        mostrar_browser = bool(self.var_browser.get())
+
+        if not search_value:
+            self.show_status(
+                "Erro: Informe o valor da pesquisa.",
+                "red",
+            )
+            return
+
+        try:
+            clean_search_value = prepare_search_value(
+                search_type,
+                search_value,
+            )
+        except ValueError as exc:
+            self.show_status(f"Erro: {str(exc)}", "red")
+            return
+
+        args = (
+            "single",
+            login,
+            password,
+            search_type,
+            clean_search_value,
+            collect_email,
+            mostrar_browser,
+        )
+
+        self._disparar_execucao(args, "Iniciando automação unitária...")
+
+    # Inicia automação em lote.
+    def iniciar_execucao_lote(self):
+        try:
+            login, password = self._credenciais_e_url()
+        except ValueError as exc:
+            self.show_status(f"Erro: {exc}", "red")
+            return
+
+        search_type = self.combo_search_type.get()
         spreadsheet_path = self.entry_spreadsheet.get().strip()
         report_directory = self.entry_report_dir.get().strip()
         collect_email = self.collect_email_var.get()
         mostrar_browser = bool(self.var_browser.get())
-        tipo_execucao = self.var_tipo_execucao.get()
 
-        if tipo_execucao == TIPO_LOTE:
-            if not spreadsheet_path or not report_directory:
-                self.show_status(
-                    "Erro: Para lote, informe planilha e pasta de relatório.",
-                    "red",
-                )
-                return
-
-            args = (
-                "batch",
-                login,
-                password,
-                search_type,
-                spreadsheet_path,
-                report_directory,
-                collect_email,
-                mostrar_browser,
+        if not spreadsheet_path or not report_directory:
+            self.show_status(
+                "Erro: Para lote, informe planilha e pasta de relatório.",
+                "red",
             )
-            status_text = "Iniciando automação em lote..."
-        
-        else:
-            if not search_value:
-                self.show_status(
-                    "Erro: Informe o valor da pesquisa.",
-                    "red",
-                )
-                return
+            return
 
-            try:
-                clean_search_value = prepare_search_value(
-                    search_type,
-                    search_value,
-                )
-            except ValueError as exc:
-                self.show_status(f"Erro: {str(exc)}", "red")
-                return
+        args = (
+            "batch",
+            login,
+            password,
+            search_type,
+            spreadsheet_path,
+            report_directory,
+            collect_email,
+            mostrar_browser,
+        )
 
-            args = (
-                "single",
-                login,
-                password,
-                search_type,
-                clean_search_value,
-                collect_email,
-                mostrar_browser,
-            )
-            status_text = "Iniciando automação unitária..."
+        self._disparar_execucao(args, "Iniciando automação em lote...")
 
+    # Bloqueia controles e dispara thread de execucao.
+    def _disparar_execucao(self, args, status_text):
         self.show_status(status_text, "blue")
         self._bloquear_execucao()
 
