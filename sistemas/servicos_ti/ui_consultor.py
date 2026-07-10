@@ -482,14 +482,7 @@ class ConsultorSTI(ctk.CTk):
             color = "orange" if "Nenhum" in result_msg else "green"
             self.after(0, self.finish_automation, result_msg, color)
         except Exception as e:
-            error_text = str(e)
-
-            if error_text.startswith("Login falhou:"):
-                error_msg = error_text
-            else:
-                error_msg = f"Erro: {error_text}"
-
-            self.after(0, self.finish_automation, error_msg, "red")
+            self.after(0, self.finish_automation, f"Erro: {str(e)}", "red")
 
     # Bloqueia controles durante a execucao da automacao.
     def _bloquear_execucao(self):

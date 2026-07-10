@@ -384,7 +384,7 @@ def test_run_playwright_task_agenda_finalizacao_lote_sem_resultado(monkeypatch):
     ]
 
 
-def test_run_playwright_task_preserva_mensagem_de_login_falho(monkeypatch):
+def test_run_playwright_task_prefixa_mensagem_de_login_falho_com_erro(monkeypatch):
     app = criar_app_fake()
     chamadas = []
     app.after = lambda delay, func, *args: chamadas.append((delay, func, args))
@@ -397,7 +397,7 @@ def test_run_playwright_task_preserva_mensagem_de_login_falho(monkeypatch):
     ui.ConsultorSTI.run_playwright_task(app, "single", "arg")
 
     assert chamadas == [
-        (0, app.finish_automation, ("Login falhou: credenciais invalidas", "red")),
+        (0, app.finish_automation, ("Erro: Login falhou: credenciais invalidas", "red")),
     ]
 
 
