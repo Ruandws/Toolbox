@@ -769,7 +769,7 @@ def test_executar_individual_thread_agenda_finalizacao_em_resultado_ignorado(
         True,
     )
 
-    assert chamadas[0][2] == ("Joao: ignorado - dados invalidos", "red")
+    assert chamadas[0][2] == ("Joao: ignorado - dados invalidos", "orange")
 
 
 def test_executar_individual_thread_agenda_finalizacao_em_excecao(
@@ -874,4 +874,38 @@ def test_finalizar_execucao_mostra_status_e_libera(app_fake):
         "text_color": "green",
     }
     assert app_fake.em_execucao is False
+
+
+class TestCorResultado:
+    def test_verde_quando_tudo_criado_ou_mantido(self, app_fake):
+        resultados = [
+            ResultadoCadastroPessoa("1", "A", STATUS_CRIADO, "ok"),
+            ResultadoCadastroPessoa("2", "B", STATUS_MANTIDO, "ok"),
+        ]
+
+        assert ui.AghuCadastroPessoaApp._cor_resultado(app_fake, resultados) == "green"
+
+    def test_laranja_quando_ha_ignorado_sem_erro(self, app_fake):
+        resultados = [
+            ResultadoCadastroPessoa("1", "A", STATUS_CRIADO, "ok"),
+            ResultadoCadastroPessoa("2", "B", STATUS_IGNORADO, "dados invalidos"),
+        ]
+
+        assert ui.AghuCadastroPessoaApp._cor_resultado(app_fake, resultados) == "orange"
+
+    def test_laranja_quando_ha_conferir_manualmente_sem_erro(self, app_fake):
+        resultados = [
+            ResultadoCadastroPessoa("1", "A", STATUS_CONFERIR_MANUAL, "indefinido"),
+        ]
+
+        assert ui.AghuCadastroPessoaApp._cor_resultado(app_fake, resultados) == "orange"
+
+    def test_vermelho_quando_ha_erro(self, app_fake):
+        resultados = [
+            ResultadoCadastroPessoa("1", "A", STATUS_CRIADO, "ok"),
+            ResultadoCadastroPessoa("2", "B", STATUS_IGNORADO, "dados invalidos"),
+            ResultadoCadastroPessoa("3", "C", STATUS_ERRO, "falha tecnica"),
+        ]
+
+        assert ui.AghuCadastroPessoaApp._cor_resultado(app_fake, resultados) == "red"
 

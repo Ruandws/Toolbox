@@ -684,18 +684,12 @@ class AghuCadastroPessoaApp(ctk.CTk):
                     f"{resultado.cpf or resultado.nome_pessoa}: "
                     f"{resultado.status} - {resultado.detalhes}"
                 )
-                cor = (
-                    "green"
-                    if resultado.status not in {STATUS_ERRO, STATUS_IGNORADO}
-                    else "red"
-                )
             else:
                 mensagem = self._resumir_resultados(
                     resultados,
                     prefixo="Execução unitária concluída",
                 )
-                cor = "green"
-            self.after(0, self._finalizar_execucao, mensagem, cor)
+            self.after(0, self._finalizar_execucao, mensagem, self._cor_resultado(resultados))
         except Exception as exc:
             self.after(0, self._finalizar_execucao, f"Erro: {exc}", "red")
 
@@ -767,7 +761,7 @@ class AghuCadastroPessoaApp(ctk.CTk):
             )
             resumo = self._resumir_resultados(resultados)
             mensagem = f"{resumo} Relatório: {relatorio}"
-            self.after(0, self._finalizar_execucao, mensagem, "green")
+            self.after(0, self._finalizar_execucao, mensagem, self._cor_resultado(resultados))
         except Exception as exc:
             self.after(0, self._finalizar_execucao, f"Erro: {exc}", "red")
 
@@ -822,6 +816,17 @@ class AghuCadastroPessoaApp(ctk.CTk):
             f"Ignorados: {contagem[STATUS_IGNORADO]}. "
             f"Erros: {contagem[STATUS_ERRO]}."
         )
+
+    def _cor_resultado(self, resultados) -> str:
+        contagem = Counter(resultado.status for resultado in resultados)
+
+        if contagem[STATUS_ERRO]:
+            return "red"
+
+        if contagem[STATUS_IGNORADO] or contagem[STATUS_CONFERIR_MANUAL]:
+            return "orange"
+
+        return "green"
 
     def _finalizar_execucao(self, mensagem: str, cor: str) -> None:
         self._mostrar_status(mensagem, cor)
