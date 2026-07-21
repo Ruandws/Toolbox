@@ -128,6 +128,14 @@ class SearchResult:
     email: str = ""
 
 
+@dataclass
+class UsuarioConsulta:
+    """Usuário informado manualmente na execução unitária."""
+    login: str
+    nome_completo: str = ""
+    email: str = ""
+
+
 # -----------------------------
 # Logging
 # -----------------------------
@@ -958,6 +966,21 @@ def format_single_result(result: SearchResult, search_type: str) -> str:
     )
 
 
+# Formata o detalhe de cada pesquisa da execução unitária multi-usuário.
+def format_multi_results(
+    usuarios: Sequence["UsuarioConsulta"],
+    results: Sequence[SearchResult],
+    search_type: str,
+) -> str:
+    blocos = [
+        f"{index}. Pesquisado: {usuario.login}\n"
+        f"{format_single_result(result, search_type)}"
+        for index, (usuario, result) in enumerate(zip(usuarios, results), start=1)
+    ]
+
+    return "\n\n".join(blocos)
+
+
 # -----------------------------
 # Resumo de lote
 # -----------------------------
@@ -1061,6 +1084,101 @@ def run_automation(
             "Automação unitária finalizada com erro.",
         )
         raise
+
+
+# Executa pesquisa unitária para uma lista de 1 a 5 usuários manuais.
+def run_multi_automation(
+    login: str,
+    password: str,
+    search_type: str,
+    usuarios: List[UsuarioConsulta],
+    collect_email: bool = False,
+    show_terminal_logs: bool = False,
+    mostrar_browser: bool = True,
+) -> Tuple[str, str, str]:
+    automation_logger = configure_automation_logging(
+        show_terminal_logs=show_terminal_logs,
+    )
+
+    results: List[SearchResult] = []
+
+    try:
+        normalized_search_type = normalize_search_type(search_type)
+
+        automation_logger.info(
+            "Iniciando automação unitária multi-usuário. Total: %s. Navegador visível: %s.",
+            len(usuarios),
+            "sim" if mostrar_browser else "não",
+        )
+
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(headless=not mostrar_browser)
+            context = browser.new_context()
+
+            try:
+                page = context.new_page()
+                login_to_system(page, login, password)
+                open_search_users_page(page)
+
+                for index, usuario in enumerate(usuarios, start=1):
+                    if collect_email:
+                        open_search_users_page(page)
+
+                    automation_logger.info(
+                        "Pesquisando usuário %s/%s: %s.",
+                        index,
+                        len(usuarios),
+                        usuario.login,
+                    )
+
+                    try:
+                        result = search_user_prepared_value(
+                            page,
+                            normalized_search_type,
+                            usuario.login,
+                            collect_email,
+                        )
+                    except Exception as exc:
+                        result = SearchResult(
+                            message=f"{ERROR_MESSAGE_PREFIX} {str(exc)}",
+                        )
+                        automation_logger.exception(
+                            "Erro ao pesquisar usuário %s/%s: %s.",
+                            index,
+                            len(usuarios),
+                            usuario.login,
+                        )
+
+                    results.append(result)
+
+            finally:
+                context.close()
+                browser.close()
+                automation_logger.info("Navegador encerrado.")
+
+        if len(results) == 1:
+            mensagem = format_single_result(results[0], normalized_search_type)
+            detalhe = ""
+        else:
+            resumo = summarize_batch_results(results)
+            mensagem = f"Unitária concluída. {resumo}"
+            detalhe = format_multi_results(usuarios, results, normalized_search_type)
+
+        cor = result_color(results)
+
+        automation_logger.info(
+            "Automação unitária multi-usuário finalizada. %s",
+            mensagem,
+        )
+
+        return mensagem, cor, detalhe
+
+    except Exception:
+        automation_logger.exception(
+            "Automação unitária multi-usuário finalizada com erro.",
+        )
+        raise
+
 
 # Executa automação em lote.
 def run_batch_automation(

@@ -40,6 +40,18 @@ class FakeWidget:
         self.visivel = False
 
 
+class FakeTextbox(FakeWidget):
+    def __init__(self):
+        super().__init__()
+        self.valor = ""
+
+    def insert(self, indice, valor):
+        self.valor += valor
+
+    def delete(self, inicio, fim):
+        self.valor = ""
+
+
 class FakeSegment(FakeWidget):
     def __init__(self):
         super().__init__()
@@ -83,8 +95,12 @@ def criar_app_fake():
     app.var_tipo_execucao = FakeVar(ui.TIPO_INDIVIDUAL)
     app.entry_login = FakeEntry()
     app.entry_password = FakeEntry()
-    app.entry_search = FakeEntry()
+    app.linhas_usuarios_individual = [{"valor": FakeEntry(), "frame": FakeWidget(), "remover": FakeWidget()}]
+    app.button_adicionar = FakeWidget()
+    app.label_limite = FakeWidget()
+    app.textbox_resultado = FakeTextbox()
     app.entry_spreadsheet = FakeEntry()
+    app.label_cabecalho_pesquisa = FakeWidget()
     app.entry_report_dir = FakeEntry()
     app.combo_search_type = FakeEntry("CPF")
     app.checkbox_collect_email = FakeWidget()
@@ -141,13 +157,13 @@ def test_on_search_type_change_atualiza_placeholder():
 
     ui.ConsultorSTI.on_search_type_change(app, "Nome Completo")
 
-    assert app.entry_search.configuracoes["placeholder_text"] == (
+    assert app.linhas_usuarios_individual[0]["valor"].configuracoes["placeholder_text"] == (
         "Digite o nome completo sem números"
     )
 
     ui.ConsultorSTI.on_search_type_change(app, "CPF")
 
-    assert app.entry_search.configuracoes["placeholder_text"] == (
+    assert app.linhas_usuarios_individual[0]["valor"].configuracoes["placeholder_text"] == (
         "Digite CPF com ou sem pontuação"
     )
 
@@ -166,6 +182,8 @@ def test_bloquear_e_liberar_execucao_alteram_controles():
     assert app.checkbox_browser.configuracoes["state"] == "disabled"
     assert app.switch_terminal_logs.configuracoes["state"] == "disabled"
     assert app.button_select_report_dir.configuracoes["state"] == "disabled"
+    assert app.linhas_usuarios_individual[0]["valor"].configuracoes["state"] == "disabled"
+    assert app.button_adicionar.configuracoes["state"] == "disabled"
 
     ui.ConsultorSTI._liberar_execucao(app)
 
@@ -178,6 +196,8 @@ def test_bloquear_e_liberar_execucao_alteram_controles():
     assert app.checkbox_browser.configuracoes["state"] == "normal"
     assert app.switch_terminal_logs.configuracoes["state"] == "normal"
     assert app.button_select_report_dir.configuracoes["state"] == "normal"
+    assert app.linhas_usuarios_individual[0]["valor"].configuracoes["state"] == "normal"
+    assert app.button_adicionar.configuracoes["state"] == "normal"
 
 
 def test_start_automation_nao_faz_nada_se_ja_em_execucao(monkeypatch):
@@ -208,12 +228,13 @@ def test_start_automation_unitaria_valida_valor_de_pesquisa(monkeypatch):
     app = criar_app_fake()
     app.entry_login.valor = "tecnico"
     app.entry_password.valor = "senha"
+    app.linhas_usuarios_individual[0]["valor"].valor = ""
 
     ui.ConsultorSTI.start_automation(app)
 
     assert FakeThread.criadas == []
     assert app.label_status.configuracoes == {
-        "text": "Erro: Informe o valor da pesquisa.",
+        "text": "Erro: Preencha ao menos um valor de pesquisa.",
         "text_color": "red",
     }
 
@@ -228,13 +249,13 @@ def test_start_automation_unitaria_exibe_erro_de_preparacao(monkeypatch):
     app = criar_app_fake()
     app.entry_login.valor = "tecnico"
     app.entry_password.valor = "senha"
-    app.entry_search.valor = "abc"
+    app.linhas_usuarios_individual[0]["valor"].valor = "abc"
 
     ui.ConsultorSTI.start_automation(app)
 
     assert FakeThread.criadas == []
     assert app.label_status.configuracoes == {
-        "text": "Erro: valor invalido",
+        "text": "Erro em 'abc': valor invalido",
         "text_color": "red",
     }
 
@@ -246,7 +267,7 @@ def test_start_automation_unitaria_inicia_thread_com_valor_preparado(monkeypatch
     app = criar_app_fake()
     app.entry_login.valor = " tecnico "
     app.entry_password.valor = " senha "
-    app.entry_search.valor = "529.982.247-25"
+    app.linhas_usuarios_individual[0]["valor"].valor = "529.982.247-25"
     app.collect_email_var.set(True)
 
     ui.ConsultorSTI.start_automation(app)
@@ -256,11 +277,11 @@ def test_start_automation_unitaria_inicia_thread_com_valor_preparado(monkeypatch
     assert thread.daemon is True
     assert thread.target == app.run_playwright_task
     assert thread.args == (
-        "single",
+        "multi",
         "tecnico",
         " senha ",
         "CPF",
-        "52998224725",
+        [ui.UsuarioConsulta(login="52998224725")],
         True,
         False,
         True,
@@ -279,18 +300,18 @@ def test_start_automation_unitaria_propaga_modo_headless(monkeypatch):
     app = criar_app_fake()
     app.entry_login.valor = "tecnico"
     app.entry_password.valor = "senha"
-    app.entry_search.valor = "529.982.247-25"
+    app.linhas_usuarios_individual[0]["valor"].valor = "529.982.247-25"
     app.var_browser.set(False)
     app.var_show_terminal_logs.set(True)
 
     ui.ConsultorSTI.start_automation(app)
 
     assert FakeThread.criadas[0].args == (
-        "single",
+        "multi",
         "tecnico",
         "senha",
         "CPF",
-        "52998224725",
+        [ui.UsuarioConsulta(login="52998224725")],
         False,
         True,
         False,
@@ -302,7 +323,7 @@ def test_start_automation_unitaria_headless_exige_terminal_logs(monkeypatch):
     app = criar_app_fake()
     app.entry_login.valor = "tecnico"
     app.entry_password.valor = "senha"
-    app.entry_search.valor = "529.982.247-25"
+    app.linhas_usuarios_individual[0]["valor"].valor = "529.982.247-25"
     app.var_browser.set(False)
     app.var_show_terminal_logs.set(False)
 
@@ -325,7 +346,6 @@ def test_start_automation_lote_usa_tipo_explicito(monkeypatch):
     app.var_tipo_execucao.set(ui.TIPO_LOTE)
     app.entry_login.valor = "tecnico"
     app.entry_password.valor = "senha"
-    app.entry_search.valor = ""
     app.entry_spreadsheet.valor = "C:/entrada.xlsx"
     app.entry_report_dir.valor = "C:/relatorios"
 
@@ -429,11 +449,11 @@ def test_run_playwright_task_agenda_finalizacao_unitaria_com_sucesso(monkeypatch
     ui.ConsultorSTI.run_playwright_task(app, "single", "arg")
 
     assert chamadas == [
-        (0, app.finish_automation, ("Usuário encontrado", "green")),
+        (0, app.finish_automation, ("Usuário encontrado", "green", "")),
     ]
 
 
-def test_run_playwright_task_agenda_finalizacao_unitaria_multiplos_encontrados(
+def test_run_playwright_task_agenda_finalizacao_multi_com_sucesso(
     monkeypatch,
 ):
     app = criar_app_fake()
@@ -441,14 +461,14 @@ def test_run_playwright_task_agenda_finalizacao_unitaria_multiplos_encontrados(
     app.after = lambda delay, func, *args: chamadas.append((delay, func, args))
     monkeypatch.setattr(
         ui,
-        "run_automation",
-        lambda *args: ("Mais de um usuário encontrado", "orange"),
+        "run_multi_automation",
+        lambda *args: ("Mais de um usuário encontrado", "orange", "detalhe_aqui"),
     )
 
-    ui.ConsultorSTI.run_playwright_task(app, "single", "arg")
+    ui.ConsultorSTI.run_playwright_task(app, "multi", "arg")
 
     assert chamadas == [
-        (0, app.finish_automation, ("Mais de um usuário encontrado", "orange")),
+        (0, app.finish_automation, ("Mais de um usuário encontrado", "orange", "detalhe_aqui")),
     ]
 
 
@@ -465,7 +485,7 @@ def test_run_playwright_task_agenda_finalizacao_lote_sem_resultado(monkeypatch):
     ui.ConsultorSTI.run_playwright_task(app, "batch", "arg")
 
     assert chamadas == [
-        (0, app.finish_automation, ("Nenhum usuário", "orange")),
+        (0, app.finish_automation, ("Nenhum usuário", "orange", "")),
     ]
 
 
@@ -482,7 +502,7 @@ def test_run_playwright_task_prefixa_mensagem_de_login_falho_com_erro(monkeypatc
     ui.ConsultorSTI.run_playwright_task(app, "single", "arg")
 
     assert chamadas == [
-        (0, app.finish_automation, ("Erro: Login falhou: credenciais invalidas", "red")),
+        (0, app.finish_automation, ("Erro: Login falhou: credenciais invalidas", "red", "")),
     ]
 
 
@@ -490,7 +510,7 @@ def test_finish_automation_atualiza_status_e_libera_execucao():
     app = criar_app_fake()
     ui.ConsultorSTI._bloquear_execucao(app)
 
-    ui.ConsultorSTI.finish_automation(app, "concluido", "green")
+    ui.ConsultorSTI.finish_automation(app, "concluido", "green", "detalhe_aqui")
 
     assert app.label_status.configuracoes == {
         "text": "concluido",

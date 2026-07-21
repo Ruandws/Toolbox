@@ -4,7 +4,13 @@ import sys
 import threading
 from tkinter import BooleanVar, StringVar, filedialog
 import customtkinter as ctk
-from consultor_sti import prepare_search_value, run_automation, run_batch_automation
+from consultor_sti import (
+    prepare_search_value,
+    run_automation,
+    run_batch_automation,
+    run_multi_automation,
+    UsuarioConsulta,
+)
 from pathlib import Path
 
 _TERMINAL_ALLOCATED_BY_APP = False
@@ -13,6 +19,7 @@ _STDERR_BEFORE_CONSOLE = None
 
 TIPO_INDIVIDUAL = "Unitária"
 TIPO_LOTE = "Lote"
+MAX_USUARIOS_MANUAIS = 5
 
 
 # Exibe terminal no Windows quando o app estiver sem console anexado.
@@ -89,6 +96,7 @@ class ConsultorSTI(ctk.CTk):
         self.var_show_terminal_logs = BooleanVar(value=False)
         self.var_tipo_execucao = StringVar(value=TIPO_INDIVIDUAL)
         self.em_execucao = False
+        self.linhas_usuarios_individual = []
 
         self.label_title = ctk.CTkLabel(
             self,
@@ -122,6 +130,17 @@ class ConsultorSTI(ctk.CTk):
         )
         self.button_run.grid(row=1, column=0, padx=0, pady=(12, 8), sticky="e")
 
+        self.textbox_resultado = ctk.CTkTextbox(
+            self,
+            height=150,
+            wrap="word",
+            state="disabled",
+        )
+        self.textbox_resultado.grid(
+            row=2, column=0, padx=20, pady=(0, 8), sticky="ew"
+        )
+        self.textbox_resultado.grid_remove()
+
         self.label_status = ctk.CTkLabel(
             self,
             text="Pronto para execução.",
@@ -129,7 +148,7 @@ class ConsultorSTI(ctk.CTk):
             wraplength=680,
             justify="left",
         )
-        self.label_status.grid(row=2, column=0, padx=20, pady=(8, 18), sticky="ew")
+        self.label_status.grid(row=3, column=0, padx=20, pady=(8, 18), sticky="ew")
 
     # -----------------------------
     # Interface - Componentes
@@ -262,7 +281,7 @@ class ConsultorSTI(ctk.CTk):
         )
         self.segment_tipo_execucao.set(TIPO_INDIVIDUAL)
 
-    # Cria campos de pesquisa unitaria.
+    # Cria lista dinâmica de pesquisas para execução unitária.
     def create_single_search_fields(self):
         self.label_single_title = ctk.CTkLabel(
             self.frame_inputs,
@@ -278,30 +297,184 @@ class ConsultorSTI(ctk.CTk):
             sticky="w",
         )
 
-        self.label_search = ctk.CTkLabel(
+        self.label_usuarios = ctk.CTkLabel(
             self.frame_inputs,
-            text="Valor da Pesquisa:",
+            text="Pesquisas:",
         )
-        self.label_search.grid(row=6, column=0, padx=10, pady=10, sticky="e")
+        self.label_usuarios.grid(row=6, column=0, padx=10, pady=(10, 0), sticky="ne")
 
-        self.entry_search = ctk.CTkEntry(
+        self.frame_usuarios = ctk.CTkFrame(
             self.frame_inputs,
-            placeholder_text="Digite CPF com ou sem pontuação",
+            fg_color="transparent",
         )
-        self.entry_search.grid(
+        self.frame_usuarios.grid(
             row=6,
             column=1,
             columnspan=2,
             padx=10,
-            pady=10,
+            pady=(8, 4),
             sticky="ew",
         )
+        self.frame_usuarios.grid_columnconfigure(0, weight=1)
+
+        # Cabeçalho dinâmico — texto atualizado conforme combo_search_type
+        self.frame_cabecalho = ctk.CTkFrame(
+            self.frame_usuarios,
+            fg_color="transparent",
+        )
+        self.frame_cabecalho.grid(row=0, column=0, sticky="ew")
+        self.frame_cabecalho.grid_columnconfigure(0, weight=1)
+        self.frame_cabecalho.grid_columnconfigure(1, minsize=40)
+
+        self.label_cabecalho_pesquisa = ctk.CTkLabel(
+            self.frame_cabecalho,
+            text=self.combo_search_type.get(),
+            text_color="gray",
+            font=ctk.CTkFont(size=12, weight="bold"),
+        )
+        self.label_cabecalho_pesquisa.grid(
+            row=0, column=0, padx=(0, 6), pady=(0, 2), sticky="w"
+        )
+
+        # Container das linhas de pesquisa
+        self.frame_linhas = ctk.CTkFrame(
+            self.frame_usuarios,
+            fg_color="transparent",
+        )
+        self.frame_linhas.grid(row=1, column=0, sticky="ew")
+        self.frame_linhas.grid_columnconfigure(0, weight=1)
+
+        # Rodapé: botão adicionar + aviso de limite
+        self.frame_acoes = ctk.CTkFrame(
+            self.frame_usuarios,
+            fg_color="transparent",
+        )
+        self.frame_acoes.grid(row=2, column=0, pady=(6, 0), sticky="ew")
+        self.frame_acoes.grid_columnconfigure(1, weight=1)
+
+        self.button_adicionar = ctk.CTkButton(
+            self.frame_acoes,
+            text="+ Adicionar pesquisa",
+            width=160,
+            height=32,
+            command=self.adicionar_linha_usuario,
+        )
+        self.button_adicionar.grid(row=0, column=0, sticky="w")
+
+        self.label_limite = ctk.CTkLabel(
+            self.frame_acoes,
+            text="",
+            text_color=("#9A3412", "#FDBA74"),
+        )
+        self.label_limite.grid(row=0, column=1, padx=(10, 0), sticky="w")
 
         self.widgets_individuais = [
             self.label_single_title,
-            self.label_search,
-            self.entry_search,
+            self.label_usuarios,
+            self.frame_usuarios,
         ]
+
+        self.adicionar_linha_usuario()
+
+    # Adiciona uma nova linha de pesquisa à lista.
+    def adicionar_linha_usuario(self) -> None:
+        if len(self.linhas_usuarios_individual) >= MAX_USUARIOS_MANUAIS:
+            self._atualizar_estado_lista()
+            return
+
+        frame_linha = ctk.CTkFrame(
+            self.frame_linhas,
+            fg_color="transparent",
+        )
+        frame_linha.grid(
+            row=len(self.linhas_usuarios_individual),
+            column=0,
+            pady=3,
+            sticky="ew",
+        )
+        frame_linha.grid_columnconfigure(0, weight=1)
+        frame_linha.grid_columnconfigure(1, minsize=40)
+
+        search_type = self.combo_search_type.get()
+        placeholder = (
+            "Digite CPF com ou sem pontuação"
+            if search_type == "CPF"
+            else "Digite o nome completo sem números"
+        )
+
+        entry_valor = ctk.CTkEntry(
+            frame_linha,
+            placeholder_text=placeholder,
+            height=32,
+        )
+        entry_valor.grid(row=0, column=0, padx=(0, 6), sticky="ew")
+
+        linha = {"frame": frame_linha, "valor": entry_valor}
+
+        button_remover = ctk.CTkButton(
+            frame_linha,
+            text="\U0001F5D1",
+            width=36,
+            height=32,
+            fg_color=("#E5E7EB", "#2B2B2B"),
+            hover_color=("#D1D5DB", "#3A3A3A"),
+            text_color=("#991B1B", "#FCA5A5"),
+            command=lambda linha_param=linha: self.remover_linha_usuario(linha_param),
+        )
+        button_remover.grid(row=0, column=1, sticky="e")
+
+        linha["remover"] = button_remover
+        self.linhas_usuarios_individual.append(linha)
+        self._atualizar_estado_lista()
+
+        if len(self.linhas_usuarios_individual) > 1:
+            entry_valor.focus()
+
+    # Remove uma linha de usuário da lista.
+    def remover_linha_usuario(self, linha_usuario) -> None:
+        if len(self.linhas_usuarios_individual) <= 1:
+            self._atualizar_estado_lista()
+            return
+
+        if linha_usuario not in self.linhas_usuarios_individual:
+            return
+
+        linha_usuario["frame"].destroy()
+        self.linhas_usuarios_individual.remove(linha_usuario)
+
+        for indice, linha in enumerate(self.linhas_usuarios_individual):
+            linha["frame"].grid_configure(row=indice)
+
+        self._atualizar_estado_lista()
+
+    # Coleta os valores de pesquisa da lista para envio ao backend.
+    def coletar_usuarios(self) -> list:
+        return [
+            UsuarioConsulta(login=linha["valor"].get().strip())
+            for linha in self.linhas_usuarios_individual
+        ]
+
+    # Atualiza estados visuais da lista (botão adicionar, lixeiras, aviso de limite).
+    def _atualizar_estado_lista(self) -> None:
+        limite_atingido = len(self.linhas_usuarios_individual) >= MAX_USUARIOS_MANUAIS
+        em_execucao = self.em_execucao
+
+        estado_adicionar = "disabled" if em_execucao or limite_atingido else "normal"
+        estado_campos = "disabled" if em_execucao else "normal"
+        estado_remover = (
+            "normal"
+            if not em_execucao and len(self.linhas_usuarios_individual) > 1
+            else "disabled"
+        )
+
+        self.button_adicionar.configure(state=estado_adicionar)
+        self.label_limite.configure(
+            text="Limite de 5 pesquisas atingido." if limite_atingido else ""
+        )
+
+        for linha in self.linhas_usuarios_individual:
+            linha["valor"].configure(state=estado_campos)
+            linha["remover"].configure(state=estado_remover)
 
     # Cria campos para lote.
     def create_batch_fields(self):
@@ -420,15 +593,17 @@ class ConsultorSTI(ctk.CTk):
             else:
                 button.configure(text_color=("#1F6AA5", "#3B8ED0"))
 
-    def on_search_type_change(self, selected_type):
-        if selected_type == "CPF":
-            self.entry_search.configure(
-                placeholder_text="Digite CPF com ou sem pontuação",
-            )
-        else:
-            self.entry_search.configure(
-                placeholder_text="Digite o nome completo sem números",
-            )
+    # Atualiza cabeçalho e placeholders ao trocar o tipo de pesquisa.
+    def on_search_type_change(self, selected_type: str) -> None:
+        self.label_cabecalho_pesquisa.configure(text=selected_type)
+
+        placeholder = (
+            "Digite CPF com ou sem pontuação"
+            if selected_type == "CPF"
+            else "Digite o nome completo sem números"
+        )
+        for linha in self.linhas_usuarios_individual:
+            linha["valor"].configure(placeholder_text=placeholder)
 
     # Seleciona arquivo de planilha.
     def select_spreadsheet(self):
@@ -456,7 +631,7 @@ class ConsultorSTI(ctk.CTk):
             self.entry_report_dir.delete(0, "end")
             self.entry_report_dir.insert(0, directory)
 
-     # Coleta e valida credenciais.
+    # Coleta e valida credenciais.
     def _credenciais_e_url(self) -> tuple[str, str]:
         login = self.entry_login.get().strip()
         # Senhas podem conter espacos significativos; nao normalizar com strip().
@@ -478,7 +653,7 @@ class ConsultorSTI(ctk.CTk):
         else:
             self.iniciar_execucao_individual()
 
-    # Inicia automação unitária.
+    # Inicia automação unitária com lista de 1 a 5 usuários manuais.
     def iniciar_execucao_individual(self):
         try:
             login, password = self._credenciais_e_url()
@@ -487,17 +662,9 @@ class ConsultorSTI(ctk.CTk):
             return
 
         search_type = self.combo_search_type.get()
-        search_value = self.entry_search.get().strip()
         collect_email = self.collect_email_var.get()
         mostrar_browser = bool(self.var_browser.get())
         show_terminal_logs = bool(self.var_show_terminal_logs.get())
-
-        if not search_value:
-            self.show_status(
-                "Erro: Informe o valor da pesquisa.",
-                "red",
-            )
-            return
 
         if not mostrar_browser and not show_terminal_logs:
             self.show_status(
@@ -507,21 +674,33 @@ class ConsultorSTI(ctk.CTk):
             )
             return
 
-        try:
-            clean_search_value = prepare_search_value(
-                search_type,
-                search_value,
+        usuarios_brutos = self.coletar_usuarios()
+        usuarios_validos = []
+
+        for usuario in usuarios_brutos:
+            if not usuario.login:
+                continue
+            try:
+                clean_login = prepare_search_value(search_type, usuario.login)
+            except ValueError as exc:
+                self.show_status(
+                    f"Erro em '{usuario.login}': {str(exc)}", "red"
+                )
+                return
+            usuarios_validos.append(UsuarioConsulta(login=clean_login))
+
+        if not usuarios_validos:
+            self.show_status(
+                "Erro: Preencha ao menos um valor de pesquisa.", "red"
             )
-        except ValueError as exc:
-            self.show_status(f"Erro: {str(exc)}", "red")
             return
 
         args = (
-            "single",
+            "multi",
             login,
             password,
             search_type,
-            clean_search_value,
+            usuarios_validos,
             collect_email,
             show_terminal_logs,
             mostrar_browser,
@@ -578,6 +757,7 @@ class ConsultorSTI(ctk.CTk):
     # Bloqueia controles e dispara thread de execucao.
     def _disparar_execucao(self, args, status_text):
         self.show_status(status_text, "blue")
+        self.mostrar_resultado_detalhado("")
         self._bloquear_execucao()
 
         thread = threading.Thread(
@@ -592,12 +772,16 @@ class ConsultorSTI(ctk.CTk):
         try:
             if execution_mode == "batch":
                 result_msg, color = run_batch_automation(*args)
+                detail = ""
+            elif execution_mode == "multi":
+                result_msg, color, detail = run_multi_automation(*args)
             else:
                 result_msg, color = run_automation(*args)
+                detail = ""
 
-            self.after(0, self.finish_automation, result_msg, color)
+            self.after(0, self.finish_automation, result_msg, color, detail)
         except Exception as e:
-            self.after(0, self.finish_automation, f"Erro: {str(e)}", "red")
+            self.after(0, self.finish_automation, f"Erro: {str(e)}", "red", "")
 
     # Bloqueia controles durante a execucao da automacao.
     def _bloquear_execucao(self):
@@ -610,11 +794,11 @@ class ConsultorSTI(ctk.CTk):
         self.checkbox_collect_email.configure(state="disabled")
         self.checkbox_browser.configure(state="disabled")
         self.switch_terminal_logs.configure(state="disabled")
-        self.entry_search.configure(state="disabled")
         self.entry_spreadsheet.configure(state="disabled")
         self.entry_report_dir.configure(state="disabled")
         self.button_select_spreadsheet.configure(state="disabled")
         self.button_select_report_dir.configure(state="disabled")
+        self._atualizar_estado_lista()
 
     # Libera controles apos sucesso ou erro.
     def _liberar_execucao(self):
@@ -627,20 +811,33 @@ class ConsultorSTI(ctk.CTk):
         self.checkbox_collect_email.configure(state="normal")
         self.checkbox_browser.configure(state="normal")
         self.switch_terminal_logs.configure(state="normal")
-        self.entry_search.configure(state="normal")
         self.entry_spreadsheet.configure(state="normal")
         self.entry_report_dir.configure(state="normal")
         self.button_select_spreadsheet.configure(state="normal")
         self.button_select_report_dir.configure(state="normal")
+        self._atualizar_estado_lista()
 
     # Finaliza execucao e atualiza UI.
-    def finish_automation(self, message, color):
+    def finish_automation(self, message, color, detail=""):
         self.show_status(message, color)
+        self.mostrar_resultado_detalhado(detail)
         self._liberar_execucao()
 
     # Atualiza mensagem de status.
     def show_status(self, message, color):
         self.label_status.configure(text=message, text_color=color)
+
+    # Exibe ou oculta o detalhamento por usuário da execução unitária.
+    def mostrar_resultado_detalhado(self, texto: str) -> None:
+        if not texto:
+            self.textbox_resultado.grid_remove()
+            return
+
+        self.textbox_resultado.configure(state="normal")
+        self.textbox_resultado.delete("1.0", "end")
+        self.textbox_resultado.insert("1.0", texto)
+        self.textbox_resultado.configure(state="disabled")
+        self.textbox_resultado.grid()
 
 
 if __name__ == "__main__":
