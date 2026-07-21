@@ -918,13 +918,13 @@ def classify_batch_row_status(report_message: str) -> str:
     return STATUS_SUCESSO
 
 
-# Resume as linhas do lote por status.
-def summarize_batch_results(batch_rows: Sequence[Row]) -> str:
+# Resume mensagens de resultado por status.
+def summarize_messages(messages: Sequence[str]) -> str:
     contagem = Counter(
-        classify_batch_row_status(row.get(REPORT_COLUMN_NAME, ""))
-        for row in batch_rows
+        classify_batch_row_status(message)
+        for message in messages
     )
-    total = len(batch_rows)
+    total = len(messages)
 
     return (
         f"Total: {total}. "
@@ -932,6 +932,45 @@ def summarize_batch_results(batch_rows: Sequence[Row]) -> str:
         f"Não encontrado: {contagem[STATUS_NAO_ENCONTRADO]}. "
         f"Erro: {contagem[STATUS_ERRO]}."
     )
+
+
+# Resume as linhas do lote por status.
+def summarize_batch_results(batch_rows: Sequence[Row]) -> str:
+    messages = [
+        row.get(REPORT_COLUMN_NAME, "")
+        for row in batch_rows
+    ]
+
+    return summarize_messages(messages)
+
+
+# Define a cor de status conforme uma ou mais mensagens (unitário ou lote).
+def result_color(messages: Sequence[str]) -> str:
+    contagem = Counter(
+        classify_batch_row_status(message)
+        for message in messages
+    )
+
+    if contagem[STATUS_ERRO]:
+        return "red"
+
+    if contagem[STATUS_NAO_ENCONTRADO]:
+        return "orange"
+
+    return "green"
+
+
+# Formata o detalhe de cada usuário da execução unitária multi-usuário.
+def format_multi_results(
+    users: Sequence[str],
+    messages: Sequence[str]
+) -> str:
+    blocos = [
+        f"{index}. Usuário: {user}\n{message}"
+        for index, (user, message) in enumerate(zip(users, messages), start=1)
+    ]
+
+    return "\n\n".join(blocos)
 
 
 # -----------------------------
@@ -992,6 +1031,94 @@ def run_automation(
     except Exception:
         automation_logger.exception(
             "Automação individual finalizada com erro."
+        )
+        raise
+
+
+# Executa a prorrogação unitária para uma lista de 1 a 5 usuários manuais.
+def run_multi_automation(
+    login: str,
+    password: str,
+    expiration_date: str,
+    users: List[str],
+    show_terminal_logs: bool = False,
+    mostrar_browser: bool = True
+) -> Tuple[str, str, str]:
+    automation_logger = configure_automation_logging(
+        show_terminal_logs=show_terminal_logs
+    )
+
+    messages: List[str] = []
+
+    try:
+        normalized_expiration_date = normalize_expiration_date(expiration_date)
+
+        automation_logger.info(
+            "Iniciando automação unitária multi-usuário. Total: %s. "
+            "Navegador visível: %s.",
+            len(users),
+            "sim" if mostrar_browser else "não"
+        )
+
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(
+                headless=not mostrar_browser
+            )
+            context = browser.new_context()
+
+            try:
+                page = context.new_page()
+                login_to_system(page, login, password)
+
+                for index, prepared_user in enumerate(users, start=1):
+                    automation_logger.info(
+                        "Processando usuário %s/%s: %s.",
+                        index,
+                        len(users),
+                        prepared_user
+                    )
+
+                    try:
+                        message = process_user_prepared_value(
+                            page,
+                            prepared_user,
+                            normalized_expiration_date
+                        )
+                    except Exception as exc:
+                        message = f"{ERROR_MESSAGE_PREFIX} {str(exc)}"
+
+                        automation_logger.exception(
+                            "Erro ao processar usuário %s.",
+                            prepared_user
+                        )
+
+                    messages.append(message)
+
+            finally:
+                context.close()
+                browser.close()
+                automation_logger.info("Navegador encerrado.")
+
+        if len(messages) == 1:
+            mensagem = messages[0]
+            detalhe = ""
+        else:
+            resumo = summarize_messages(messages)
+            mensagem = f"Unitária concluída. {resumo}"
+            detalhe = format_multi_results(users, messages)
+
+        cor = result_color(messages)
+
+        automation_logger.info(
+            "Automação unitária multi-usuário finalizada. %s",
+            mensagem
+        )
+
+        return mensagem, cor, detalhe
+
+    except Exception:
+        automation_logger.exception(
+            "Automação unitária multi-usuário finalizada com erro."
         )
         raise
 

@@ -12,7 +12,8 @@ from prorrogador_sti import (
     normalize_expiration_date,
     prepare_user_value,
     run_automation,
-    run_batch_automation
+    run_batch_automation,
+    run_multi_automation
 )
 
 _TERMINAL_ALLOCATED_BY_APP = False
@@ -21,6 +22,7 @@ _STDERR_BEFORE_CONSOLE = None
 
 TIPO_INDIVIDUAL = "Unitária"
 TIPO_LOTE = "Lote"
+MAX_USUARIOS_MANUAIS = 5
 
 # Exibe terminal no Windows quando o app estiver sem console anexado.
 def set_terminal_visibility(show_terminal: bool) -> None:
@@ -94,6 +96,7 @@ class ProrrogadorSTI(ctk.CTk):
         self.var_browser = BooleanVar(value=True)
         self.var_tipo_execucao = StringVar(value=TIPO_INDIVIDUAL)
         self.em_execucao = False
+        self.linhas_usuarios_individual = []
 
         self.label_title = ctk.CTkLabel(
             self,
@@ -149,6 +152,21 @@ class ProrrogadorSTI(ctk.CTk):
             sticky="e"
         )
 
+        self.textbox_resultado = ctk.CTkTextbox(
+            self,
+            height=150,
+            wrap="word",
+            state="disabled"
+        )
+        self.textbox_resultado.grid(
+            row=2,
+            column=0,
+            padx=20,
+            pady=(0, 8),
+            sticky="ew"
+        )
+        self.textbox_resultado.grid_remove()
+
         self.label_status = ctk.CTkLabel(
             self,
             text="Pronto para execução.",
@@ -157,7 +175,7 @@ class ProrrogadorSTI(ctk.CTk):
             justify="left"
         )
         self.label_status.grid(
-            row=2,
+            row=3,
             column=0,
             padx=20,
             pady=(8, 18),
@@ -352,7 +370,7 @@ class ProrrogadorSTI(ctk.CTk):
         self.entry_date.insert(0, formatted_value)
         self.entry_date.icursor("end")
 
-    # Cria campos de usuário único.
+    # Cria lista dinâmica de usuários para execução unitária.
     def create_single_user_fields(self):
         self.label_single_title = ctk.CTkLabel(
             self.frame_inputs,
@@ -370,34 +388,166 @@ class ProrrogadorSTI(ctk.CTk):
 
         self.label_search = ctk.CTkLabel(
             self.frame_inputs,
-            text="Usuário alvo:"
+            text="Usuários alvo:"
         )
         self.label_search.grid(
             row=8,
             column=0,
             padx=10,
-            pady=10,
-            sticky="e"
+            pady=(10, 0),
+            sticky="ne"
         )
 
-        self.entry_search = ctk.CTkEntry(
+        self.frame_usuarios = ctk.CTkFrame(
             self.frame_inputs,
-            placeholder_text="Digite o usuário alvo"
+            fg_color="transparent"
         )
-        self.entry_search.grid(
+        self.frame_usuarios.grid(
             row=8,
             column=1,
             columnspan=2,
             padx=10,
-            pady=10,
+            pady=(8, 4),
             sticky="ew"
         )
+        self.frame_usuarios.grid_columnconfigure(0, weight=1)
+
+        # Container das linhas de usuário
+        self.frame_linhas = ctk.CTkFrame(
+            self.frame_usuarios,
+            fg_color="transparent"
+        )
+        self.frame_linhas.grid(row=0, column=0, sticky="ew")
+        self.frame_linhas.grid_columnconfigure(0, weight=1)
+
+        # Rodapé: botão adicionar + aviso de limite
+        self.frame_acoes = ctk.CTkFrame(
+            self.frame_usuarios,
+            fg_color="transparent"
+        )
+        self.frame_acoes.grid(row=1, column=0, pady=(6, 0), sticky="ew")
+        self.frame_acoes.grid_columnconfigure(1, weight=1)
+
+        self.button_adicionar = ctk.CTkButton(
+            self.frame_acoes,
+            text="+ Adicionar usuário",
+            width=160,
+            height=32,
+            command=self.adicionar_linha_usuario
+        )
+        self.button_adicionar.grid(row=0, column=0, sticky="w")
+
+        self.label_limite = ctk.CTkLabel(
+            self.frame_acoes,
+            text="",
+            text_color=("#9A3412", "#FDBA74")
+        )
+        self.label_limite.grid(row=0, column=1, padx=(10, 0), sticky="w")
 
         self.widgets_individuais = [
             self.label_single_title,
             self.label_search,
-            self.entry_search,
+            self.frame_usuarios,
         ]
+
+        self.adicionar_linha_usuario()
+
+    # Adiciona uma nova linha de usuário à lista.
+    def adicionar_linha_usuario(self) -> None:
+        if len(self.linhas_usuarios_individual) >= MAX_USUARIOS_MANUAIS:
+            self._atualizar_estado_lista()
+            return
+
+        frame_linha = ctk.CTkFrame(
+            self.frame_linhas,
+            fg_color="transparent"
+        )
+        frame_linha.grid(
+            row=len(self.linhas_usuarios_individual),
+            column=0,
+            pady=3,
+            sticky="ew"
+        )
+        frame_linha.grid_columnconfigure(0, weight=1)
+        frame_linha.grid_columnconfigure(1, minsize=40)
+
+        entry_valor = ctk.CTkEntry(
+            frame_linha,
+            placeholder_text="Digite o usuário alvo",
+            height=32
+        )
+        entry_valor.grid(row=0, column=0, padx=(0, 6), sticky="ew")
+
+        linha = {"frame": frame_linha, "valor": entry_valor}
+
+        button_remover = ctk.CTkButton(
+            frame_linha,
+            text="\U0001F5D1",
+            width=36,
+            height=32,
+            fg_color=("#E5E7EB", "#2B2B2B"),
+            hover_color=("#D1D5DB", "#3A3A3A"),
+            text_color=("#991B1B", "#FCA5A5"),
+            command=lambda linha_param=linha: self.remover_linha_usuario(linha_param)
+        )
+        button_remover.grid(row=0, column=1, sticky="e")
+
+        linha["remover"] = button_remover
+        self.linhas_usuarios_individual.append(linha)
+        self._atualizar_estado_lista()
+
+        if len(self.linhas_usuarios_individual) > 1:
+            entry_valor.focus()
+
+    # Remove uma linha de usuário da lista.
+    def remover_linha_usuario(self, linha_usuario) -> None:
+        if len(self.linhas_usuarios_individual) <= 1:
+            self._atualizar_estado_lista()
+            return
+
+        if linha_usuario not in self.linhas_usuarios_individual:
+            return
+
+        linha_usuario["frame"].destroy()
+        self.linhas_usuarios_individual.remove(linha_usuario)
+
+        for indice, linha in enumerate(self.linhas_usuarios_individual):
+            linha["frame"].grid_configure(row=indice)
+
+        self._atualizar_estado_lista()
+
+    # Coleta os valores de usuário da lista para envio ao backend.
+    def coletar_usuarios(self) -> list:
+        return [
+            linha["valor"].get().strip()
+            for linha in self.linhas_usuarios_individual
+        ]
+
+    # Atualiza estados visuais da lista (botão adicionar, lixeiras, aviso de limite).
+    def _atualizar_estado_lista(self) -> None:
+        limite_atingido = len(self.linhas_usuarios_individual) >= MAX_USUARIOS_MANUAIS
+        em_execucao = self.em_execucao
+
+        estado_adicionar = "disabled" if em_execucao or limite_atingido else "normal"
+        estado_campos = "disabled" if em_execucao else "normal"
+        estado_remover = (
+            "normal"
+            if not em_execucao and len(self.linhas_usuarios_individual) > 1
+            else "disabled"
+        )
+
+        self.button_adicionar.configure(state=estado_adicionar)
+        self.label_limite.configure(
+            text=(
+                f"Limite de {MAX_USUARIOS_MANUAIS} usuários atingido."
+                if limite_atingido
+                else ""
+            )
+        )
+
+        for linha in self.linhas_usuarios_individual:
+            linha["valor"].configure(state=estado_campos)
+            linha["remover"].configure(state=estado_remover)
 
     # Cria campos para lote.
     def create_batch_fields(self):
@@ -584,7 +734,6 @@ class ProrrogadorSTI(ctk.CTk):
             self.show_status(f"Erro: {exc}", "red")
             return
 
-        search_value = self.entry_search.get().strip()
         expiration_date = self.entry_date.get().strip()
         spreadsheet_path = self.entry_spreadsheet.get().strip()
         report_directory = self.entry_report_dir.get().strip()
@@ -638,34 +787,44 @@ class ProrrogadorSTI(ctk.CTk):
             )
             status_text = "Iniciando automação em lote..."
         else:
-            if not search_value:
-                self.show_status(
-                    "Erro: Informe o usuário alvo.",
-                    "red"
-                )
-                return
+            usuarios_brutos = self.coletar_usuarios()
+            usuarios_validos = []
 
-            try:
-                prepared_search_value = prepare_user_value(search_value)
-            except ValueError as exc:
+            for valor in usuarios_brutos:
+                if not valor:
+                    continue
+
+                try:
+                    prepared_user = prepare_user_value(valor)
+                except ValueError as exc:
+                    self.show_status(
+                        f"Erro em '{valor}': {str(exc)}",
+                        "red"
+                    )
+                    return
+
+                usuarios_validos.append(prepared_user)
+
+            if not usuarios_validos:
                 self.show_status(
-                    f"Erro: {str(exc)}",
+                    "Erro: Informe ao menos um usuário alvo.",
                     "red"
                 )
                 return
 
             args = (
-                "single",
+                "multi",
                 login,
                 password,
-                prepared_search_value,
                 normalized_expiration_date,
+                usuarios_validos,
                 show_terminal_logs,
                 mostrar_browser,
             )
             status_text = "Iniciando automação unitária..."
         set_terminal_visibility(show_terminal_logs)
         self.show_status(status_text, "blue")
+        self.mostrar_resultado_detalhado("")
         self._bloquear_execucao()
 
         thread = threading.Thread(
@@ -680,20 +839,29 @@ class ProrrogadorSTI(ctk.CTk):
         try:
             if execution_mode == "batch":
                 result_msg = run_batch_automation(*args)
+                detail = ""
+                color = (
+                    "orange"
+                    if classify_batch_row_status(result_msg) == STATUS_NAO_ENCONTRADO
+                    else "green"
+                )
+            elif execution_mode == "multi":
+                result_msg, color, detail = run_multi_automation(*args)
             else:
                 result_msg = run_automation(*args)
-
-            color = (
-                "orange"
-                if classify_batch_row_status(result_msg) == STATUS_NAO_ENCONTRADO
-                else "green"
-            )
+                detail = ""
+                color = (
+                    "orange"
+                    if classify_batch_row_status(result_msg) == STATUS_NAO_ENCONTRADO
+                    else "green"
+                )
 
             self.after(
                 0,
                 self.finish_automation,
                 result_msg,
-                color
+                color,
+                detail
             )
         except Exception as e:
             error_msg = f"Erro: {str(e)}"
@@ -702,7 +870,8 @@ class ProrrogadorSTI(ctk.CTk):
                 0,
                 self.finish_automation,
                 error_msg,
-                "red"
+                "red",
+                ""
             )
 
     # Bloqueia controles durante a execucao da automacao.
@@ -716,13 +885,13 @@ class ProrrogadorSTI(ctk.CTk):
         self.entry_login.configure(state="disabled")
         self.entry_password.configure(state="disabled")
         self.entry_date.configure(state="disabled")
-        self.entry_search.configure(state="disabled")
         self.entry_spreadsheet.configure(state="disabled")
         self.entry_report_dir.configure(state="disabled")
         self.button_select_spreadsheet.configure(state="disabled")
         self.button_select_report_dir.configure(state="disabled")
         self.checkbox_browser.configure(state="disabled")
         self.switch_terminal_logs.configure(state="disabled")
+        self._atualizar_estado_lista()
 
     # Libera controles apos sucesso ou erro.
     def _liberar_execucao(self):
@@ -735,17 +904,18 @@ class ProrrogadorSTI(ctk.CTk):
         self.entry_login.configure(state="normal")
         self.entry_password.configure(state="normal")
         self.entry_date.configure(state="normal")
-        self.entry_search.configure(state="normal")
         self.entry_spreadsheet.configure(state="normal")
         self.entry_report_dir.configure(state="normal")
         self.button_select_spreadsheet.configure(state="normal")
         self.button_select_report_dir.configure(state="normal")
         self.checkbox_browser.configure(state="normal")
         self.switch_terminal_logs.configure(state="normal")
+        self._atualizar_estado_lista()
 
     # Finaliza execucao e atualiza UI.
-    def finish_automation(self, message, color):
+    def finish_automation(self, message, color, detail=""):
         self.show_status(message, color)
+        self.mostrar_resultado_detalhado(detail)
         self._liberar_execucao()
 
     # Atualiza mensagem de status.
@@ -754,6 +924,18 @@ class ProrrogadorSTI(ctk.CTk):
             text=message,
             text_color=color
         )
+
+    # Exibe ou oculta o detalhamento por usuário da execução unitária.
+    def mostrar_resultado_detalhado(self, texto: str) -> None:
+        if not texto:
+            self.textbox_resultado.grid_remove()
+            return
+
+        self.textbox_resultado.configure(state="normal")
+        self.textbox_resultado.delete("1.0", "end")
+        self.textbox_resultado.insert("1.0", texto)
+        self.textbox_resultado.configure(state="disabled")
+        self.textbox_resultado.grid()
 
 if __name__ == "__main__":
     ctk.set_appearance_mode("System")
