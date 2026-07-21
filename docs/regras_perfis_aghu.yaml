@@ -491,7 +491,7 @@ regras:
   - EXT.CENSO
   - EXT.POL
   - EXT.ADMASS
-  - EXT.EXM.EXTERNO
+  - EXT.EXM.EXTERNOS
   - RM01
   perfis_bloqueados: []
   perfis_validacao_ura: []
@@ -739,7 +739,7 @@ regras:
   - EXT.POL
   - ADM25.01
   - EXT.ADMASS
-  - EXT.EXM.EXTERNO
+  - EXT.EXM.EXTERNOS
   - RM01
   perfis_bloqueados: []
   perfis_validacao_ura: []
