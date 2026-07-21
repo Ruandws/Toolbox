@@ -7,6 +7,8 @@ from pathlib import Path
 
 import customtkinter as ctk  # type: ignore[import-untyped]
 from prorrogador_sti import (
+    STATUS_NAO_ENCONTRADO,
+    classify_batch_row_status,
     normalize_expiration_date,
     prepare_user_value,
     run_automation,
@@ -683,7 +685,7 @@ class ProrrogadorSTI(ctk.CTk):
 
             color = (
                 "orange"
-                if "não encontrado" in result_msg.lower()
+                if classify_batch_row_status(result_msg) == STATUS_NAO_ENCONTRADO
                 else "green"
             )
 
