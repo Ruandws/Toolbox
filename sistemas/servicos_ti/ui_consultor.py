@@ -3,6 +3,12 @@ import os
 import sys
 import threading
 from tkinter import BooleanVar, StringVar, filedialog
+
+from _launcher_runtime import bootstrap_playwright_browsers_path
+
+if getattr(sys, "frozen", False):
+    bootstrap_playwright_browsers_path()
+
 import customtkinter as ctk
 from consultor_sti import (
     prepare_search_value,
