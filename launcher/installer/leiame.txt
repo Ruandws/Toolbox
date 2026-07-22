@@ -1,0 +1,64 @@
+==========================================
+ Serviços TI - Prorrogador e Consultor
+==========================================
+
+INSTALAÇÃO
+----------
+1. Baixe o arquivo ServicosTI-Setup-X.X.X.exe na página de Releases do
+   repositório no GitHub.
+2. Dê duplo clique no instalador baixado.
+3. Se o Windows exibir o aviso azul "O Windows protegeu o seu PC":
+     - Clique em "Mais informações"
+     - Clique em "Executar assim mesmo"
+   Isso acontece porque o instalador não possui assinatura digital paga.
+   É esperado e seguro para uso interno.
+4. Siga o assistente (Avançar > Avançar > Instalar). Não é preciso ser
+   administrador da máquina. Um único instalador cobre as duas
+   automações (Prorrogador e Consultor).
+5. Marque quais ícones de área de trabalho deseja criar (Prorrogador,
+   Consultor, os dois ou nenhum).
+
+PRIMEIRA ABERTURA - PRORROGADOR STI
+------------------------------------
+1. Abra pelo atalho "Prorrogador STI" (ícone azul de relógio).
+2. Preencha:
+     - Login e Senha: as mesmas credenciais do Serviços TI.
+     - Nova data: a data de prorrogação, no formato dd/mm/aaaa (o campo
+       se formata sozinho enquanto você digita).
+3. Escolha o tipo de execução:
+     - Unitária: informe de 1 a 5 usuários alvo direto na tela.
+     - Lote: selecione uma planilha .xlsx com a lista de usuários e a
+       pasta onde o relatório final será salvo.
+4. Marque "Exibir navegador (Modo Visual)" para acompanhar o navegador
+   preenchendo os campos na tela, ou "Exibir terminal/logs de execução"
+   para acompanhar em texto.
+5. Clique em "Executar Automação" e aguarde. O resultado aparece na
+   parte inferior da tela.
+
+PRIMEIRA ABERTURA - CONSULTOR STI
+-----------------------------------
+1. Abra pelo atalho "Consultor STI" (ícone verde de lupa).
+2. Preencha Login e Senha (as mesmas credenciais do Serviços TI).
+3. Em "Pesquisar por", escolha CPF ou Nome Completo. Marque "Coletar
+   e-mail" se quiser que o e-mail do usuário também apareça no
+   resultado.
+4. Escolha o tipo de execução:
+     - Unitária: informe de 1 a 5 valores de busca direto na tela.
+     - Lote: selecione uma planilha .xlsx com a lista de busca e a
+       pasta onde o relatório final será salvo.
+5. Clique em "Executar Automação" e aguarde o resultado.
+
+SE ALGO DER ERRADO
+-------------------
+- Erro de login: confira usuário e senha.
+- Resultado "não encontrado": confira o valor informado e tente
+  novamente.
+- Antivírus da instituição bloqueando o programa: acione o suporte de
+  TI para liberar a pasta instalada (normalmente em
+  %LocalAppData%\Programs\Extrator2\ServicosTI).
+
+DESINSTALAR
+-----------
+Menu Iniciar > pasta "Extrator2" > "Desinstalar Serviços TI".
+(Remove as duas automações de uma vez, já que compartilham a mesma
+instalação.)

@@ -5,6 +5,11 @@ import threading
 from tkinter import BooleanVar, StringVar, filedialog
 from pathlib import Path
 
+from _launcher_runtime import bootstrap_playwright_browsers_path
+
+if getattr(sys, "frozen", False):
+    bootstrap_playwright_browsers_path()
+
 import customtkinter as ctk  # type: ignore[import-untyped]
 from prorrogador_sti import (
     STATUS_NAO_ENCONTRADO,

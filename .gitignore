@@ -9,6 +9,9 @@ __pycache__/
 dist/
 build/
 
+# Build de launchers - artefatos locais
+pw-browsers/
+
 # Variáveis de ambiente
 .env
 .env.*
