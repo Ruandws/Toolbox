@@ -3,7 +3,6 @@
 # Testa funções puras de validação, normalização, planilha e relatório.
 
 from datetime import date, datetime
-from pathlib import Path
 
 import pytest
 
@@ -14,7 +13,6 @@ from prorrogador_sti import (
     STATUS_ERRO,
     STATUS_NAO_ENCONTRADO,
     STATUS_SUCESSO,
-    USER_COLUMN_CANDIDATES,
     USER_NOT_FOUND_MESSAGE,
     build_report_row,
     build_row,

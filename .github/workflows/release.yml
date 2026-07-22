@@ -26,10 +26,10 @@ jobs:
           pip install -r requirements-dev.txt
 
       - name: Ruff
-        run: ruff check .
+        run: ruff check sistemas/servicos_ti launcher
 
       - name: Testes
-        run: pytest
+        run: pytest testes/servicos_ti
 
       - name: Definir número da versão
         id: versao

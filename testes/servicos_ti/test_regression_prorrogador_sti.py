@@ -3,7 +3,6 @@
 # Validam cenários de bugs previamente corrigidos.
 
 import pytest
-from datetime import datetime
 
 from prorrogador_sti import (
     build_user_url,

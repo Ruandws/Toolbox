@@ -2,14 +2,12 @@
 #
 # Validam cenários de bugs previamente corrigidos.
 
-import pytest
 
 from consultor_sti import (
     extract_cpf_digits,
     format_cpf,
     is_valid_cpf_digits,
     make_unique_headers,
-    normalize_cpf,
     normalize_search_type,
     prepare_search_value,
 )
