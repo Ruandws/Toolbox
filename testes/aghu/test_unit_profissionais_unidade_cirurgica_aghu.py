@@ -490,3 +490,60 @@ def test_processar_cadastros_reexecuta_linha_apos_clean_state(monkeypatch):
         ("janela-clean", "Ana"),
         ("janela-clean", "Bia"),
     ]
+
+
+def test_processar_cadastros_pula_demais_acessos_apos_funcionario_nao_encontrado(
+    monkeypatch,
+):
+    cadastros = [
+        cadastro_valido(profissional="Ana", unidade_funcional=UNIDADES_FUNCIONAIS[0]),
+        cadastro_valido(profissional="Ana", unidade_funcional=UNIDADES_FUNCIONAIS[1]),
+        cadastro_valido(profissional="Bia", unidade_funcional=UNIDADES_FUNCIONAIS[0]),
+    ]
+    chamadas_processar = []
+
+    def garantir_fake(**kwargs):
+        return kwargs["page_atual"], kwargs["janela_atual"]
+
+    def processar_fake(janela_sistema, entrada):
+        chamadas_processar.append(entrada.profissional)
+        if entrada.profissional == "Ana":
+            return ResultadoCadastroProfissional(
+                profissional=entrada.profissional,
+                unidade_funcional=entrada.unidade_funcional,
+                funcao=entrada.funcao,
+                status=STATUS_FUNCIONARIO_NAO_ENCONTRADO,
+                detalhes="Funcionário não encontrado.",
+            )
+
+        return ResultadoCadastroProfissional(
+            profissional=entrada.profissional,
+            unidade_funcional=entrada.unidade_funcional,
+            funcao=entrada.funcao,
+            status=STATUS_CRIADO,
+            detalhes="OK",
+        )
+
+    monkeypatch.setattr(
+        aghu,
+        "garantir_tela_pesquisa_profissional_unidade",
+        garantir_fake,
+    )
+    monkeypatch.setattr(aghu, "processar_cadastro", processar_fake)
+
+    resultados = aghu.processar_cadastros(
+        context="context",
+        page_inicial="page-original",
+        janela_sistema_inicial="janela-original",
+        cadastros=cadastros,
+        usuario_rede="usuario",
+        senha="senha",
+    )
+
+    assert chamadas_processar == ["Ana", "Bia"]
+    assert [resultado.status for resultado in resultados] == [
+        STATUS_FUNCIONARIO_NAO_ENCONTRADO,
+        STATUS_FUNCIONARIO_NAO_ENCONTRADO,
+        STATUS_CRIADO,
+    ]
+    assert "nao tentado" in aghu.normalizar_texto(resultados[1].detalhes)

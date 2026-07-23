@@ -650,6 +650,63 @@ def test_executar_individual_thread_agenda_finalizacao(app_fake, monkeypatch):
     assert capturados["diretorio_logs"] == ui.LOGS_DIR
 
 
+def test_executar_individual_thread_encerra_com_mensagem_clara_para_pessoa_unica(
+    app_fake,
+    monkeypatch,
+):
+    resultados = [
+        ResultadoCadastroProfissional(
+            profissional="Ana",
+            unidade_funcional=UNIDADES_FUNCIONAIS[0],
+            funcao=FUNCAO_MEDICO_RESIDENTE,
+            status=STATUS_FUNCIONARIO_NAO_ENCONTRADO,
+            detalhes="Funcionário não encontrado.",
+        ),
+        ResultadoCadastroProfissional(
+            profissional="Ana",
+            unidade_funcional=UNIDADES_FUNCIONAIS[1],
+            funcao=FUNCAO_MEDICO_RESIDENTE,
+            status=STATUS_FUNCIONARIO_NAO_ENCONTRADO,
+            detalhes="Funcionário não encontrado (ja confirmado anteriormente).",
+        ),
+    ]
+    chamadas = []
+    app_fake.after = lambda delay, func, *args: chamadas.append((delay, func, args))
+    monkeypatch.setattr(ui, "executar_cadastros_profissionais", lambda **kwargs: resultados)
+    monkeypatch.setattr(
+        ui.AghuProfissionaisUnidadeCirurgicaApp,
+        "_executar_com_playwright",
+        lambda self, mostrar_browser, acao: acao("context", "page"),
+    )
+    cadastros = [
+        CadastroProfissionalUnidadeEntrada(
+            profissional="Ana",
+            unidade_funcional=UNIDADES_FUNCIONAIS[0],
+        ),
+        CadastroProfissionalUnidadeEntrada(
+            profissional="Ana",
+            unidade_funcional=UNIDADES_FUNCIONAIS[1],
+        ),
+    ]
+
+    ui.AghuProfissionaisUnidadeCirurgicaApp._executar_individual_thread(
+        app_fake,
+        "usuario",
+        "senha",
+        cadastros,
+        "url",
+        False,
+        True,
+    )
+
+    mensagem, cor = chamadas[0][2]
+    assert mensagem == (
+        'Execução encerrada: profissional "Ana" não encontrado no AGHUX. '
+        "Verifique o nome informado."
+    )
+    assert cor == "red"
+
+
 def test_executar_lote_thread_finaliza_amarelo_com_funcionario_nao_encontrado_ou_ignorado(
     app_fake,
     monkeypatch,

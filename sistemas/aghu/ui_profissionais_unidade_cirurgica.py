@@ -827,25 +827,36 @@ class AghuProfissionaisUnidadeCirurgicaApp(ctk.CTk):
                     diretorio_logs=LOGS_DIR,
                 ),
             )
-            mensagem = self._resumir_resultados(
-                resultados,
-                prefixo="Execução unitária concluída",
-                rotulo_total="Total processado",
-            )
-            cor = (
-                "red"
-                if any(
-                    resultado.status
-                    in {
-                        STATUS_ERRO,
-                        STATUS_CONFERIR_MANUAL,
-                        STATUS_IGNORADO,
-                        STATUS_FUNCIONARIO_NAO_ENCONTRADO,
-                    }
-                    for resultado in resultados
+            profissionais = {cadastro.profissional for cadastro in cadastros}
+            if len(profissionais) == 1 and resultados and all(
+                resultado.status == STATUS_FUNCIONARIO_NAO_ENCONTRADO
+                for resultado in resultados
+            ):
+                mensagem = (
+                    f'Execução encerrada: profissional "{next(iter(profissionais))}" '
+                    "não encontrado no AGHUX. Verifique o nome informado."
                 )
-                else "green"
-            )
+                cor = "red"
+            else:
+                mensagem = self._resumir_resultados(
+                    resultados,
+                    prefixo="Execução unitária concluída",
+                    rotulo_total="Total processado",
+                )
+                cor = (
+                    "red"
+                    if any(
+                        resultado.status
+                        in {
+                            STATUS_ERRO,
+                            STATUS_CONFERIR_MANUAL,
+                            STATUS_IGNORADO,
+                            STATUS_FUNCIONARIO_NAO_ENCONTRADO,
+                        }
+                        for resultado in resultados
+                    )
+                    else "green"
+                )
             self.after(0, self._finalizar_execucao, mensagem, cor)
         except Exception as exc:
             self.after(0, self._finalizar_execucao, f"Erro: {exc}", "red")

@@ -1146,6 +1146,7 @@ def processar_cadastros(
     page = page_inicial
     janela_sistema = janela_sistema_inicial
     total = len(cadastros)
+    profissionais_nao_encontrados: set[str] = set()
 
     if resultados_prevalidacao is None:
         resultados_prevalidacao = [
@@ -1169,6 +1170,22 @@ def processar_cadastros(
         if pre_resultado is not None:
             print(pre_resultado.detalhes)
             resultados.append(pre_resultado)
+            continue
+
+        chave_profissional = normalizar_texto(entrada.profissional)
+        if chave_profissional in profissionais_nao_encontrados:
+            resultado_linha = ResultadoCadastroProfissional(
+                profissional=entrada.profissional,
+                unidade_funcional=entrada.unidade_funcional,
+                funcao=entrada.funcao,
+                status=STATUS_FUNCIONARIO_NAO_ENCONTRADO,
+                detalhes=(
+                    "Funcionário não encontrado (ja confirmado anteriormente "
+                    "nesta execução). Acesso não tentado."
+                ),
+            )
+            print(f"Resultado: [{resultado_linha.status}] {resultado_linha.detalhes}")
+            resultados.append(resultado_linha)
             continue
 
         resultado_linha: ResultadoCadastroProfissional | None = None
@@ -1220,6 +1237,9 @@ def processar_cadastros(
                 status=STATUS_ERRO,
                 detalhes="Falha tecnica durante o cadastro.",
             )
+
+        if resultado_linha.status == STATUS_FUNCIONARIO_NAO_ENCONTRADO:
+            profissionais_nao_encontrados.add(chave_profissional)
 
         print(f"Resultado: [{resultado_linha.status}] {resultado_linha.detalhes}")
         resultados.append(resultado_linha)
