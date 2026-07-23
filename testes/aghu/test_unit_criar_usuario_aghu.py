@@ -12,7 +12,6 @@ from criar_usuario_aghu import (
     ResultadoImportacao,
     UsuarioImportacao,
     executar_importacao_usuarios,
-    importar_usuario,
     _normalizar_login,
     _normalizar_texto,
     _resultado,
@@ -172,16 +171,20 @@ class TestResultado:
 
 
 class TestValidacaoAntesDoBrowser:
-    def test_importar_usuario_invalido_retorna_ignorado_sem_usar_janela(self):
+    def test_validar_lote_usuarios_marca_usuario_invalido_como_ignorado(self):
         usuario = UsuarioImportacao(
             login="joao.silva",
             nome_completo="Joao Silva",
             email="email-invalido",
         )
-        resultado = importar_usuario(None, usuario)  # type: ignore[arg-type]
+        validacao = aghu._validar_lote_usuarios([usuario])
 
-        assert resultado.status == STATUS_IGNORADO
-        assert "E-mail invalido" in resultado.detalhes
+        assert validacao.usuarios_validos == []
+        assert validacao.indices_validos == []
+        assert len(validacao.resultados_ignorados) == 1
+        assert validacao.resultados_ignorados[0].status == STATUS_IGNORADO
+        assert "E-mail invalido" in validacao.resultados_ignorados[0].detalhes
+        assert validacao.indices_ignorados == [0]
 
     def test_executar_importacao_invalida_nao_abre_playwright(self, monkeypatch):
         def falhar_sync_playwright():

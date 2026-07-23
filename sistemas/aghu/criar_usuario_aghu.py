@@ -952,11 +952,6 @@ def importar_usuario(
     janela_sistema: FrameLocator,
     usuario: UsuarioImportacao,
 ) -> ResultadoImportacao:
-    usuario, resultado_validacao = _preparar_usuario_importacao(usuario)
-
-    if resultado_validacao is not None:
-        return resultado_validacao
-
     login = usuario.login
 
     print(f"Pesquisando usuario no AGHUX: {login}")
@@ -1045,16 +1040,6 @@ def processar_usuarios(
             if indices_originais is not None and posicao < len(indices_originais)
             else posicao
         )
-        usuario, resultado_validacao = _preparar_usuario_importacao(usuario)
-
-        if resultado_validacao is not None:
-            _registrar_linha_ignorada(
-                indice_linha=indice_linha,
-                total_linhas=total_linhas,
-                resultado=resultado_validacao,
-            )
-            resultados.append(resultado_validacao)
-            continue
 
         _registrar_inicio_linha(
             indice_linha=indice_linha,
@@ -1200,6 +1185,60 @@ def salvar_relatorio_resultados(
     return caminho
 
 
+@dataclass(frozen=True)
+class _ValidacaoLoteUsuarios:
+    usuarios_validos: list[UsuarioImportacao]
+    indices_validos: list[int]
+    resultados_ignorados: list[ResultadoImportacao]
+    indices_ignorados: list[int]
+
+
+def _validar_lote_usuarios(
+    usuarios: list[UsuarioImportacao],
+) -> _ValidacaoLoteUsuarios:
+    usuarios_validos: list[UsuarioImportacao] = []
+    indices_validos: list[int] = []
+    resultados_ignorados: list[ResultadoImportacao] = []
+    indices_ignorados: list[int] = []
+
+    for indice, usuario in enumerate(usuarios):
+        usuario_normalizado, resultado_validacao = _preparar_usuario_importacao(
+            usuario
+        )
+
+        if resultado_validacao is None:
+            usuarios_validos.append(usuario_normalizado)
+            indices_validos.append(indice)
+        else:
+            resultados_ignorados.append(resultado_validacao)
+            indices_ignorados.append(indice)
+
+    return _ValidacaoLoteUsuarios(
+        usuarios_validos=usuarios_validos,
+        indices_validos=indices_validos,
+        resultados_ignorados=resultados_ignorados,
+        indices_ignorados=indices_ignorados,
+    )
+
+
+def _combinar_resultados_na_ordem_original(
+    total_usuarios: int,
+    indices_ignorados: list[int],
+    resultados_ignorados: list[ResultadoImportacao],
+    indices_validos: list[int],
+    resultados_processados: list[ResultadoImportacao],
+) -> list[ResultadoImportacao]:
+    resultados_por_indice: list[ResultadoImportacao | None] = [None] * total_usuarios
+
+    for indice, resultado in zip(indices_ignorados, resultados_ignorados):
+        resultados_por_indice[indice] = resultado
+
+    for indice, resultado in zip(indices_validos, resultados_processados):
+        resultados_por_indice[indice] = resultado
+
+    return _resultados_preenchidos(resultados_por_indice)
+
+
 def executar_importacao_usuarios(
     usuarios: list[UsuarioImportacao],
     usuario_rede: str,
@@ -1217,9 +1256,30 @@ def executar_importacao_usuarios(
     if not url_aghu:
         raise ValueError("Informe o ambiente do AGHU.")
 
+    total_usuarios = len(usuarios)
+    validacao = _validar_lote_usuarios(usuarios)
+
     with _controle_saida_terminal(mostrar_console):
+        for indice, resultado in zip(
+            validacao.indices_ignorados, validacao.resultados_ignorados
+        ):
+            _registrar_linha_ignorada(
+                indice_linha=indice,
+                total_linhas=total_usuarios,
+                resultado=resultado,
+            )
+
+        if not validacao.usuarios_validos:
+            return _finalizar_resultados_importacao(
+                resultados=validacao.resultados_ignorados,
+                usuario_rede=usuario_rede,
+                diretorio_logs=diretorio_logs,
+                gerar_csv_log=gerar_csv_log,
+            )
+
         return _executar_importacao_usuarios_com_saida_configurada(
-            usuarios=usuarios,
+            validacao=validacao,
+            total_usuarios=total_usuarios,
             usuario_rede=usuario_rede,
             senha=senha,
             url_aghu=url_aghu,
@@ -1230,7 +1290,8 @@ def executar_importacao_usuarios(
 
 
 def _executar_importacao_usuarios_com_saida_configurada(
-    usuarios: list[UsuarioImportacao],
+    validacao: _ValidacaoLoteUsuarios,
+    total_usuarios: int,
     usuario_rede: str,
     senha: str,
     *,
@@ -1239,36 +1300,6 @@ def _executar_importacao_usuarios_com_saida_configurada(
     diretorio_logs: str | os.PathLike | None,
     gerar_csv_log: bool,
 ) -> list[ResultadoImportacao]:
-
-    resultados_prevalidacao: list[ResultadoImportacao | None] = []
-    usuarios_validos = []
-    total_usuarios = len(usuarios)
-
-    for usuario in usuarios:
-        usuario_normalizado, resultado_validacao = _preparar_usuario_importacao(
-            usuario
-        )
-        resultados_prevalidacao.append(resultado_validacao)
-
-        if resultado_validacao is None:
-            usuarios_validos.append(usuario_normalizado)
-
-    if not usuarios_validos:
-        for indice, resultado in enumerate(resultados_prevalidacao):
-            if resultado is not None:
-                _registrar_linha_ignorada(
-                    indice_linha=indice,
-                    total_linhas=total_usuarios,
-                    resultado=resultado,
-                )
-
-        return _finalizar_resultados_importacao(
-            resultados=resultados_prevalidacao,
-            usuario_rede=usuario_rede,
-            diretorio_logs=diretorio_logs,
-            gerar_csv_log=gerar_csv_log,
-        )
-
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(
             headless=not mostrar_browser,
@@ -1292,15 +1323,24 @@ def _executar_importacao_usuarios_com_saida_configurada(
                 context=context,
                 page_inicial=page,
                 janela_sistema_inicial=janela_sistema,
-                usuarios=usuarios,
+                usuarios=validacao.usuarios_validos,
                 usuario_rede=usuario_rede,
                 senha=senha,
                 url_aghu=url_aghu,
+                indices_originais=validacao.indices_validos,
                 total_usuarios=total_usuarios,
             )
 
+            resultados_finais = _combinar_resultados_na_ordem_original(
+                total_usuarios=total_usuarios,
+                indices_ignorados=validacao.indices_ignorados,
+                resultados_ignorados=validacao.resultados_ignorados,
+                indices_validos=validacao.indices_validos,
+                resultados_processados=resultados_processados,
+            )
+
             return _finalizar_resultados_importacao(
-                resultados=resultados_processados,
+                resultados=resultados_finais,
                 usuario_rede=usuario_rede,
                 diretorio_logs=diretorio_logs,
                 gerar_csv_log=gerar_csv_log,
