@@ -1,0 +1,47 @@
+==========================================
+ AGHU - Impressora por Computador
+==========================================
+
+INSTALAÇÃO
+----------
+1. Baixe o arquivo ImpressoraAGHU-Setup-X.X.X.exe na página de Releases do
+   repositório no GitHub.
+2. Dê duplo clique no instalador baixado.
+3. Se o Windows exibir o aviso azul "O Windows protegeu o seu PC":
+     - Clique em "Mais informações"
+     - Clique em "Executar assim mesmo"
+   Isso acontece porque o instalador não possui assinatura digital paga.
+   É esperado e seguro para uso interno.
+4. Siga o assistente (Avançar > Avançar > Instalar). Não é preciso ser
+   administrador da máquina.
+5. Marque se deseja criar o ícone de área de trabalho.
+
+PRIMEIRA ABERTURA
+------------------
+1. Abra pelo atalho "AGHU Impressora".
+2. Preencha:
+     - Usuário de Rede e Senha: as mesmas credenciais do AGHUX.
+     - Ambiente: Produção ou Homologação (atenção ao alerta ao selecionar
+       Produção).
+3. Selecione a planilha de entrada (.xlsx) com as colunas IPPC,
+   HostPrinter e PrinterClass (aceita variações de nome de coluna, como
+   "IP do PC" ou "Fila Impressora").
+4. Selecione a pasta onde o relatório final será salvo.
+5. Marque "Exibir Navegador (Modo Visual)" para acompanhar o navegador
+   preenchendo os campos na tela, ou "Exibir Terminal de processos (logs)"
+   para acompanhar em texto.
+6. Clique em "Iniciar Robô" e aguarde. O resultado aparece na parte
+   inferior da tela e o relatório XLSX é salvo na pasta escolhida.
+
+SE ALGO DER ERRADO
+-------------------
+- Erro de login: confira usuário de rede e senha.
+- Linha com status "Erro" ou "Conferir manualmente" no relatório: revisar
+  o computador/impressora indicados na planilha.
+- Antivírus da instituição bloqueando o programa: acione o suporte de TI
+  para liberar a pasta instalada (normalmente em
+  %LocalAppData%\Programs\Extrator2\ImpressoraAGHU).
+
+DESINSTALAR
+-----------
+Menu Iniciar > pasta "Extrator2" > "Desinstalar AGHU Impressora".

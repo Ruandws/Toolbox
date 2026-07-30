@@ -1,0 +1,90 @@
+name: Build e Release do Launcher AGHU
+
+on:
+  push:
+    tags:
+      - "aghu-v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Instalar dependências
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Ruff
+        run: ruff check sistemas/aghu launcher/aghu
+
+      - name: Testes
+        run: pytest testes/aghu
+
+      - name: Definir número da versão
+        id: versao
+        shell: bash
+        run: echo "numero=${GITHUB_REF_NAME#aghu-v}" >> "$GITHUB_OUTPUT"
+
+      - name: Build do launcher (PyInstaller)
+        env:
+          LAUNCHER_VERSION: ${{ steps.versao.outputs.numero }}
+        run: python -m PyInstaller launcher/aghu/launcher_aghu.spec --distpath launcher/aghu/dist --workpath launcher/aghu/build --noconfirm
+
+      - name: Ler versão do Playwright
+        id: playwright_version
+        shell: pwsh
+        run: |
+          $linha = Select-String -Path requirements.txt -Pattern 'playwright==([0-9.]+)'
+          $versao = $linha.Matches[0].Groups[1].Value
+          "versao=$versao" >> $env:GITHUB_OUTPUT
+
+      - name: Cache do Chromium (Playwright)
+        id: cache_chromium
+        uses: actions/cache@v4
+        with:
+          path: pw-browsers
+          key: pw-browsers-${{ runner.os }}-${{ steps.playwright_version.outputs.versao }}
+
+      - name: Baixar Chromium do Playwright (cache ausente)
+        if: steps.cache_chromium.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          $env:PLAYWRIGHT_BROWSERS_PATH = "$PWD\pw-browsers"
+          playwright install chromium
+
+      - name: Embutir Chromium no build
+        shell: pwsh
+        run: Copy-Item -Path "$PWD\pw-browsers" -Destination "launcher\aghu\dist\ImpressoraAGHU\ms-playwright" -Recurse
+
+      - name: Compilar instalador (Inno Setup)
+        shell: pwsh
+        run: |
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          & $iscc "launcher\aghu\installer\setup.iss" "/DMyAppVersion=${{ steps.versao.outputs.numero }}"
+
+      - name: Gerar checksum SHA256 do instalador
+        shell: pwsh
+        run: |
+          $arquivo = Get-ChildItem "launcher\aghu\dist\installers\*.exe" | Select-Object -First 1
+          $hash = Get-FileHash -Algorithm SHA256 -Path $arquivo.FullName
+          "$($hash.Hash.ToLower())  $($arquivo.Name)" | Set-Content -Encoding ascii "$($arquivo.FullName).sha256"
+
+      - name: Publicar Release no GitHub
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          generate_release_notes: true
+          files: |
+            launcher/aghu/dist/installers/*.exe
+            launcher/aghu/dist/installers/*.sha256

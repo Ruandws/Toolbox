@@ -7,6 +7,12 @@ import tkinter as tk
 from tkinter import filedialog, messagebox
 
 import customtkinter as ctk
+
+if getattr(sys, "frozen", False):
+    from _launcher_runtime import bootstrap_playwright_browsers_path
+
+    bootstrap_playwright_browsers_path()
+
 from playwright.sync_api import sync_playwright
 
 sys.path.append(str(Path(__file__).resolve().parent.parent))
