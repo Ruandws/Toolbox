@@ -1,5 +1,5 @@
 -r requirements.txt
-ruff
+ruff==0.15.12
 pytest
 pyinstaller
 pyinstaller-hooks-contrib
