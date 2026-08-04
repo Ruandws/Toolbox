@@ -220,33 +220,6 @@ def _texto_celula(linha_tabela, indice: int) -> str:
         return ""
 
 
-def _aguardar_estado_resultado_pesquisa(
-    janela_sistema,
-    timeout_ms: int = 7000,
-) -> tuple[str, object]:
-    tbody = _tbody_resultados(janela_sistema)
-    linhas = _linhas_resultado(tbody)
-    linha_vazia = _linha_vazia_resultado(tbody)
-    fim = time.monotonic() + (timeout_ms / 1000)
-
-    while time.monotonic() < fim:
-        try:
-            if linhas.count() > 0 and linhas.first.is_visible(timeout=250):
-                return "linhas", linhas
-        except Exception:
-            pass
-
-        try:
-            if linha_vazia.is_visible(timeout=250):
-                return "vazio", linhas
-        except Exception:
-            pass
-
-        time.sleep(0.15)
-
-    return "indefinido", linhas
-
-
 def _registro_confere_tipo_e_classe(registro: dict, tipo_cups_esperado: str) -> bool:
     if not _valor_exato(registro.get("tipo_cups", ""), tipo_cups_esperado):
         return False
@@ -286,43 +259,70 @@ def _decidir_acao_linhas(
     return "incluir", None
 
 
-def _coletar_linhas_computador(janela_sistema, ip_pc: str) -> tuple[str, list[dict]]:
-    estado_pesquisa, linhas_tabela = _aguardar_estado_resultado_pesquisa(janela_sistema)
-    registros_linhas = []
+def _extrair_registro_linha(linha_tabela) -> Optional[dict]:
+    try:
+        if not linha_tabela.is_visible(timeout=1000):
+            return None
 
-    if estado_pesquisa != "linhas":
-        return estado_pesquisa, registros_linhas
+        texto_linha = linha_tabela.inner_text(timeout=1000)
+    except Exception:
+        return None
 
-    for indice in range(linhas_tabela.count()):
-        linha_tabela = linhas_tabela.nth(indice)
+    return {
+        "linha": linha_tabela,
+        "texto": texto_linha,
+        "ip": _texto_celula(linha_tabela, 1),
+        "computador": _texto_celula(linha_tabela, 2),
+        "descricao": _texto_celula(linha_tabela, 3),
+        "classe": _texto_celula(linha_tabela, 4),
+        "fila": _texto_celula(linha_tabela, 5),
+        "tipo_cups": _texto_celula(linha_tabela, 6),
+    }
+
+
+def _coletar_linhas_computador(
+    janela_sistema,
+    ip_pc: str,
+    timeout_ms: int = 7000,
+) -> tuple[str, list[dict]]:
+    tbody = _tbody_resultados(janela_sistema)
+    linhas = _linhas_resultado(tbody)
+    linha_vazia = _linha_vazia_resultado(tbody)
+    fim = time.monotonic() + (timeout_ms / 1000)
+    chegou_a_ver_linhas = False
+
+    while time.monotonic() < fim:
+        try:
+            if linha_vazia.is_visible(timeout=200):
+                return "vazio", []
+        except Exception:
+            pass
 
         try:
-            if not linha_tabela.is_visible(timeout=1000):
-                continue
-
-            texto_linha = linha_tabela.inner_text(timeout=1000)
+            total_linhas = linhas.count()
         except Exception:
-            continue
+            total_linhas = 0
 
-        ip_linha = _texto_celula(linha_tabela, 1)
+        if total_linhas > 0:
+            chegou_a_ver_linhas = True
+            registros_linhas = [
+                registro
+                for registro in (
+                    _extrair_registro_linha(linhas.nth(indice))
+                    for indice in range(total_linhas)
+                )
+                if registro is not None and _ip_celula_confere(registro["ip"], ip_pc)
+            ]
 
-        if not _ip_celula_confere(ip_linha, ip_pc):
-            continue
+            if registros_linhas:
+                return "linhas", registros_linhas
 
-        registros_linhas.append(
-            {
-                "linha": linha_tabela,
-                "texto": texto_linha,
-                "ip": ip_linha,
-                "computador": _texto_celula(linha_tabela, 2),
-                "descricao": _texto_celula(linha_tabela, 3),
-                "classe": _texto_celula(linha_tabela, 4),
-                "fila": _texto_celula(linha_tabela, 5),
-                "tipo_cups": _texto_celula(linha_tabela, 6),
-            }
-        )
+        time.sleep(0.15)
 
-    return estado_pesquisa, registros_linhas
+    if chegou_a_ver_linhas:
+        return "linhas", []
+
+    return "indefinido", []
 
 
 def _extrair_ips(texto: object) -> list[str]:
