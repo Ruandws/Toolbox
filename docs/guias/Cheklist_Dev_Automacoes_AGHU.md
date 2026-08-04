@@ -1,8 +1,9 @@
 ## Checklist - Nova Automação AGHUx
 
 > Nota: este checklist complementa `docs/guias/Guia_AGHU.md`. Em caso de conflito, prevalecem o guia e as RFCs AGHU aplicáveis.
+> Práticas genéricas de estrutura de projeto, UI/execução, planilhas, resiliência e relatórios foram extraídas para `docs/guias/Checklist_Backend_Gn.md`; consulte-o em conjunto com este documento.
 
-Resumo prático para preparar uma nova automação AGHUx alinhada aos padrões atuais do projeto.
+Resumo prático para preparar uma nova automação AGHUx alinhada aos padrões atuais do projeto. Itens específicos do AGHU/JSF ficam aqui; práticas de backend independentes de sistema estão em `Checklist_Backend_Gn.md`.
 
 ### Antes de codar
 - [ ] Mapear a árvore de menu completa até o módulo alvo em uma constante `CAMINHO_MENU_*`
@@ -12,19 +13,11 @@ Resumo prático para preparar uma nova automação AGHUx alinhada aos padrões a
 - [ ] Mapear mensagens de sucesso, erro, duplicidade, "nenhum registro encontrado" e estados inconclusivos
 - [ ] Definir previamente quando o robô deve alterar, manter, incluir, ignorar ou marcar como "conferir manualmente"
 
-### Estrutura do projeto
+### Estrutura do projeto (específico AGHU)
 - [ ] Reusar `autenticador.py` para login; não duplicar fluxo de autenticação dentro do robô
 - [ ] Reusar `menu.py` para navegação; não reimplementar cliques de menu em cada automação
-- [ ] Separar UI (`customtkinter`) do núcleo Playwright
-- [ ] Definir posse dos recursos Playwright: UI/chamador cria e fecha `Browser`, `BrowserContext` e `Page` principal; núcleo recebe `context/page` e só cria abas auxiliares para Clean State ou consultas
-- [ ] Se houver tarefa auxiliar delegável, criar especialista separado e deixar o maestro controlar retry/retomada
 - [ ] URLs do AGHU devem vir de `autenticador.py`, constantes de ambiente ou variáveis de ambiente; evitar URL solta no meio do código
-- [ ] IPs/URLs externas inevitáveis devem ficar em constantes nomeadas e ter proteção contra ambiente errado quando aplicável
-
-### UI e execução
-- [ ] Quando houver UI, executar tarefas longas fora da thread principal para manter a interface responsiva
-- [ ] Durante a execução, desabilitar o botão de início e restaurar o estado da UI ao finalizar com sucesso ou erro
-- [ ] Atualizações de status vindas da thread de automação devem voltar para a thread da UI por callback seguro (`after`, fila ou equivalente)
+- [ ] Para separação UI/núcleo, posse dos recursos Playwright e demais itens de estrutura, ver `Checklist_Backend_Gn.md`
 
 ### Ambiente
 - [ ] Oferecer seleção clara entre Produção e Homologação quando a automação tiver UI
@@ -46,12 +39,7 @@ Resumo prático para preparar uma nova automação AGHUx alinhada aos padrões a
 - [ ] Em falha de navegação, aplicar Clean State e tentar novamente antes de abortar
 
 ### Planilhas e entradas
-- [ ] Definir `COLUNAS_OBRIGATORIAS_PLANILHA` no núcleo da automação
-- [ ] Validar existência do arquivo, extensão permitida e colunas obrigatórias antes de abrir o navegador
-- [ ] Ler Excel com `dtype=str` e `engine="openpyxl"`
-- [ ] Para CSV, usar `sep=";"`, `encoding="utf-8-sig"` e fallback para `latin1`
-- [ ] Normalizar nomes de colunas com `df.columns.str.strip()`
-- [ ] Tratar campos obrigatórios em branco como linha ignorada ou erro descritivo, sem quebrar o lote inteiro
+- [ ] Práticas gerais de leitura/validação de planilha estão em `Checklist_Backend_Gn.md`
 - [ ] Validar regras de negócio da entrada antes de acionar o AGHU sempre que possível
 
 ### Autocompletes
@@ -61,14 +49,9 @@ Resumo prático para preparar uma nova automação AGHUx alinhada aos padrões a
 - [ ] Após selecionar item crítico, validar que o valor selecionado corresponde ao esperado
 - [ ] Registrar como "conferir manualmente" quando a seleção retornar valor divergente
 
-### Resiliência
-- [ ] Implementar Clean State: fechar aba atual, abrir nova aba, relogar e renavegar ao módulo
-- [ ] Retry por item/registro: normalmente 2 tentativas para navegação e 2-3 para processamento
-- [ ] Usar `try/finally` para fechar browser e abas auxiliares
-- [ ] Abas auxiliares, como consultas externas, devem ser fechadas também nos caminhos de erro
-- [ ] Usar `except Exception:` quando for necessário capturar falha técnica geral; evitar `except:` nu
-- [ ] Diferenciar erro de negócio previsível de falha técnica/rede/navegador
-- [ ] Quando o AGHU não retornar sucesso nem erro conhecido, marcar estado indefinido para conferência manual
+### Resiliência (específico AGHU)
+- [ ] Implementar Clean State no formato AGHU: fechar aba atual, abrir nova aba, relogar via `autenticador.py` e renavegar ao módulo com `navegar_menu_aghu`
+- [ ] Demais práticas de retry, `try/finally`, `except Exception:` e diferenciação erro de negócio/técnico estão em `Checklist_Backend_Gn.md`
 
 ### Seletores
 - [ ] Preferir seletores por atributo estável (`input[id*='campo' i]`, `name`, tabela por `id`) sobre texto visível
@@ -85,9 +68,5 @@ Resumo prático para preparar uma nova automação AGHUx alinhada aos padrões a
 - [ ] Para automações com especialista auxiliar, registrar se a linha foi criada pelo especialista antes de retomar o fluxo principal
 
 ### Relatórios
-- [ ] Gerar relatório por linha processada com status e detalhes descritivos
-- [ ] Incluir auditoria quando o formato comportar: usuário executor e data/hora de geração
-- [ ] Se o núcleo gerar CSV, manter separador `;` e `utf-8-sig`
-- [ ] Quando houver UI, entregar XLSX final na camada de UI
-- [ ] Automações sem CSV intermediário podem gerar XLSX direto, desde que preservem status, detalhes, filtros e colunas legíveis
-- [ ] Relatórios devem ser gerados mesmo quando parte das linhas falhar
+- [ ] Práticas de geração de relatório/CSV/XLSX estão em `Checklist_Backend_Gn.md`
+- [ ] Tratar duplicidade e demais mensagens de negócio do AGHU nos detalhes do relatório, conforme mapeado em "Antes de codar"
