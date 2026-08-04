@@ -802,6 +802,7 @@ A UI deve passar o mesmo `url_aghu` para `fazer_login`, `navegar_ate_modulo` e `
 | Erros de negócio dependem de strings exatas | Alterações nas mensagens exigem atualização coordenada |
 | Relatório `.xlsx` é gerado mesmo se todas as linhas falharem | A auditoria fica preservada, mas o operador deve validar os status |
 | Pontos cegos restantes a mapear | Existem cenários não cobertos que devem ser mapeados e tratados em revisão futura |
+| `processar_computadores` retorna apenas `str` (caminho do relatório), sem os `ResultadoLinha`/status por linha coletados internamente | A UI (RFC-003) não consegue exibir um resumo estruturado (`Mantido`/`Alterado`/`Vinculado`/`Criado`/`Erro`) ao operador sem abrir o `.xlsx`. Isso impede a conformidade desta automação com o item "resumir por status conhecido" do `docs/guias/CheckListUIPadronizada.md` (§8), que depende do núcleo expor esse resultado — não é corrigível só na UI. Desvio rastreado em RFC-003 §20 |
 
 ---
 
@@ -821,3 +822,4 @@ Esta RFC reflete o código atual de `PrinterAGHU.py` conforme a release de 2026-
 - Tratamento diferenciado de resultados de gravação (sucesso, erro, indefinido) com mensagem específica para erro de classe PDF duplicada.
 - Tratamento e registro correto de linhas com campos obrigatórios vazios.
 - Limitações atualizadas com base no código corrente.
+- Limitação adicionada: `processar_computadores` não expõe resultado estruturado por linha ao chamador, o que bloqueia a UI (RFC-003) de atender ao item de resumo por status do `docs/guias/CheckListUIPadronizada.md`; gap rastreado em RFC-003 §20.

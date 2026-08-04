@@ -1,6 +1,6 @@
 ## Checklist - UI Padronizada para Automacoes
 
-> Nota: este checklist define o padrao minimo para novas UIs e para refatoracoes de UIs existentes. Quando uma regra nao se aplicar ao sistema, registre a excecao no release ou na RFC correspondente.
+> Nota: este checklist define o padrao minimo para novas UIs e para refatoracoes de UIs existentes. Quando uma regra nao se aplicar ao sistema, registre a excecao sempre na RFC correspondente (nunca apenas no release).
 
 Resumo pratico para manter as UIs de automacao consistentes, seguras e testaveis nos sistemas AGHUX, Servicos TI e demais frentes do projeto.
 
@@ -27,7 +27,8 @@ Resumo pratico para manter as UIs de automacao consistentes, seguras e testaveis
 - [ ] Repassar a URL resolvida para login, navegacao, retries, Clean State e processamento.
 
 ### 3. Tipo de execucao
-- [ ] Usar `CTkSegmentedButton` para escolher explicitamente entre `Unitaria` e `Lote`.
+> Aplicavel apenas quando o fluxo suporta mais de um modo de execucao (unitaria e lote). Quando a automacao so existe em um modo por natureza do negocio (ex.: fluxo exclusivamente em lote), nao criar um seletor artificial para cumprir a forma do checklist; registrar a nao aplicabilidade na RFC do modulo, como no item 2.
+- [ ] Quando houver mais de um modo de execucao, usar `CTkSegmentedButton` para escolher explicitamente entre `Unitaria` e `Lote`.
 - [ ] Nao inferir modo lote apenas pela presenca de planilha ou pasta preenchida.
 - [ ] Mostrar apenas os campos do modo selecionado, usando `grid` e `grid_remove`.
 - [ ] Destacar visualmente a opcao selecionada no segmented button.
@@ -85,6 +86,8 @@ Resumo pratico para manter as UIs de automacao consistentes, seguras e testaveis
 - [ ] Para execucao unitaria com multiplos itens manuais, usar o mesmo padrao de resumo do lote quando houver mais de um item.
 - [ ] Evitar retornar somente mensagem livre quando houver status estruturado disponivel no nucleo.
 
+> Nota: este item depende do nucleo devolver resultado estruturado por item processado. Quando o nucleo ainda so retorna uma string agregada (sem status por linha), o gap e do nucleo, nao da UI. Nao simular estrutura na camada de UI; registrar a pendencia na RFC do nucleo correspondente.
+
 ### 9. Separacao entre UI e nucleo
 - [ ] UI deve apenas coletar dados, validar formulario, iniciar thread, exibir status e repassar parametros.
 - [ ] Validacoes de negocio reutilizaveis devem ficar no nucleo da automacao.
@@ -122,7 +125,7 @@ Resumo pratico para manter as UIs de automacao consistentes, seguras e testaveis
 
 ### 12. Documentacao e release
 - [ ] Registrar alteracoes relevantes de UI em release do sistema.
-- [ ] Documentar excecoes ao padrao quando a automacao tiver restricao tecnica real.
+- [ ] Documentar excecoes ao padrao sempre na RFC correspondente, quando a automacao tiver restricao tecnica real.
 - [ ] Atualizar RFC ou guia especifico quando a UI introduzir novo contrato com o nucleo.
 - [ ] Citar arquivos alterados no release.
 - [ ] Citar testes executados no release.

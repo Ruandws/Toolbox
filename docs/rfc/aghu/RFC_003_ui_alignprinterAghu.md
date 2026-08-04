@@ -39,6 +39,7 @@ Quando empacotado como executável congelado (PyInstaller), o arquivo contém um
 | Relatório | Retorno direto de `processar_computadores` — string com o caminho salvo |
 | Antiprocesso invisível | Impede navegador e terminal desativados simultaneamente |
 | Bootstrap executável | Bloco `if getattr(sys, "frozen", False)` configura browsers do Playwright antes da importação |
+| Conformidade com Checklist de UI | Auditoria contra `docs/guias/CheckListUIPadronizada.md` registrada em §20; desvios tratados como débito técnico rastreado, não bloqueante |
 
 ---
 
@@ -513,7 +514,29 @@ A UI não interage com RFC-002. O Maestro delega ao Almoxarifado quando necessá
 
 ---
 
-## 20. Estado Atual da RFC
+## 20. Desvios do Checklist de UI Padronizada
+
+> Referência: `docs/guias/CheckListUIPadronizada.md`. Auditoria realizada em 2026-08-04, comparando o código atual de `ui_alignprinterAGHU.py` item a item contra o checklist. Por decisão de processo, registros de desvio deste tipo são sempre feitos na RFC do módulo correspondente — nunca só no release. Os itens abaixo não bloqueiam a operação da automação; são débito técnico rastreado para refatoração futura, priorizado por risco.
+
+| Item do checklist | Situação atual no código | Prioridade | Observação |
+|---|---|---|---|
+| §1 — `resizable(True, True)` e `minsize` | `resizable(False, False)` (linha 113), sem `minsize` | Baixa | Janela de tamanho fixo; não há campos cortados no tamanho atual (`760x590`), mas não segue o padrão de janela redimensionável |
+| §2 — senha nunca normalizada antes de repassar | `entry_password.get().strip()` (linha 389) | **Alta** | Pode alterar uma senha com espaço significativo digitado pelo operador; o checklist exige preservar a senha original sem `.strip()` |
+| §2 — Homologação como padrão operacional seguro | `var_ambiente = tk.StringVar(value=AMBIENTE_PRODUCAO)` (linha 118) | **Alta** | Ambiente padrão é Produção; risco de execução acidental em produção ao simplesmente abrir a tela |
+| §2 — modal de aviso ao trocar para Produção, com `parent=self` | `on_environment_changed` (linha 235) só atualiza o painel visual | Média | Falta `messagebox.showwarning(parent=self)`, presente em `ui_criar_pessoa_aghu.py` |
+| §2 — bloquear seletor de ambiente durante execução | Não bloqueado | Média | Nenhum controle além do botão principal é desabilitado em `start_automation` |
+| §5 — relatório como arquivo `.xlsx` via `asksaveasfilename`, com nome padrão gerado por timestamp na UI | `select_report_directory` usa `askdirectory` (pasta); nome do arquivo é definido pelo Maestro | Baixa (exceção técnica) | Decisão de design válida — o nome do relatório é gerado por `processar_computadores` (RFC-001 §13) — mas nunca havia sido registrada formalmente como exceção ao padrão |
+| §7 — flag `em_execucao` contra duplo disparo | Ausente | **Alta** | Única guarda é `state="disabled"` do `button_run`; não há flag de instância impedindo reentrância por outro caminho |
+| §7 — `_bloquear_execucao`/`_liberar_execucao` centralizados, bloqueando todos os controles relevantes | Ausente | **Alta** | Apenas `button_run` é desabilitado durante a execução; usuário, senha, seletor de ambiente, checkboxes de visibilidade e botões de seleção de arquivo/pasta permanecem ativos e editáveis com a automação em andamento |
+| §6 — método único de validação de visibilidade, com `parent=self` | Duplicado em `validate_visibility_options_from_browser` e `_console`, sem `parent=self` | Baixa | Funciona, mas não segue o padrão de método único vinculado à janela principal |
+| §6 — diretório de logs por constante | Não existe `LOGS_DIR`/`diretorio_logs` nesta UI nem repasse ao núcleo | Baixa | A avaliar se é aplicável a este fluxo antes de tratar como pendência real |
+| §8 — resumir resultado por status conhecido em vez de mensagem livre | Retorno é só `"Processo concluido. Relatorio salvo em: {caminho}"` | Média — **bloqueado por dependência de núcleo** | `processar_computadores` retorna apenas o caminho do relatório (`-> str`), sem estrutura por linha (`Mantido`/`Alterado`/`Vinculado`/`Criado`/`Erro`). Não é corrigível só na UI; gap correspondente registrado em RFC-001 §17 |
+
+Itens de prioridade Alta (senha normalizada, ambiente padrão em Produção, ausência de bloqueio de tela) representam o maior risco operacional e devem ser priorizados numa futura revisão desta UI, antes dos itens de prioridade Média/Baixa.
+
+---
+
+## 21. Estado Atual da RFC
 
 Esta RFC passa a refletir o código atual de `ui_alignprinterAGHU.py`, incluindo:
 
@@ -528,3 +551,4 @@ Esta RFC passa a refletir o código atual de `ui_alignprinterAGHU.py`, incluindo
 - Bloco de bootstrap para executável congelado documentado em §7.
 - Regra anti-processo invisível e seletor de ambiente documentados.
 - Seções adicionadas seguindo o padrão de RFC-001: "Recuperação de Falhas Técnicas", "API Pública do Módulo", "Contratos entre RFCs" e "Considerações Operacionais".
+- Seção 20 adicionada: auditoria de conformidade contra `docs/guias/CheckListUIPadronizada.md`, com desvios priorizados por risco e rastreados nesta RFC.
