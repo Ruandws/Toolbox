@@ -100,7 +100,7 @@ A função `fazer_login` local existe para compatibilidade e execução isolada 
 
 Contrato de autenticação:
 
-| Função | Papel |
+| Item | Responsabilidade |
 |---|---|
 | `autenticar_aghu_page` | Tenta autenticar usando uma `Page` existente |
 | `exigir_login_valido` | Interrompe o fluxo se o login não for `sucesso` ou `sessao_ativa` |
@@ -115,13 +115,31 @@ O módulo importa:
 from menu import navegar_menu_aghu
 ```
 
+| Item | Responsabilidade |
+|---|---|
+| `navegar_menu_aghu` | Percorre o caminho completo informado, clica no item final e retorna o último iframe |
+
 A navegação até o cadastro mestre de impressoras é delegada a `navegar_menu_aghu` (RFC-004), que percorre o caminho completo informado pelo chamador e retorna o último iframe. O Almoxarifado declara localmente `CAMINHO_MENU_CADASTRO_IMPRESSORA` e valida a tela final aguardando o botão **Pesquisar**.
 
 ---
 
-## 6. Descrição dos Componentes
+## 6. Constantes de Módulo
 
-### 6.1 `fazer_login(page_aghu, usuario_str, senha_str)`
+| Constante | Valor | Uso |
+|---|---|---|
+| `CAMINHO_MENU_CADASTRO_IMPRESSORA` | `("Outros Módulos", "Configuração", "Impressão", "Cadastros", "Impressora")` | Caminho completo usado por `navegar_ate_cadastro_impressora` para abrir o módulo de cadastro mestre de impressoras |
+
+---
+
+## 7. Funções Auxiliares Privadas
+
+Não aplicável: módulo não define funções privadas com prefixo `_`.
+
+---
+
+## 8. Descrição dos Componentes Públicos
+
+### 8.1 `fazer_login(page_aghu, usuario_str, senha_str)`
 
 Wrapper de autenticação centralizada.
 
@@ -138,7 +156,7 @@ Fluxo:
 
 Essa função não é o mecanismo principal no fluxo Maestro → Almoxarifado, mas permanece disponível para reaproveitamento.
 
-### 6.2 `consultar_dados_site_secundario(context, impressora_alvo, classe_impressora)`
+### 8.2 `consultar_dados_site_secundario(context, impressora_alvo, classe_impressora)`
 
 Abre uma nova aba dentro do mesmo `BrowserContext` e acessa:
 
@@ -172,7 +190,96 @@ Quando a linha é encontrada, extrai:
 | `td[1]` | `cups_desc` | Descrição, normalmente contendo IP |
 | `td[2]` | `cups_loc` | Localização |
 
-#### 6.2.1 Transformação de dados
+A aba do CUPS é fechada antes do retorno em caso de sucesso.
+
+### 8.3 `navegar_ate_cadastro_impressora(page_aghu)`
+
+Navega no AGHUX até o cadastro mestre de impressoras usando `CAMINHO_MENU_CADASTRO_IMPRESSORA` (ver §6):
+
+```python
+janela_sistema = navegar_menu_aghu(
+    page=page_aghu,
+    caminho=CAMINHO_MENU_CADASTRO_IMPRESSORA,
+)
+janela_sistema.get_by_role("button", name="Pesquisar").first.wait_for(
+    state="visible",
+    timeout=15000,
+)
+```
+
+`navegar_menu_aghu` percorre o caminho informado, verifica visibilidade de cada nível e retorna o último iframe. A validação de carregamento da tela pelo botão **Pesquisar** pertence ao Almoxarifado.
+
+A função faz até duas tentativas:
+
+| Tentativa | Ação em falha |
+|---|---|
+| 1ª | `page_aghu.reload()` + espera de 3 segundos |
+| 2ª | Propaga a exceção |
+
+### 8.4 `cadastrar_nova_impressora(janela_sistema, dados)`
+
+Recebe o iframe do cadastro de impressoras e o dicionário gerado pelo CUPS.
+
+Etapas:
+
+1. Pesquisa a fila no campo `input[id*='fila' i]`.
+2. Clica em **Pesquisar**.
+3. Aguarda `Nenhum registro encontrado!` para confirmar ausência no AGHUX.
+4. Se a fila já aparecer na tabela, retorna sem criar duplicata.
+5. Clica em **Novo**.
+6. Aguarda botão **Gravar**.
+7. Preenche a fila.
+8. Seleciona **Tipo da Impressora**.
+9. Seleciona **Tipo do CUPS**.
+10. Seleciona servidor CUPS.
+11. Preenche descrição.
+12. Preenche localização multilinha.
+13. Clica em **Gravar**.
+14. Aguarda retorno à tela com botão **Pesquisar**.
+
+---
+
+## 9. Regras de Processamento
+
+### 9.1 Tipo da Impressora
+
+| `dados['classe']` | Tipo da Impressora |
+|---|---|
+| `PDF` | `Laser PCL` |
+| Qualquer outro valor | `Cod. Barras` |
+
+A seleção tenta primeiro usar seletor associado ao label `Tipo da Impressora`. Se falhar, usa fallback para o primeiro `div.ui-selectonemenu-trigger`.
+
+### 9.2 Tipo do CUPS
+
+```text
+Tipo do Cups = dados['classe']
+```
+
+A seleção tenta primeiro usar seletor associado ao label `Tipo do Cups`. Se falhar, usa fallback para o segundo `div.ui-selectonemenu-trigger` e busca por `li, td` contendo a classe.
+
+### 9.3 Seleção do Servidor CUPS
+
+O servidor é selecionado pela lupa/autocomplete:
+
+```python
+button.ui-autocomplete-dropdown:has(.ui-icon-triangle-1-s)
+```
+
+O item selecionado precisa conter:
+
+```text
+10.6.0.121
+CUPS
+```
+
+E não pode conter:
+
+```text
+HOMOLOGAÇÃO
+```
+
+### 9.4 Transformação de dados CUPS → AGHUX
 
 O IP é extraído da descrição com:
 
@@ -203,110 +310,7 @@ Campos finais montados para o AGHUX:
 | `descricao_aghux` | `<cups_loc> - <extra_info>`, com limpeza de hífens |
 | `localizacao_aghux` | `<descricao_aghux>\n<ip_encontrado>` |
 
-A aba do CUPS é fechada antes do retorno em caso de sucesso.
-
-### 6.3 `navegar_ate_cadastro_impressora(page_aghu)`
-
-Navega no AGHUX até o cadastro mestre de impressoras usando o caminho completo declarado no próprio procedimento:
-
-```python
-CAMINHO_MENU_CADASTRO_IMPRESSORA = (
-    "Outros Módulos",
-    "Configuração",
-    "Impressão",
-    "Cadastros",
-    "Impressora",
-)
-```
-
-A travessia do menu é delegada a `navegar_menu_aghu` de `menu.py` (RFC-004):
-
-```python
-janela_sistema = navegar_menu_aghu(
-    page=page_aghu,
-    caminho=CAMINHO_MENU_CADASTRO_IMPRESSORA,
-)
-janela_sistema.get_by_role("button", name="Pesquisar").first.wait_for(
-    state="visible",
-    timeout=15000,
-)
-```
-
-`navegar_menu_aghu` percorre o caminho informado, verifica visibilidade de cada nível e retorna o último iframe. A validação de carregamento da tela pelo botão **Pesquisar** pertence ao Almoxarifado.
-
-Recuperação:
-
-| Tentativa | Ação em falha |
-|---|---|
-| 1ª | `page_aghu.reload()` + espera de 3 segundos |
-| 2ª | Propaga a exceção |
-
-### 6.4 `cadastrar_nova_impressora(janela_sistema, dados)`
-
-Recebe o iframe do cadastro de impressoras e o dicionário gerado pelo CUPS.
-
-Etapas:
-
-1. Pesquisa a fila no campo `input[id*='fila' i]`.
-2. Clica em **Pesquisar**.
-3. Aguarda `Nenhum registro encontrado!` para confirmar ausência no AGHUX.
-4. Se a fila já aparecer na tabela, retorna sem criar duplicata.
-5. Clica em **Novo**.
-6. Aguarda botão **Gravar**.
-7. Preenche a fila.
-8. Seleciona **Tipo da Impressora**.
-9. Seleciona **Tipo do CUPS**.
-10. Seleciona servidor CUPS.
-11. Preenche descrição.
-12. Preenche localização multilinha.
-13. Clica em **Gravar**.
-14. Aguarda retorno à tela com botão **Pesquisar**.
-
-#### 6.4.1 Tipo da Impressora
-
-Regra de negócio:
-
-| `dados['classe']` | Tipo da Impressora |
-|---|---|
-| `PDF` | `Laser PCL` |
-| Qualquer outro valor | `Cod. Barras` |
-
-A seleção tenta primeiro usar seletor associado ao label `Tipo da Impressora`. Se falhar, usa fallback para o primeiro `div.ui-selectonemenu-trigger`.
-
-#### 6.4.2 Tipo do CUPS
-
-Regra:
-
-```text
-Tipo do Cups = dados['classe']
-```
-
-A seleção tenta primeiro usar seletor associado ao label `Tipo do Cups`. Se falhar, usa fallback para o segundo `div.ui-selectonemenu-trigger` e busca por `li, td` contendo a classe.
-
-#### 6.4.3 Servidor CUPS
-
-O servidor é selecionado pela lupa/autocomplete:
-
-```python
-button.ui-autocomplete-dropdown:has(.ui-icon-triangle-1-s)
-```
-
-O item selecionado precisa conter:
-
-```text
-10.6.0.121
-CUPS
-```
-
-E não pode conter:
-
-```text
-HOMOLOGAÇÃO
-```
-
-Essa proteção evita selecionar o servidor de homologação quando houver múltiplas opções semelhantes.
-
-#### 6.4.4 Descrição e localização
+### 9.5 Descrição e localização no AGHUX
 
 | Campo AGHUX | Seletor | Valor |
 |---|---|---|
@@ -317,7 +321,43 @@ A localização pode conter múltiplas linhas, pois inclui a descrição formata
 
 ---
 
-## 7. Contrato com o Maestro (RFC-001)
+## 10. API Pública do Módulo
+
+| Função | Responsabilidade |
+|---|---|
+| `fazer_login(page_aghu, usuario_str, senha_str)` | Wrapper de login centralizado; uso compatível/isolado |
+| `consultar_dados_site_secundario(context, impressora_alvo, classe_impressora)` | Consulta CUPS e transforma dados para o AGHUX |
+| `navegar_ate_cadastro_impressora(page_aghu)` | Abre o módulo mestre **Impressora** |
+| `cadastrar_nova_impressora(janela_sistema, dados)` | Cria a impressora no AGHUX se ela ainda não existir |
+
+---
+
+## 11. Recuperação de Falhas Técnicas
+
+| Situação | Saída |
+|---|---|
+| Fila não encontrada no CUPS | `ValueError("Não existe no CUPS")` |
+| Impressora já existe no AGHUX | Retorno silencioso, sem duplicar cadastro |
+| Falha de navegação no cadastro na primeira tentativa | Reload e nova tentativa |
+| Falha de navegação no cadastro na segunda tentativa | Exceção propagada ao Maestro |
+| Falha ao selecionar servidor/tipo/campos | Exceção propagada ao Maestro |
+
+#### Lógica de retry em `navegar_ate_cadastro_impressora`
+
+A função implementa um ciclo de até duas tentativas para lidar com instabilidades de carregamento do menu do AGHUX:
+
+| Tentativa | Ação em caso de falha |
+|---|---|
+| 1ª | Executa `page_aghu.reload()`, aguarda 3 segundos e repete a navegação via `navegar_menu_aghu` |
+| 2ª | Propaga a exceção para o Maestro, que contabiliza como falha técnica e aciona seu próprio ciclo de retry (Clean State + nova tentativa) |
+
+O reload é usado em vez de Clean State porque o Almoxarifado não possui acesso ao `BrowserContext` neste ponto — ele recebe apenas a `Page` do AGHUX já preparada pelo Maestro. A exceção propagada na 2ª tentativa é, portanto, o mecanismo de escalada para que o Maestro decida abrir aba limpa.
+
+---
+
+## 12. Contratos entre RFCs
+
+### 12.1 Contrato com RFC-001
 
 O Maestro importa diretamente:
 
@@ -342,30 +382,7 @@ Eventos de contrato:
 
 ---
 
-## 8. API Pública do Módulo
-
-| Função | Responsabilidade |
-|---|---|
-| `fazer_login(page_aghu, usuario_str, senha_str)` | Wrapper de login centralizado; uso compatível/isolado |
-| `consultar_dados_site_secundario(context, impressora_alvo, classe_impressora)` | Consulta CUPS e transforma dados para o AGHUX |
-| `navegar_ate_cadastro_impressora(page_aghu)` | Abre o módulo mestre **Impressora** |
-| `cadastrar_nova_impressora(janela_sistema, dados)` | Cria a impressora no AGHUX se ela ainda não existir |
-
----
-
-## 9. Erros e Saídas Esperadas
-
-| Situação | Saída |
-|---|---|
-| Fila não encontrada no CUPS | `ValueError("Não existe no CUPS")` |
-| Impressora já existe no AGHUX | Retorno silencioso, sem duplicar cadastro |
-| Falha de navegação no cadastro na primeira tentativa | Reload e nova tentativa |
-| Falha de navegação no cadastro na segunda tentativa | Exceção propagada ao Maestro |
-| Falha ao selecionar servidor/tipo/campos | Exceção propagada ao Maestro |
-
----
-
-## 10. Considerações Operacionais
+## 13. Considerações Operacionais
 
 1. O módulo abre uma aba nova para o CUPS e fecha essa aba ao final da consulta.
 2. O módulo assume que o `BrowserContext` já foi criado com as permissões e opções necessárias pelo chamador.
@@ -376,7 +393,7 @@ Eventos de contrato:
 
 ---
 
-## 11. Limitações Conhecidas
+## 14. Limitações Conhecidas
 
 | Limitação | Impacto |
 |---|---|
@@ -387,6 +404,6 @@ Eventos de contrato:
 
 ---
 
-## 12. Estado Atual da RFC
+## 15. Estado Atual da RFC
 
 Esta RFC passa a refletir o código atual de `AddPrinterAGHU.py`, incluindo o login centralizado por `autenticador.py`, o contrato real usado pelo Maestro, a consulta CUPS por seletores de atributo, a transformação de dados para o AGHUX e o cadastro com proteção anti-homologação.

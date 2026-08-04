@@ -3,7 +3,7 @@
 - **Status:** Estável
 - **Autor:** Pedro e Ruan
 - **Data:** 2026-06
-- **Atualizado em:** 2026-06-19
+- **Atualizado em:** 2026-08-04
 - **Arquivo:** `PrinterAGHU.py`
 - **Depende de:** `autenticador.py`
 - **Depende de:** `AddPrinterAGHU.py` (RFC-002)
@@ -24,22 +24,19 @@ A autenticação não é mais implementada manualmente neste arquivo. O arquivo 
 
 ## 2. Mudanças incorporadas nesta revisão
 
-Esta revisão atualiza a RFC para refletir as implementações da release de 19/06/2026:
+Esta revisão atualiza a RFC para refletir o estado atual do código:
 
 | Área | Situação atual |
 |---|---|
 | Autenticação | Centralizada em `autenticador.py`, não mais descrita como lógica manual local do Maestro |
 | URL do AGHUX | Uso de `AGHU_URL` como padrão, com suporte a `url_aghu` recebido do chamador para Produção/Homologação |
 | Login local | `fazer_login` agora é wrapper de `autenticar_aghu_page` + `exigir_login_valido` |
-| Clean State | Continua fechando a aba atual, abrindo nova aba no mesmo contexto e autenticando pela rotina central; reaproveita sempre o `url_aghu` do fluxo atual |
-| Navegação | Usa `navegar_menu_aghu` de `menu.py` (RFC-004) com caminho local `CAMINHO_MENU_IMPRESSORA_POR_COMPUTADOR`; mantém retry com Clean State na primeira falha e preserva a URL selecionada |
+| Clean State | Fecha **todas** as abas do contexto antes de abrir aba limpa; tenta autenticação em loop com até `MAX_TENTATIVAS_AUTENTICAR_NOVA_ABA` tentativas; lança `RuntimeError` próprio ao esgotar |
+| Navegação | Usa `navegar_menu_aghu` de `menu.py` (RFC-004) com caminho local `CAMINHO_MENU_IMPRESSORA_POR_COMPUTADOR`; mantém retry com Clean State na primeira falha |
 | Busca de IP | Usa `_criar_regex_valor_exato` com `re.escape` e lookaround usando `CARACTERES_DE_VALOR` (`A-Za-z0-9_.-`) para evitar correspondência parcial de IP |
-| Decisão de ação | Funções `_coletar_linhas_computador` e `_decidir_acao_linhas` separam coleta de registros da decisão, com quatro casos: `mantido`, `alterar`, `incluir` e `conferir` |
-| Validação de computador | `_validar_computador_selecionado` confirma que o IP selecionado no autocomplete corresponde ao esperado, prevenindo vínculo errado |
-| Tratamento de gravação | `_aguardar_resultado_gravacao` diferencia `sucesso`, `erro` e `indefinido`; erros de classe PDF duplicada recebem mensagem específica |
-| Normalização | Ecossistema de funções `_normalizar_busca`, `_valor_exato`, `_contem_valor_exato` para comparação case-insensitive e tolerante a espaços |
-| Relatório | Gera CSV em `logs/log_resultado_YYYYMMDD_HHMMSS.csv` com primeira linha de auditoria `Atualizado por: <usuario>` |
-| Campos Vazios | Validação proativa de campos obrigatórios em branco via `_campos_obrigatorios_planilha_em_branco`, ignorando e registrando erro nas linhas divergentes |
+| Leitura de planilha | Usa `openpyxl` diretamente via `read_spreadsheet`/`read_xlsx`; extensão suportada apenas `.xlsx`; resolve nomes de colunas com `ALIASES_COLUNAS_PLANILHA` e `normalize_column_name`; retorna `list[Row]` |
+| Decisão de ação | `_coletar_linhas_computador` integra a espera de estado e a extração de registros; `_decidir_acao_linhas` decide com quatro casos: `mantido`, `alterar`, `incluir` e `conferir` |
+| Relatório | Gera `.xlsx` via `write_xlsx_report` com `freeze_panes`, `auto_filter` e `autofit`; nome `Resultado_{DD_MM_YY_HHhMMmSS}.xlsx`; `report_directory` é parâmetro obrigatório de `processar_computadores`; a UI o fornece explicitamente |
 
 ---
 
@@ -47,7 +44,7 @@ Esta revisão atualiza a RFC para refletir as implementações da release de 19/
 
 Vincular impressoras a computadores no AGHUX é uma rotina repetitiva, sensível a divergências silenciosas e dependente de autocompletes JSF. Um computador pode já possuir vínculo correto, possuir vínculo para outra impressora, não possuir vínculo ou nem existir no cadastro. Além disso, a impressora alvo pode não existir no catálogo do AGHUX, embora exista no CUPS.
 
-O Maestro centraliza esse fluxo em uma rotina auditável com recuperação controlada: tenta operar o vínculo, usa aba limpa quando a interface fica instável, delega o cadastro de impressoras ausentes ao Almoxarifado e registra o resultado por linha em relatório CSV.
+O Maestro centraliza esse fluxo em uma rotina auditável com recuperação controlada: tenta operar o vínculo, usa aba limpa quando a interface fica instável, delega o cadastro de impressoras ausentes ao Almoxarifado e registra o resultado por linha em relatório `.xlsx`.
 
 A separação entre núcleo (`PrinterAGHU.py`), cadastro especializado (`AddPrinterAGHU.py`), autenticação (`autenticador.py`) e interface gráfica (`ui_alignprinterAGHU.py`) reduz acoplamento e permite que a regra de negócio seja reutilizada por outros chamadores.
 
@@ -71,13 +68,15 @@ A separação entre núcleo (`PrinterAGHU.py`), cadastro especializado (`AddPrin
         │        ├─ Valida tela pelo botão "Pesquisar" no último iframe
         │        └─ Em falha inicial, aciona Clean State
         │
-        └─► processar_computadores(..., url_aghu=url_aghu)
+        └─► processar_computadores(..., caminho_planilha, report_directory, url_aghu=url_aghu)
+                 │
+                 ├─ ler_planilha(caminho_planilha) → list[Row] (internamente)
                  │
                  ├─ Para cada linha da planilha:
                  │     ├─ Busca computador por IP no autocomplete
                  │     │    └─ Usa _criar_regex_valor_exato com CARACTERES_DE_VALOR
                  │     ├─ Pesquisa vínculo existente (botão Pesquisar)
-                 │     ├─ _coletar_linhas_computador: coleta registros com IP correspondente
+                 │     ├─ _coletar_linhas_computador: aguarda estado + coleta registros com IP correspondente
                  │     ├─ _decidir_acao_linhas: decide caso com base nos registros
                  │     │
                  │     ├─ [Caso A] "mantido"    → Vínculo correto      → Status: Mantido
@@ -88,7 +87,7 @@ A separação entre núcleo (`PrinterAGHU.py`), cadastro especializado (`AddPrin
                  ├─ Se a impressora não existir no AGHUX:
                  │     └─► Delegação ao Almoxarifado (RFC-002)
                  │           ├─ trocar_aba_aghux(..., url_aghu=url_aghu)
-                 │           ├─ consultar_dados_site_secundario(...)
+                 │           ├─ consultar_dados_site_secundario(...) 
                  │           ├─ navegar_ate_cadastro_impressora(...)
                  │           └─ cadastrar_nova_impressora(...)
                  │
@@ -98,7 +97,7 @@ A separação entre núcleo (`PrinterAGHU.py`), cadastro especializado (`AddPrin
                  │     ├─ Marca impressora_fabricada_agora = True
                  │     └─ Reprocessa a mesma linha
                  │
-                 └─ Gera CSV auditável em ./logs
+                 └─ Gera relatório .xlsx auditável em report_directory
 ```
 
 ---
@@ -159,17 +158,77 @@ A navegação pelo menu do AGHUX não é mais implementada manualmente neste arq
 
 | Constante | Valor | Uso |
 |---|---|---|
-| `BASE_DIR` | `Path(__file__).resolve().parent` | Diretório base para localização de logs |
+| `BASE_DIR` | `Path(__file__).resolve().parent` | Diretório base do arquivo |
+| `SUPPORTED_EXTENSIONS` | `(".xlsx",)` | Única extensão aceita por `ler_planilha`/`validate_spreadsheet_extension` |
 | `CAMINHO_MENU_IMPRESSORA_POR_COMPUTADOR` | `("Outros Módulos", "Configuração", "Impressão", "Cadastros", "Impressora por Computador")` | Caminho completo usado por `navegar_ate_modulo` para abrir o módulo de vínculo |
+| `COLUNAS_OBRIGATORIAS_PLANILHA` | `["IPPC", "HostPrinter", "PrinterClass"]` | Colunas obrigatórias validadas ao ler a planilha e ao verificar campos em branco por linha |
+| `COLUNAS_RELATORIO` | `("HostPC", "IPPC", "HostPrinter", "IPPrinter", "PrinterClass", "Status", "Detalhes")` | Ordem e conjunto de colunas do relatório `.xlsx` gerado |
+| `ALIASES_COLUNAS_PLANILHA` | `dict[str, tuple[str, ...]]` | Mapa de aliases por coluna canônica; usado por `identify_column_by_alias` para localizar colunas independente do nome exato na planilha (ver §8.1) |
 | `CARACTERES_DE_VALOR` | `r"A-Za-z0-9_.-"` | Classe de caracteres usada nos lookarounds de `_criar_regex_valor_exato` para definir limites de "palavra" em IPs e nomes de fila |
 | `TABELA_COMPUTADOR_IMPRESSORA_SELECTOR` | `'[id="tabelaComputadorImpressora:resultList_data"]'` | Seletor CSS do `<tbody>` da tabela de resultados do módulo |
 | `MENSAGEM_ERRO_PESQUISA_INDEFINIDA` | Texto descritivo | Mensagem de detalhe quando a pesquisa não retorna linhas nem mensagem de "nenhum registro" |
+| `MAX_TENTATIVAS_AUTENTICAR_NOVA_ABA` | `3` | Número máximo de tentativas de autenticação dentro de `trocar_aba_aghux` |
+| `INTERVALO_RETRY_AUTENTICAR_NOVA_ABA_SEGUNDOS` | `1` | Pausa em segundos entre tentativas de autenticação no Clean State |
+| `MAX_TENTATIVAS_PROCESSAMENTO_LINHA` | `3` | Número máximo de tentativas por linha em `_processar_linha_com_retentativas` |
+| `MAX_TENTATIVAS_ESTOQUE` | `3` | Número máximo de tentativas de cadastro delegado ao Almoxarifado |
+| `XLSX_HEADER_ROW` | `1` | Linha do cabeçalho no relatório `.xlsx` |
+| `XLSX_FREEZE_PANES_CELL` | `"A2"` | Célula de referência para `freeze_panes` do relatório |
+| `XLSX_MIN_COLUMN_WIDTH` | `12` | Largura mínima de coluna no autofit |
+| `XLSX_MAX_COLUMN_WIDTH` | `60` | Largura máxima de coluna no autofit |
+| `XLSX_COLUMN_PADDING` | `2` | Padding adicionado ao comprimento máximo de célula no autofit |
 
 ---
 
-## 7. Funções Auxiliares Privadas
+## 7. Dataclasses e Exceção
 
-### 7.1 Normalização e Comparação
+### 7.1 `DadosLinhaPlanilha`
+
+```python
+@dataclass(frozen=True)
+class DadosLinhaPlanilha:
+    ip_pc: str
+    impressora_alvo: str
+    classe_impressao: str
+```
+
+Representa os dados extraídos de uma linha da planilha prontos para uso no fluxo de automação.
+
+### 7.2 `ResultadoLinha`
+
+```python
+@dataclass(frozen=True)
+class ResultadoLinha:
+    status: str
+    detalhes: str
+```
+
+Encapsula o desfecho de uma linha processada. `status` é um dos valores de `COLUNAS_RELATORIO` (`Mantido`, `Alterado`, `Vinculado`, `Criado`, `Inexistente`, `Erro`).
+
+### 7.3 `AcaoVinculo`
+
+```python
+@dataclass(frozen=True)
+class AcaoVinculo:
+    tipo: str
+    registro: dict | None = None
+```
+
+Transporta a decisão retornada por `_decidir_acao_linhas` (`mantido`, `conferir`, `alterar` ou `incluir`) e o registro da tabela associado, quando houver.
+
+### 7.4 `FalhaTecnicaProcessamento`
+
+```python
+class FalhaTecnicaProcessamento(RuntimeError):
+    def __init__(self, passo: str, erro: Exception): ...
+```
+
+Exceção própria lançada por `_processar_linha_aghu` quando ocorre falha técnica de browser/elemento num passo específico. Carrega `passo` (nome do passo corrente) e `erro` (exceção original), permitindo ao tratador de retentativas identificar onde a falha ocorreu.
+
+---
+
+## 8. Funções Auxiliares Privadas
+
+### 8.1 Normalização e Comparação
 
 | Função | Assinatura | Descrição |
 |---|---|---|
@@ -190,7 +249,7 @@ re.compile(
 
 Isso impede que `10.6.0.22` corresponda a `10.6.0.225`, por exemplo.
 
-### 7.2 Validação de IP
+### 8.2 Validação de IP
 
 | Função | Assinatura | Descrição |
 |---|---|---|
@@ -199,7 +258,7 @@ Isso impede que `10.6.0.22` corresponda a `10.6.0.225`, por exemplo.
 | `_extrair_ips` | `(texto: object) → list[str]` | Extrai todos os endereços IPv4 de um texto |
 | `_validar_computador_selecionado` | `(campo_computador, ip_pc, texto_item) → (bool, str)` | Verifica se o computador selecionado no autocomplete corresponde ao IP esperado, retornando `(True, "")` em caso de sucesso ou `(False, ip_divergente)` |
 
-### 7.3 Classificação de Impressão
+### 8.3 Classificação de Impressão
 
 | Função | Assinatura | Descrição |
 |---|---|---|
@@ -207,7 +266,7 @@ Isso impede que `10.6.0.22` corresponda a `10.6.0.225`, por exemplo.
 | `_registro_confere_tipo_e_classe` | `(registro: dict, tipo_cups_esperado: str) → bool` | Verifica se o registro da tabela corresponde ao tipo CUPS esperado e à classe de impressão derivada |
 | `_registro_eh_pdf` | `(registro: dict) → bool` | Atalho para verificar se um registro é do tipo PDF (classe A) |
 
-### 7.4 Manipulação da Tabela de Resultados
+### 8.4 Manipulação da Tabela de Resultados
 
 | Função | Assinatura | Descrição |
 |---|---|---|
@@ -216,14 +275,28 @@ Isso impede que `10.6.0.22` corresponda a `10.6.0.225`, por exemplo.
 | `_linha_vazia_resultado` | `(tbody) → Locator` | Localiza a linha de "Nenhum registro encontrado!" |
 | `_texto_celula` | `(linha_tabela, indice: int) → str` | Extrai o texto da célula na posição `indice` de uma linha da tabela |
 
-### 7.5 Espera e Estado da Pesquisa
+### 8.5 Espera e Estado da Pesquisa
 
-| Função | Assinatura | Descrição |
+A função `_aguardar_estado_resultado_pesquisa` **não existe mais como função autônoma**. Ela foi fundida em `_coletar_linhas_computador`, que hoje executa tanto a espera de estado quanto a extração de registros em um único passo:
+
+```python
+def _coletar_linhas_computador(
+    janela_sistema,
+    ip_pc: str,
+    timeout_ms: int = 7000,
+) -> tuple[str, list[dict]]:
+```
+
+A função monitora a tabela `TABELA_COMPUTADOR_IMPRESSORA_SELECTOR` durante `timeout_ms` ms e retorna `(estado, registros)`:
+
+| Estado retornado | Condição | Registros |
 |---|---|---|
-| `_aguardar_estado_resultado_pesquisa` | `(janela_sistema, timeout_ms=7000) → (str, Locator)` | Aguarda resultado da pesquisa e retorna estado: `"linhas"` (registros encontrados), `"vazio"` (nenhum registro), ou `"indefinido"` (timeout) |
-| `_coletar_linhas_computador` | `(janela_sistema, ip_pc: str) → (str, list[dict])` | Combina `_aguardar_estado_resultado_pesquisa` com extração de registros. Filtra somente linhas cujo IP confere e retorna lista de dicts com chaves: `linha`, `texto`, `ip`, `computador`, `descricao`, `classe`, `fila`, `tipo_cups` |
+| `"vazio"` | Linha "Nenhum registro encontrado!" visível | `[]` |
+| `"linhas"` | Linhas `tr[data-ri]` com IP correspondente encontradas | Lista de dicts filtrada |
+| `"linhas"` | Linhas visíveis, mas nenhuma com o IP esperado (timeout) | `[]` |
+| `"indefinido"` | Timeout sem linha vazia nem linha com dados | `[]` |
 
-Mapeamento de colunas da tabela:
+Mapeamento de colunas da tabela (índices em `_extrair_registro_linha`):
 
 | Índice | Chave no dict | Campo da tabela |
 |---|---|---|
@@ -234,7 +307,7 @@ Mapeamento de colunas da tabela:
 | 5 | `fila` | Fila de impressão |
 | 6 | `tipo_cups` | Tipo CUPS |
 
-### 7.6 Lógica de Decisão
+### 8.6 Lógica de Decisão
 
 ```python
 _decidir_acao_linhas(registros_linhas, impressora_alvo, classe_impressao) → (str, dict | None)
@@ -249,58 +322,74 @@ Percorre os registros coletados e decide a ação:
 | `"alterar"`, registro_pdf | Nenhum registro com a fila alvo, mas existe registro PDF (classe A) | Reutilizar linha PDF existente editando a impressora |
 | `"incluir"`, None | Nenhum registro com fila alvo e nenhum PDF | Necessário criar novo vínculo |
 
-### 7.7 Tratamento de Gravação
+### 8.7 Tratamento de Gravação
 
 | Função | Assinatura | Descrição |
 |---|---|---|
 | `_mensagem_dialog` | `(janela_sistema, seletor: str) → Locator` | Localiza mensagem dentro do dialog modal de mensagens do AGHU |
 | `_aguardar_resultado_gravacao` | `(janela_sistema, page=None, timeout_ms=10000) → (str, str)` | Espera mensagem de sucesso ou erro após clique em Gravar. Retorna `("sucesso", msg)`, `("erro", msg)` ou `("indefinido", "")` |
-| `_erro_classe_pdf_duplicada` | `(mensagem: str) → bool` | Detecta erro específico "existe uma impressora cadastrada ... classe A" — caso onde o AGHU bloqueia inclusão de segunda impressora PDF no mesmo computador |
+| `_erro_classe_pdf_duplicada` | `(mensagem: str) → bool` | Detecta erro específico "existe uma impressora cadastrada ... classe a" — caso onde o AGHU bloqueia inclusão de segunda impressora PDF no mesmo computador |
 
-### 7.8 Limpeza de Estado
+### 8.8 Limpeza de Estado
 
 | Função | Assinatura | Descrição |
 |---|---|---|
-| `_aguardar_botao_pesquisar_se_possivel` | `(janela_sistema) → None` | Aguarda até 3s pelo botão Pesquisar ficar visível (pós-gravação) |
+| `_aguardar_botao_pesquisar_se_possivel` | `(janela_sistema) → None` | Aguarda até 3 s pelo botão Pesquisar ficar visível (pós-gravação) |
 | `_limpar_estado_formulario` | `(janela_sistema, page=None) → None` | Sequência de limpeza: fecha dialog modal, clica Cancelar, clica botão limpar (cleaner). Usada após erros de gravação |
 
 ---
 
-## 8. Descrição dos Componentes Públicos
+## 9. Descrição dos Componentes Públicos
 
-### 8.1 `ler_planilha(caminho_arquivo)`
+### 9.1 `ler_planilha(caminho_arquivo: str) → list[Row]`
 
-Recebe um caminho de arquivo e retorna um `DataFrame` normalizado. A função não assume arquivo fixo no diretório do script; o caminho é fornecido pelo chamador.
+Lê um arquivo `.xlsx` e retorna uma lista de dicionários normalizados. A função não assume arquivo fixo no diretório do script; o caminho é fornecido pelo chamador.
 
-Formatos aceitos:
+**Implementação interna:**
+
+1. `validate_spreadsheet_extension` — rejeita qualquer extensão fora de `SUPPORTED_EXTENSIONS`.
+2. `read_xlsx` — lê a planilha com `openpyxl` (`load_workbook(..., data_only=True)`), extrai a aba ativa, converte a primeira linha em cabeçalhos únicos e retorna `(headers, rows)`.
+3. `identify_spreadsheet_columns` — para cada coluna canônica, chama `identify_column_by_alias`, que normaliza os nomes com `normalize_column_name` e os compara com as entradas de `ALIASES_COLUNAS_PLANILHA`.
+4. `build_spreadsheet_row` — mapeia cada linha da planilha para as chaves canônicas (`HostPC`, `IPPC`, `HostPrinter`, `IPPrinter`, `PrinterClass`).
+
+**Formato aceito:**
 
 | Extensão | Leitor | Observação |
 |---|---|---|
-| `.xlsx` | `pandas.read_excel(..., engine="openpyxl")` | Entrada Excel padrão |
-| `.xlsm` | `pandas.read_excel(..., engine="openpyxl")` | Entrada Excel com macro |
-| `.csv` | `pandas.read_csv(..., sep=";")` | Tenta `utf-8-sig`; se falhar, usa `latin1` |
+| `.xlsx` | `openpyxl` via `load_workbook` | Única extensão suportada |
 
-Após leitura, remove espaços dos nomes das colunas com `df.columns.str.strip()`, substitui `NaN` por string vazia e valida as colunas obrigatórias:
+**Sistema de alias de colunas (`ALIASES_COLUNAS_PLANILHA`):**
 
-```text
-IPPC, HostPrinter, PrinterClass
+A planilha de entrada não precisa usar exatamente os nomes canônicos. O dicionário `ALIASES_COLUNAS_PLANILHA` mapeia cada coluna canônica a uma tupla de variações aceitas:
+
+```python
+ALIASES_COLUNAS_PLANILHA = {
+    "HostPC":       ("HostPC", "Host PC", "Computador", "Nome Computador", "Nome do Computador"),
+    "IPPC":         ("IPPC", "IP PC", "IP do PC", "IP Computador", "IP do Computador",
+                     "Endereco IP PC", "Endereco IP do PC"),
+    "HostPrinter":  ("HostPrinter", "Host Printer", "Impressora", "Fila",
+                     "Fila Impressora", "Fila da Impressora", "Nome Impressora", "Nome da Impressora"),
+    "IPPrinter":    ("IPPrinter", "IP Printer", "IP da Impressora", "IP Impressora",
+                     "Endereco IP Impressora", "Endereco IP da Impressora"),
+    "PrinterClass": ("PrinterClass", "Printer Class", "Classe", "Classe Impressao",
+                     "Classe de Impressao", "Tipo", "Tipo CUPS"),
+}
 ```
 
-Campos opcionais preservados para relatório:
+A função `normalize_column_name` normaliza o nome antes da comparação: remove acentos (NFKD + filtragem de combining chars), aplica `casefold` e colapsa espaços consecutivos.
 
-```text
-HostPC, IPPrinter
-```
-
-Erros previstos:
+**Erros previstos:**
 
 | Condição | Exceção |
 |---|---|
 | Arquivo inexistente | `FileNotFoundError` |
-| Extensão inválida | `ValueError("Formato inválido. Use .xlsx, .xlsm ou .csv.")` |
-| Coluna obrigatória ausente | `ValueError` com lista de colunas faltantes |
+| Extensão inválida (não `.xlsx`) | `ValueError("Formato de planilha nao suportado: ...")` |
+| Planilha sem aba ativa | `ValueError("A planilha nao possui aba ativa.")` |
+| Planilha vazia | `ValueError("A planilha XLSX esta vazia.")` |
+| Planilha sem cabeçalho | `ValueError("A planilha nao possui cabecalho.")` |
+| Coluna obrigatória ausente | `ValueError("Coluna obrigatoria nao encontrada para ...")` |
 
-### 8.2 `fazer_login(page, usuario_str, senha_str, *, url_aghu=AGHU_URL)`
+### 9.2 `fazer_login(page, usuario_str, senha_str, *, url_aghu=AGHU_URL)`
 
 É um wrapper local para autenticação centralizada. O fluxo atual é:
 
@@ -315,15 +404,32 @@ Erros previstos:
 
 A função não contém mais seletores de campo de usuário, senha ou botão **Entrar**. A detecção da tela de login, credenciais inválidas, timeout e sessão já ativa pertence a `autenticador.py`.
 
-### 8.3 `trocar_aba_aghux(context, page_atual, usuario_str, senha_str, *, url_aghu=AGHU_URL)` — Clean State
+### 9.3 `trocar_aba_aghux(context, page_atual, usuario_str, senha_str, *, url_aghu=AGHU_URL, max_tentativas_autenticacao=MAX_TENTATIVAS_AUTENTICAR_NOVA_ABA)` — Clean State
 
-Fecha a aba atual, ignorando erro caso ela já esteja indisponível. Em seguida, abre uma nova `Page` no mesmo `BrowserContext`, acessa `url_aghu`, executa `autenticar_aghu_page(..., url_login=url_aghu)` e valida o resultado com `exigir_login_valido`.
+Isola a sessão fechando **todas as abas do contexto** (não apenas a aba atual) e abre uma aba limpa com autenticação em loop.
 
-O Clean State é usado como recuperação quando a interface do AGHUX fica inconsistente, quando o menu falha, quando o fluxo retorna do Almoxarifado ou quando há falhas técnicas durante o processamento de uma linha.
+**Fluxo:**
+
+1. Fecha `page_atual` silenciosamente com `_fechar_page_silenciosamente`.
+2. Fecha todas as demais abas do contexto com `_fechar_abas_contexto(context)`.
+3. Itera até `max_tentativas_autenticacao` vezes:
+   - Cria `nova_page = context.new_page()` e navega para `url_aghu`.
+   - Chama `autenticar_aghu_page(...)`.
+   - Se `resultado.status` for `"sessao_ativa"` ou `"sucesso"`, fecha todas as abas exceto `nova_page` e retorna `nova_page`.
+   - Se falhar, fecha `nova_page`, aguarda `INTERVALO_RETRY_AUTENTICAR_NOVA_ABA_SEGUNDOS` s e tenta novamente.
+4. Ao esgotar todas as tentativas, fecha quaisquer abas restantes e lança:
+
+```python
+RuntimeError(
+    f"Falha ao autenticar nova aba apos {total_tentativas} tentativas: {ultima_falha}"
+)
+```
+
+> A função **não chama `exigir_login_valido`** internamente — ela gerencia o loop de retry diretamente e lança `RuntimeError` próprio ao esgotar tentativas.
 
 O uso do mesmo `BrowserContext` preserva sessão, certificados e configuração do browser criada pelo chamador. O uso de `url_aghu` evita que retries ou clean states retornem para Produção quando a UI iniciou a execução em Homologação.
 
-### 8.4 `navegar_ate_modulo(context, page_atual, usuario_str, senha_str, *, url_aghu=AGHU_URL)`
+### 9.4 `navegar_ate_modulo(context, page_atual, usuario_str, senha_str, *, url_aghu=AGHU_URL)`
 
 Navega até o módulo **Impressora por Computador** usando o caminho completo declarado no próprio procedimento:
 
@@ -361,38 +467,55 @@ A função faz até duas tentativas:
 
 Se o laço terminar sem retorno, lança `RuntimeError("Falha ao navegar até o módulo de Impressora por Computador.")`.
 
-### 8.5 `processar_computadores(...)`
+### 9.5 `processar_computadores(...)`
 
-É o laço principal da automação. Recebe:
+É o laço principal da automação. Assinatura completa:
 
-| Parâmetro | Uso |
-|---|---|
-| `context` | Abre novas abas e permite Clean State |
-| `page_inicial` | Página AGHUX já autenticada |
-| `janela_sistema_inicial` | Último iframe do módulo **Impressora por Computador** |
-| `planilha` | `DataFrame` já validado |
-| `usuario_str` | Registro de auditoria e reautenticação |
-| `senha_str` | Reautenticação em Clean State |
-| `diretorio_logs` | Diretório opcional para gravação do CSV |
-| `url_aghu` | URL do ambiente AGHUX usado em reautenticações e clean states; default `AGHU_URL` |
+```python
+def processar_computadores(
+    context: BrowserContext,
+    page_inicial: Page,
+    janela_sistema_inicial,
+    caminho_planilha: str,
+    usuario_str: str,
+    senha_str: str,
+    report_directory: str | os.PathLike,
+    url_aghu: str = AGHU_URL,
+) -> str:
+```
 
-Para cada linha, extrai:
+| Parâmetro | Tipo | Uso |
+|---|---|---|
+| `context` | `BrowserContext` | Abre novas abas e permite Clean State |
+| `page_inicial` | `Page` | Página AGHUX já autenticada |
+| `janela_sistema_inicial` | FrameLocator | Último iframe do módulo **Impressora por Computador** |
+| `caminho_planilha` | `str` | Caminho do arquivo `.xlsx` lido internamente por `ler_planilha` |
+| `usuario_str` | `str` | Reautenticação em Clean State |
+| `senha_str` | `str` | Reautenticação em Clean State |
+| `report_directory` | `str \| os.PathLike` | **Parâmetro obrigatório** — diretório onde o relatório `.xlsx` será gravado; a UI pergunta ao operador e passa explicitamente |
+| `url_aghu` | `str` | URL do ambiente AGHUX usado em reautenticações e Clean States; default `AGHU_URL` |
+
+A função chama `ler_planilha(caminho_planilha)` internamente para obter `list[Row]`. O `report_directory` é validado por `build_report_path`, que exige que o diretório exista (`FileNotFoundError` caso contrário).
+
+Para cada linha, o processamento usa `DadosLinhaPlanilha`:
 
 | Campo | Uso |
 |---|---|
-| `IPPC` | Busca e seleção do computador no AGHUX |
-| `HostPrinter` | Impressora alvo a vincular |
-| `PrinterClass` | Classe usada na pesquisa e validação do vínculo |
-| `HostPC` | Apenas relatório, quando presente |
-| `IPPrinter` | Apenas relatório, quando presente |
+| `ip_pc` | Busca e seleção do computador no AGHUX |
+| `impressora_alvo` | Impressora alvo a vincular |
+| `classe_impressao` | Classe usada na pesquisa e validação do vínculo |
 
-Cada linha possui até três tentativas para falhas técnicas. O estado inicial é `Erro` com detalhe `Falha Desconhecida.` e só é substituído quando a linha alcança um desfecho reconhecido.
+Os campos `HostPC` e `IPPrinter` são copiados diretamente para o relatório sem uso no fluxo de automação.
+
+Cada linha possui até `MAX_TENTATIVAS_PROCESSAMENTO_LINHA` tentativas para falhas técnicas. O estado inicial é `Erro` com detalhe `Falha Desconhecida.` e só é substituído quando a linha alcança um desfecho reconhecido.
+
+Retorna o caminho absoluto (string) do arquivo `.xlsx` gerado.
 
 ---
 
-## 9. Regras de Processamento por Linha
+## 10. Regras de Processamento por Linha
 
-### 9.1 Busca do computador
+### 10.1 Busca do computador
 
 O campo de computador é localizado por:
 
@@ -417,15 +540,16 @@ re.compile(
 
 Esse ajuste evita que `10.6.0.22` corresponda indevidamente a `10.6.0.225`.
 
-Se nenhuma sugestão compatível aparece, a linha recebe `Inexistente` com detalhe `Computador não cadastrado no AGHUX.`.
+Se nenhuma sugestão compatível aparece, a linha recebe `Inexistente` com detalhe `Computador não cadastrado no AGHUX.`
 
-### 9.2 Pesquisa e coleta de vínculos
+### 10.2 Pesquisa e coleta de vínculos
 
-Após selecionar o computador, o Maestro clica em **Pesquisar**. A função `_coletar_linhas_computador` é invocada e:
+Após selecionar o computador, o Maestro clica em **Pesquisar**. A função `_coletar_linhas_computador` (que integra a espera de estado) é invocada e:
 
-1. Chama `_aguardar_estado_resultado_pesquisa` que monitora a tabela `TABELA_COMPUTADOR_IMPRESSORA_SELECTOR` até detectar linhas visíveis, mensagem de "nenhum registro", ou timeout.
-2. Se o estado for `"linhas"`, percorre cada `tr[data-ri]` visível e filtra somente aquelas cujo IP da célula (índice 1) confere com `ip_pc` via `_ip_celula_confere`.
-3. Monta registros com as colunas: `ip`, `computador`, `descricao`, `classe`, `fila`, `tipo_cups`.
+1. Monitora a tabela `TABELA_COMPUTADOR_IMPRESSORA_SELECTOR` em loop por até `timeout_ms` ms.
+2. Retorna `"vazio"` ao detectar a linha "Nenhum registro encontrado!".
+3. Se detectar linhas `tr[data-ri]`, filtra somente aquelas cujo IP confere via `_ip_celula_confere` e retorna `"linhas"` com a lista.
+4. Se o loop expirar sem resultado claro, retorna `"indefinido"`.
 
 O estado retornado guia o fluxo:
 
@@ -436,7 +560,7 @@ O estado retornado guia o fluxo:
 | `"vazio"` | Nenhum registro encontrado | Passa para `_decidir_acao_linhas` (lista vazia → incluir) |
 | `"indefinido"` | Timeout sem estado claro | Erro: `MENSAGEM_ERRO_PESQUISA_INDEFINIDA` |
 
-### 9.3 Decisão de ação (`_decidir_acao_linhas`)
+### 10.3 Decisão de ação (`_decidir_acao_linhas`)
 
 A função percorre os registros e retorna uma das quatro ações:
 
@@ -514,7 +638,7 @@ Ação:
 
 ---
 
-## 10. Delegação ao Almoxarifado
+## 11. Delegação ao Almoxarifado
 
 A delegação é acionada quando a seleção da impressora lança exatamente:
 
@@ -529,7 +653,7 @@ Fluxo da delegação:
 ```text
 ValueError("Impressora não existe")
         │
-        └─► Até 3 tentativas de Almoxarifado:
+        └─► Até MAX_TENTATIVAS_ESTOQUE (3) tentativas de Almoxarifado:
               ├─ trocar_aba_aghux(..., url_aghu=url_aghu)
               ├─ consultar_dados_site_secundario(context, impressora, classe)
               ├─ navegar_ate_cadastro_impressora(page)
@@ -552,7 +676,7 @@ Se a delegação falhar definitivamente:
 
 ---
 
-## 11. Recuperação de Falhas Técnicas
+## 12. Recuperação de Falhas Técnicas
 
 Erros do tipo `ValueError` são tratados como eventos de negócio quando contêm mensagens conhecidas:
 
@@ -562,7 +686,7 @@ Erros do tipo `ValueError` são tratados como eventos de negócio quando contêm
 | `Computador não encontrado` | Marca computador como inexistente |
 | Outra mensagem | Marca linha como erro funcional |
 
-Demais exceções são tratadas como falha técnica ou instabilidade do navegador. Nesses casos:
+Demais exceções são capturadas por `_processar_linha_aghu` e relançadas como `FalhaTecnicaProcessamento`, transportando o nome do passo atual. Nesses casos:
 
 | Tentativa | Ação |
 |---|---|
@@ -577,35 +701,27 @@ Após falhas funcionais, o Maestro tenta cancelar a tela ou limpar o formulário
 
 ---
 
-## 12. Relatório de Auditoria
+## 13. Relatório de Auditoria
 
-Ao final, `processar_computadores` cria um `DataFrame` com os logs e grava um CSV em:
+Ao final, `processar_computadores` chama `_gerar_relatorio_xlsx`, que invoca `write_report` → `write_xlsx_report`.
 
-```text
-logs/log_resultado_YYYYMMDD_HHMMSS.csv
-```
-
-Se `diretorio_logs` for informado, o arquivo é gravado nesse diretório. Caso contrário, usa:
-
-```python
-BASE_DIR / "logs"
-```
-
-O CSV é escrito em duas etapas:
-
-1. Cria o arquivo em modo `w` e grava a linha de auditoria:
+O arquivo gerado é:
 
 ```text
-Atualizado por: <usuario>
+<report_directory>/Resultado_{DD_MM_YY_HHhMMmSS}.xlsx
 ```
 
-2. Acrescenta o `DataFrame` em modo append:
+O nome é produzido por `generate_report_filename` usando `datetime.now().strftime("%d_%m_%y_%Hh%Mm%S")`. Se o arquivo já existir (colisão de nome), `get_available_report_path` incrementa um contador (`_2`, `_3`, …) até encontrar nome disponível.
 
-```python
-df_logs.to_csv(nome_arquivo_log, index=False, sep=";", encoding="utf-8-sig", mode="a")
-```
+`write_xlsx_report` usa `openpyxl.Workbook` e aplica `apply_xlsx_report_layout`, que:
 
-Colunas do relatório:
+- Define `worksheet.freeze_panes = "A2"` (linha de cabeçalho congelada).
+- Define `worksheet.auto_filter.ref` cobrindo todo o intervalo de dados.
+- Chama `autofit_xlsx_columns` para ajustar a largura de cada coluna com base no conteúdo, respeitando `XLSX_MIN_COLUMN_WIDTH` e `XLSX_MAX_COLUMN_WIDTH`.
+
+Não há linha de auditoria `"Atualizado por: <usuario>"` nem uso de `pandas` na geração do relatório.
+
+Colunas do relatório (definidas em `COLUNAS_RELATORIO`):
 
 | Coluna | Origem |
 |---|---|
@@ -625,21 +741,21 @@ Mantido, Alterado, Vinculado, Criado, Inexistente, Erro
 
 ---
 
-## 13. API Pública do Módulo
+## 14. API Pública do Módulo
 
 | Função | Responsabilidade |
 |---|---|
-| `ler_planilha(caminho_arquivo)` | Lê e valida a planilha de entrada |
+| `ler_planilha(caminho_arquivo: str) → list[Row]` | Lê e valida planilha `.xlsx`; resolve aliases de colunas; retorna lista de dicts normalizados |
 | `fazer_login(page, usuario_str, senha_str, *, url_aghu=AGHU_URL)` | Autentica usando o autenticador centralizado na URL do ambiente atual |
-| `trocar_aba_aghux(context, page_atual, usuario_str, senha_str, *, url_aghu=AGHU_URL)` | Fecha aba atual, abre aba limpa na URL informada e reautentica |
-| `navegar_ate_modulo(context, page_atual, usuario_str, senha_str, *, url_aghu=AGHU_URL)` | Abre **Impressora por Computador** e retorna `(page, janela_sistema)`, preservando a URL em retry |
-| `processar_computadores(..., url_aghu=AGHU_URL)` | Processa linhas da planilha, preserva a URL em clean states e gera CSV auditável |
+| `trocar_aba_aghux(context, page_atual, usuario_str, senha_str, *, url_aghu=AGHU_URL, max_tentativas_autenticacao=MAX_TENTATIVAS_AUTENTICAR_NOVA_ABA) → Page` | Fecha todas as abas do contexto, abre aba limpa e tenta autenticar em loop; lança `RuntimeError` ao esgotar tentativas |
+| `navegar_ate_modulo(context, page_atual, usuario_str, senha_str, *, url_aghu=AGHU_URL) → (Page, FrameLocator)` | Abre **Impressora por Computador** e retorna `(page, janela_sistema)`, preservando a URL em retry |
+| `processar_computadores(..., caminho_planilha, report_directory, url_aghu=AGHU_URL) → str` | Lê planilha internamente, processa linhas, preserva a URL em Clean States e gera `.xlsx` auditável; retorna caminho do arquivo |
 
 ---
 
-## 14. Contratos entre RFCs
+## 15. Contratos entre RFCs
 
-### 14.1 Contrato com RFC-002
+### 15.1 Contrato com RFC-002
 
 | Evento | Origem | Interpretação no Maestro |
 |---|---|---|
@@ -648,7 +764,7 @@ Mantido, Alterado, Vinculado, Criado, Inexistente, Erro
 | Retorno silencioso de `cadastrar_nova_impressora` | Impressora já existia no AGHUX | Retoma tentativa de vínculo |
 | Cadastro concluído | Almoxarifado | Abre aba limpa e reprocessa linha |
 
-### 14.2 Contrato com RFC-003
+### 15.2 Contrato com RFC-003
 
 A UI deve fornecer:
 
@@ -658,14 +774,14 @@ A UI deve fornecer:
 | `Page` | Criada pela UI e apontada para `url_aghu` |
 | `url_aghu` | URL resolvida a partir do seletor de ambiente da UI |
 | Credenciais | Campos da interface |
-| Planilha | Lida e validada antes da execução |
-| Caminho de saída | Usado pela UI após localizar o CSV gerado |
+| `caminho_planilha` | Caminho do arquivo `.xlsx` fornecido pelo operador |
+| `report_directory` | Diretório de saída perguntado pela UI ao operador e passado explicitamente |
 
-O Maestro retorna o caminho do CSV gerado, mas a UI atual localiza o arquivo por timestamp em `./logs` e converte para XLSX. A UI deve passar o mesmo `url_aghu` para `fazer_login`, `navegar_ate_modulo` e `processar_computadores`, garantindo que qualquer Clean State permaneça no ambiente selecionado.
+A UI deve passar o mesmo `url_aghu` para `fazer_login`, `navegar_ate_modulo` e `processar_computadores`, garantindo que qualquer Clean State permaneça no ambiente selecionado. `processar_computadores` retorna o caminho absoluto do `.xlsx` gerado, que a UI pode usar para exibir ou abrir o relatório diretamente.
 
 ---
 
-## 15. Considerações Operacionais
+## 16. Considerações Operacionais
 
 1. `PrinterAGHU.py` não cria o browser principal; o chamador cria `Browser`, `BrowserContext` e `Page`.
 2. O módulo cria novas abas no mesmo contexto apenas para Clean State.
@@ -678,27 +794,30 @@ O Maestro retorna o caminho do CSV gerado, mas a UI atual localiza o arquivo por
 
 ---
 
-## 16. Limitações Conhecidas
+## 17. Limitações Conhecidas
 
 | Limitação | Impacto |
 |---|---|
 | Seletores dependem de textos do AGHUX | Mudanças de nomenclatura no sistema podem quebrar navegação |
 | Erros de negócio dependem de strings exatas | Alterações nas mensagens exigem atualização coordenada |
-| Relatório CSV é gerado mesmo se todas as linhas falharem | A auditoria fica preservada, mas o operador deve validar os status |
-| UI não passa `diretorio_logs` explicitamente | A localização do CSV depende de `BASE_DIR / "logs"` compartilhado entre os arquivos |
+| Relatório `.xlsx` é gerado mesmo se todas as linhas falharem | A auditoria fica preservada, mas o operador deve validar os status |
 | Pontos cegos restantes a mapear | Existem cenários não cobertos que devem ser mapeados e tratados em revisão futura |
 
 ---
 
-## 17. Estado Atual da RFC
+## 18. Estado Atual da RFC
 
-Esta RFC passa a refletir o código atual de `PrinterAGHU.py` conforme a release de 19/06/2026, incluindo:
+Esta RFC reflete o código atual de `PrinterAGHU.py` conforme a release de 2026-08-04, incluindo:
+
 - Dependência explícita de `autenticador.py`, login centralizado e uso de `AGHU_URL` como default com `url_aghu` propagado em runtime.
-- Clean State reautenticado e delegação ao Almoxarifado.
-- Ecossistema completo de funções auxiliares privadas: normalização, comparação, validação de IP, classificação de impressão, manipulação de tabela, lógica de decisão e tratamento de gravação.
+- Clean State com fechamento de **todas** as abas do contexto, loop de autenticação com até `MAX_TENTATIVAS_AUTENTICAR_NOVA_ABA` tentativas e `RuntimeError` próprio ao esgotar.
+- Leitura de planilha via `openpyxl` apenas (`.xlsx`), com resolução de aliases via `ALIASES_COLUNAS_PLANILHA` e `normalize_column_name`; retorna `list[Row]`.
+- `_coletar_linhas_computador` integra espera de estado e extração de registros (substituindo `_aguardar_estado_resultado_pesquisa` como função independente); recebe `timeout_ms: int = 7000`.
+- Constantes e dataclasses documentadas: `SUPPORTED_EXTENSIONS`, `COLUNAS_OBRIGATORIAS_PLANILHA`, `COLUNAS_RELATORIO`, `ALIASES_COLUNAS_PLANILHA`, `MAX_TENTATIVAS_*`, `XLSX_*`, `DadosLinhaPlanilha`, `ResultadoLinha`, `AcaoVinculo`, `FalhaTecnicaProcessamento`.
+- `processar_computadores` recebe `caminho_planilha: str` (lê internamente) e `report_directory` obrigatório.
+- Relatório `.xlsx` com `freeze_panes`, `auto_filter` e `autofit`; nome `Resultado_{DD_MM_YY_HHhMMmSS}.xlsx`; sem linha de auditoria `"Atualizado por: <usuario>"` e sem `pandas`.
 - Quatro casos de decisão (`mantido`, `conferir`, `alterar`, `incluir`) documentados individualmente.
 - Validação de computador selecionado no autocomplete.
 - Tratamento diferenciado de resultados de gravação (sucesso, erro, indefinido) com mensagem específica para erro de classe PDF duplicada.
-- Relatório CSV com linha de auditoria.
 - Tratamento e registro correto de linhas com campos obrigatórios vazios.
-- Limitações atualizadas com base nas observações da release.
+- Limitações atualizadas com base no código corrente.

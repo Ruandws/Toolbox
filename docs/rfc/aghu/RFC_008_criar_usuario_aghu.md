@@ -1,315 +1,429 @@
-# RFC-008 — Cadastro/Importação de Usuário no AGHUX (criar_usuario_aghu + ui_criar_usuario_aghu)
+# RFC-008 — Importação e Cadastro de Usuários no AGHUX (`criar_usuario_aghu` / `ui_criar_usuario_aghu`)
 
 - **Status:** Estável
 - **Autor:** Ruan
-- **Data:** 2026-07-27
-- **Atualizado em:** 2026-07-27 (reflete o código como está desde a release de 2026-07-23)
-- **Arquivo (núcleo):** `criar_usuario_aghu.py`
-- **Arquivo (UI):** `ui_criar_usuario_aghu.py`
-- **Depende de:** `autenticador.py` (RFC-005), `menu.py` (RFC-004)
-- **Chamado por:** ninguém além da própria UI; não é chamado por outros robôs AGHU
-
----
-
-## 0. Por que esta RFC existe
-
-`criar_usuario_aghu.py` está em produção sem RFC própria, o que contraria o item 6 do `Guia_AGHU.md`: "toda função pública usada por outro módulo deve constar na seção API Pública da RFC correspondente". Esta RFC cobre o núcleo e a UI juntos, em um único documento, porque os dois arquivos formam um par fechado (motor + operador) sem terceiro módulo envolvido — diferente do par Maestro/Almoxarifado do RFC-001/002, aqui não há delegação entre robôs.
+- **Data:** 2026-02-15
+- **Atualizado em:** 2026-08-04
+- **Arquivos:** `criar_usuario_aghu.py` (Núcleo) / `ui_criar_usuario_aghu.py` (Interface Gráfica)
+- **Depende de:** `autenticador.py` (RFC-005)
+- **Depende de:** `menu.py` (RFC-004)
+- **Chamado por:** `ui_criar_usuario_aghu.py` (Interface Gráfica) e scripts de automação CLI/Lote
 
 ---
 
 ## 1. Resumo
 
-O par `criar_usuario_aghu.py` (núcleo) + `ui_criar_usuario_aghu.py` (interface) automatiza a **importação de usuários já existentes no Identity Manager corporativo para dentro do cadastro do AGHUX**. Ele não cria usuários do zero: pesquisa o login no AGHUX, e caso não exista, abre a tela "Importar Usuário", pesquisa o mesmo login no Identity Manager, adiciona o resultado encontrado, preenche Nome Completo e E-mail, marca o usuário como ativo e grava.
+`criar_usuario_aghu.py` e `ui_criar_usuario_aghu.py` constituem o módulo de automação responsável pela consulta, importação e provisionamento de usuários no sistema AGHUX (módulo de acesso).
 
-Suporta duas formas de execução: unitária (até 5 usuários digitados na UI) e em lote (planilha `.xlsx`). Ambas passam pela mesma função de orquestração, `executar_importacao_usuarios`.
+O motor robótico (`criar_usuario_aghu.py`) consome dados de usuários no formato `UsuarioImportacao` (contendo unicamente `login`, `nome_completo` e `email`), valida credenciais e formatos, interage com a interface JSF do AGHUX via Playwright, pesquisa a existência prévia do usuário no sistema e, quando necessário, realiza a busca e importação a partir da base do Identity Manager / LDAP corporativo, preenchendo o formulário de cadastro e ativando a conta.
 
----
-
-## 2. Motivação e Escopo
-
-Cadastrar usuários manualmente no AGHUX é repetitivo e o funcionário já existe, quase sempre, no Identity Manager (diretório corporativo). O trabalho manual é: pesquisar o login no AGHUX, conferir que não está cadastrado, abrir a importação, localizar a mesma pessoa no Identity Manager, clicar em adicionar, digitar nome e e-mail, marcar ativo e gravar — para cada linha de uma lista que pode ter dezenas de nomes.
-
-O núcleo sabe:
-
-| Responsabilidade | Descrição |
-|---|---|
-| Validação de entrada | Login, Nome Completo e E-mail, antes de abrir o browser |
-| Pesquisa dupla | Confere se o login já está no AGHUX; se não, pesquisa no Identity Manager |
-| Preenchimento e gravação | Nome, e-mail, ativo, e leitura da mensagem de resultado |
-| Relatório | CSV auditável em `logs/` e XLSX final para o operador |
-
-O núcleo não conhece regra de perfis/permissões do usuário (isso é outro módulo, `concessor_aghu.py`, fora do escopo desta RFC) nem cadastra usuários que não existam no Identity Manager.
+A interface gráfica (`ui_criar_usuario_aghu.py`), desenvolvida em `customtkinter`, atua como camada de apresentação desktop thread-safe. Ela oferece dois modos de operação (Unitária para até 5 usuários simultâneos em grade dinâmica e Lote via planilha `.xlsx`), além de seletor de ambiente (Produção / Homologação), controle visual de execução (browser/console) e geração automática de relatórios `.xlsx` auditáveis e logs CSV.
 
 ---
 
-## 3. Fluxo
+## 2. Mudanças incorporadas nesta revisão
+
+Esta revisão reescreve integralmente a RFC-008 para alinhar a documentação com o código real do repositório:
+
+| Área | Situação na RFC antiga (fictícia) | Situação real no código atual |
+|---|---|---|
+| Nome do arquivo | `RFC-008_criar_usuario_aghu.md` (hífen) | Renomeado para `RFC_008_criar_usuario_aghu.md` (padrão com underscore) |
+| Modelo de dados | `UsuarioImportacao` com 7 campos (`nome`, `cpf`, `login`, `email`, `matricula`, `perfil`, `vinculo`) e validação Módulo 11 de CPF | `UsuarioImportacao` com 3 campos reais: `login`, `nome_completo`, `email`. Não existem campos nem validações de CPF, matrícula, perfil ou vínculo |
+| Status de resultado | Status em inglês/maiúsculo (`SUCESSO`, `JA_EXISTE`, `ERRO_VALIDACAO`, `ERRO_EXECUCAO`) e objeto com `timestamp` | 6 valores reais minúsculos: `importado`, `ja_importado`, `nao_encontrado`, `erro`, `ignorado`, `conferir_manualmente`. Estrutura achatada em `ResultadoImportacao` |
+| Constantes e Seletores | Constantes genéricas fabricadas (`TIMEOUT_PADRAO`, `URL_AGHUX_LOGIN`, seletores `#username_input`, `input[id*="cpf"]`) | Constantes e seletores reais: `TEMPO_MAXIMO_CONSULTA_USUARIO_MS = 130000`, `TEMPO_MAXIMO_GRAVACAO_USUARIO_MS = 10000`, `SELECTOR_PESQUISA_LOGIN`, `SELECTOR_IMPORTACAO_LOGIN`, `SELECTOR_CADASTRO_NOME`, `SELECTOR_CADASTRO_EMAIL` |
+| Autenticação e Navegação | Lógica local manual e seletores de login de CPF | Delegados a `autenticador.py` (`autenticar_aghu_page`, `exigir_login_valido`) e `menu.py` (`navegar_menu_aghu` com `CAMINHO_MENU_CADASTRO_USUARIO`) |
+| Normalização de Login | Caixa baixa (`lower`) | `.strip().upper()` (maiúsculas), com suporte a sublinhado (`_`), ponto, hífen e letras/números |
+| Biblioteca de UI | `tkinter` / `ttk` nativo com `ScrolledText` | `customtkinter` (`CTk`, `CTkSegmentedButton`, `CTkScrollableFrame`, `CTkOptionMenu`), sem `ScrolledText` ou barra de progresso |
+| Alerta de Produção | Alerta com fundo vermelho | Alerta em tonalidade Âmbar/Amarelo (`#FFF4CE` / `#3A2D00`), conforme padrão visual do projeto |
+| Métodos da UI | Nomes fictícios (`_atualizar_status_ui`, `_bloquear_interface`) | Nomes reais: `_mostrar_status`, `_bloquear_execucao`, `_liberar_execucao`, `_validar_opcoes_visibilidade` |
+| Regras de UI | Checkboxes de visibilidade independentes | Regra de mútua obrigatoriedade entre browser visual e terminal de logs |
+
+---
+
+## 3. Motivação
+
+O cadastramento manual de novos usuários no AGHUX é um procedimento operacional repetitivo que envolve consultar a base local do AGHUX, alternar para a busca no Identity Manager/LDAP corporativo quando não localizado, importar a conta encontrada, preencher nome completo, e-mail institucional e marcar a opção de usuário ativo.
+
+A automação centraliza esse fluxo em um pipeline auditável com tratamento de falhas transientes (Clean State via nova aba de navegador), validação rigorosa pré-execução (fail-fast sem instanciar browser para dados inválidos) e emissão de relatórios consolidados.
+
+A separação em duas camadas (`criar_usuario_aghu.py` para as regras de negócio e automação Playwright; `ui_criar_usuario_aghu.py` para a interface desktop responsiva) garante reutilização por scripts automatizados ou por operadores via GUI.
+
+---
+
+## 4. Arquitetura e Fluxo de Dados
 
 ```text
-[ui_criar_usuario_aghu.py]
+[ui_criar_usuario_aghu.py / Chamador CLI]
         │
-        ├─► executar_importacao_usuarios(usuarios, usuario_rede, senha, url_aghu, ...)
+        ├─► Entrada de Dados (Planilha .xlsx ou Formulário Unitário da UI)
         │        │
-        │        ├─ _validar_lote_usuarios(usuarios)         (síncrono, sem browser)
-        │        │      ├─ usuários inválidos → status "ignorado", nunca chegam ao browser
-        │        │      └─ usuários válidos → seguem para a automação
-        │        │
-        │        ├─ Se nenhum usuário for válido: retorna direto, SEM abrir Playwright
-        │        │
-        │        └─ Abre Playwright/Chromium
-        │               ├─ page.goto(url_aghu)
-        │               ├─ fazer_login(page, ..., url_aghu=url_aghu)
-        │               ├─ navegar_ate_cadastro_usuario(...)  → Outros Módulos → Configuração → Acesso → Usuario
-        │               └─ processar_usuarios(...)
-        │                       │
-        │                       └─ Para cada usuário válido:
-        │                             ├─ garantir_tela_pesquisa_usuario(...)
-        │                             └─ importar_usuario(janela_sistema, usuario)
-        │                                   │
-        │                                   ├─ Pesquisa login na tabela de usuários do AGHUX
-        │                                   │     ├─ "encontrado"   → ja_importado
-        │                                   │     ├─ "indefinido"   → conferir_manualmente
-        │                                   │     └─ não encontrado → segue
-        │                                   │
-        │                                   ├─ Abre "Importar Usuário"
-        │                                   ├─ Pesquisa login no Identity Manager
-        │                                   │     ├─ "indefinido"       → conferir_manualmente
-        │                                   │     └─ não encontrado     → nao_encontrado
-        │                                   │
-        │                                   └─ Encontrado no Identity Manager:
-        │                                         ├─ Clica "Adicionar"
-        │                                         ├─ Preenche Nome Completo e E-mail
-        │                                         ├─ Marca usuário ativo
-        │                                         ├─ Clica "Gravar"
-        │                                         └─ Lê mensagem de gravação
-        │                                               ├─ sucesso    → importado
-        │                                               ├─ duplicado  → ja_importado
-        │                                               ├─ indefinido → conferir_manualmente
-        │                                               └─ erro       → erro
+        │        └─► ler_planilha_usuarios / coletar_usuarios_individuais
         │
-        └─► CSV auditável em ./logs (sempre) + XLSX de relatório escolhido pelo operador (lote)
+        ├─► Validação Pré-Execução (Fail-Fast síncrono)
+        │        ├─ _validar_lote_usuarios / _preparar_usuario_importacao
+        │        ├─ Verifica campos obrigatórios em branco (Login, Nome Completo, E-mail)
+        │        ├─ Valida formato de login (sem espaços, regex ^[A-Za-z0-9._-]+$)
+        │        ├─ Valida e-mail (regex ^[^@\s]+@[^@\s]+\.[^@\s]+$) e espaços em nome/e-mail
+        │        └─ Registros inválidos ──► Status: "ignorado" (sem abrir navegador)
+        │
+        └─► Registros Válidos ──► executar_importacao_usuarios
+                 │
+                 ├─ Playwright sync_playwright() → Launch Chromium (Headless ou Visual)
+                 ├─ browser.new_context(ignore_https_errors=True) → page.goto(url_aghu)
+                 ├─ fazer_login(page, usuario_rede, senha, url_aghu=url_aghu)
+                 │     └─ autenticar_aghu_page + exigir_login_valido (autenticador.py)
+                 │
+                 ├─ navegar_ate_cadastro_usuario(context, page, ...)
+                 │     └─ navegar_menu_aghu (menu.py: Outros Módulos → Configuração → Acesso → Usuario)
+                 │
+                 └─ Para cada usuário válido:
+                       │
+                       ├─ garantir_tela_pesquisa_usuario
+                       │
+                       ├─ importar_usuario(janela_sistema, usuario)
+                       │     ├─ 1. Pesquisa no AGHUX por Login (SELECTOR_PESQUISA_LOGIN)
+                       │     │    ├─ Encontrado ──► Status: "ja_importado"
+                       │     │    └─ Indefinido ──► Status: "conferir_manualmente"
+                       │     │
+                       │     ├─ 2. Não encontrado localmente ──► Clica em "Importar Usuário"
+                       │     │
+                       │     ├─ 3. Pesquisa no Identity Manager (SELECTOR_IMPORTACAO_LOGIN)
+                       │     │    ├─ Não encontrado / Linha ausente ──► Status: "nao_encontrado"
+                       │     │    └─ Indefinido ──► Status: "conferir_manualmente"
+                       │     │
+                       │     ├─ 4. Localizado no Identity Manager ──► Clica em "Adicionar"
+                       │     │
+                       │     ├─ 5. Preenche Cadastro (Nome, E-mail, Marca Ativo) e clica em "Gravar"
+                       │     │    ├─ Sucesso ("Usuário incluído com sucesso") ──► Status: "importado"
+                       │     │    ├─ Mensagem de Duplicado ──► Status: "ja_importado"
+                       │     │    ├─ Mensagem de Erro ──► Status: "erro"
+                       │     │    └─ Timeout / Sem mensagem ──► Status: "conferir_manualmente"
+                       │     │
+                       │     └─ Em caso de falha técnica de browser/DOM no laço:
+                       │          ├─ 1ª tentativa: Aciona Clean State (trocar_aba_aghux + renavega)
+                       │          └─ 2ª tentativa: Registra Status: "erro" (Falha técnica definitiva)
+                       │
+                       └─ Consolidação de Resultados:
+                            ├─ Salva relatório .xlsx (salvar_relatorio_resultados)
+                            └─ Gera log CSV com header auditável (_gerar_csv_logs)
 ```
-
-Não há delegação a outro robô: se o login não existir no Identity Manager, a linha é marcada `nao_encontrado` e o fluxo segue para a próxima, sem intervenção externa (diferente do par Maestro/Almoxarifado do RFC-001/002).
 
 ---
 
-## 4. Dependências
+## 5. Dependências
 
-### 4.1 `autenticador.py`
+### 5.1 Blocos de Importação Reais
+
+#### 5.1.1 Núcleo de Automação (`criar_usuario_aghu.py`)
 
 ```python
+import ctypes
+import os
+import re
+import time
+from contextlib import contextmanager, redirect_stderr, redirect_stdout
+from dataclasses import dataclass
+from datetime import datetime
+from pathlib import Path
+from typing import Iterator, Literal
+
+import pandas as pd
+from playwright.sync_api import BrowserContext, FrameLocator, Locator, Page, expect
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
+from playwright.sync_api import sync_playwright
+
 from autenticador import AGHU_URL, autenticar_aghu_page, exigir_login_valido
-```
-
-Mesmo contrato documentado no RFC-005: `fazer_login` e `trocar_aba_aghux` (Clean State) são wrappers finos sobre `autenticar_aghu_page` + `exigir_login_valido`. Nenhum seletor de login é duplicado aqui.
-
-### 4.2 `menu.py`
-
-```python
 from menu import navegar_menu_aghu
 ```
 
-Caminho declarado localmente:
+#### 5.1.2 Interface Gráfica (`ui_criar_usuario_aghu.py`)
 
 ```python
-CAMINHO_MENU_CADASTRO_USUARIO = (
-    "Outros Módulos",
-    "Configuração",
-    "Acesso",
-    "Usuario",
+import threading
+import tkinter as tk
+from collections import Counter
+from datetime import datetime
+from pathlib import Path
+from tkinter import filedialog, messagebox
+
+import customtkinter as ctk
+
+from autenticador import AGHU_URL, AGHU_URL_HOMOLOGACAO
+from criar_usuario_aghu import (
+    STATUS_CONFERIR_MANUALMENTE,
+    STATUS_ERRO,
+    STATUS_IGNORADO,
+    STATUS_IMPORTADO,
+    STATUS_JA_IMPORTADO,
+    STATUS_NAO_ENCONTRADO,
+    UsuarioImportacao,
+    executar_importacao_lote,
+    executar_importacao_usuarios,
 )
 ```
 
-A validação da tela final (`SELECTOR_PESQUISA_LOGIN` visível + botão **Pesquisar** visível) é feita pelo próprio módulo, como manda o Guia AGHU.
+### 5.2 Tabela de Responsabilidades por Dependência
 
----
-
-## 5. Constantes e Seletores
-
-| Constante | Valor / Uso |
-|---|---|
-| `CAMINHO_MENU_CADASTRO_USUARIO` | Caminho de menu até a tela de cadastro de usuário |
-| `COLUNAS_OBRIGATORIAS_PLANILHA` | `("Login", "Nome Completo", "E-mail")` |
-| `ALIASES_COLUNAS_PLANILHA` | Aceita variações de cabeçalho por campo (`Usuário`, `User`, `Nome`, `Email`, etc.) |
-| `PADRAO_EMAIL_MINIMO` | `^[^@\s]+@[^@\s]+\.[^@\s]+$` |
-| `PADRAO_LOGIN_VALIDO` | `^[A-Za-z0-9._-]+$` |
-| `SELECTOR_PESQUISA_LOGIN` | Campo de pesquisa por login na tela principal de usuários |
-| `SELECTOR_IMPORTACAO_LOGIN` | Campo de pesquisa por login dentro do diálogo "Importar Usuário" |
-| `SELECTOR_CADASTRO_NOME` / `SELECTOR_CADASTRO_EMAIL` | Campos de Nome Completo e E-mail no formulário de importação |
-| `SELECTOR_TABELA_USUARIOS` | Linhas da tabela de resultado da pesquisa principal |
-| `SELECTOR_TABELA_IDENTITY` | Linhas da tabela de resultado da pesquisa no Identity Manager |
-| `TEMPO_MAXIMO_CONSULTA_USUARIO_MS` | `130000` — consulta ao AGHUX pode ser bem lenta |
-| `TEMPO_MAXIMO_GRAVACAO_USUARIO_MS` | `10000` |
-
-Status possíveis (`StatusImportacao`):
-
-```text
-importado, ja_importado, nao_encontrado, erro, ignorado, conferir_manualmente
-```
-
----
-
-## 6. Validação de Entrada (antes do browser)
-
-### 6.1 `_validar_usuario`
-
-Verifica, por usuário:
-
-| Campo | Regra |
-|---|---|
-| Login | Não pode estar em branco; sem espaços; deve casar com `PADRAO_LOGIN_VALIDO` |
-| Nome Completo | Não pode estar em branco; sem espaços laterais ou duplos (`_nome_tem_espacos_indevidos`) |
-| E-mail | Não pode estar em branco; sem espaços; deve casar com `PADRAO_EMAIL_MINIMO` |
-
-### 6.2 Assimetria intencional entre login/e-mail e nome completo — **ponto de atenção**
-
-`_preparar_usuario_importacao` monta o objeto que vai para `_validar_usuario` assim:
-
-```python
-usuario_normalizado = _normalizar_usuario_importacao(usuario)
-usuario_para_validacao = UsuarioImportacao(
-    login=usuario.login,                          # bruto, sem normalizar
-    nome_completo=usuario_normalizado.nome_completo,  # já normalizado
-    email=usuario.email,                           # bruto, sem normalizar
-)
-erros = _validar_usuario(usuario_para_validacao)
-```
-
-Login e e-mail são validados com o valor **bruto** (como veio da planilha/UI), de propósito: `_normalizar_login`/`_texto_para_validacao` só fazem `strip()`, então se o valor bruto tiver espaço nas pontas, a validação ainda os vê e acusa "contem espacos indevidos".
-
-Nome Completo, porém, é validado já **normalizado** por `_normalizar_nome_completo` (que colapsa espaços duplos e tira espaços das pontas antes da checagem). Na prática, isso significa que a regra `"Nome Completo contem espacos indevidos"` — testada e funcional quando `_validar_usuario` é chamada diretamente (ver `test_unit_criar_usuario_aghu.py::TestValidarUsuario::test_nome_com_espaco_indevido`) — **nunca dispara no fluxo real de produção** (via `_preparar_usuario_importacao` → `_validar_lote_usuarios` → `executar_importacao_usuarios`), porque o valor já chega limpo à validação. Um nome como `"Joao  Silva"` (espaço duplo) ou `"  Joao Silva  "` é silenciosamente normalizado e aceito, em vez de gerar um item `ignorado`. Se o comportamento esperado for realmente barrar nomes malformatados, `_preparar_usuario_importacao` precisa passar `usuario.nome_completo` bruto para a validação, não o normalizado.
-
-### 6.3 Validação síncrona em lote, antes do Playwright
-
-Desde a release de 23/07/2026, a validação inteira do lote acontece de uma vez em `_validar_lote_usuarios`, dentro de `executar_importacao_usuarios`, **antes** de abrir o Playwright:
-
-```python
-validacao = _validar_lote_usuarios(usuarios)
-...
-if not validacao.usuarios_validos:
-    return _finalizar_resultados_importacao(...)  # sem nunca ter chamado sync_playwright
-```
-
-Isso é coberto por teste (`test_executar_importacao_invalida_nao_abre_playwright`, que faz o `sync_playwright` monkeypatched levantar `AssertionError` se for chamado). Usuários inválidos recebem status `ignorado` e nunca contam como tentativa de gravação no AGHUX. Resultados válidos e ignorados são recombinados na ordem original da planilha por `_combinar_resultados_na_ordem_original`.
-
----
-
-## 7. Componentes Públicos do Núcleo
-
-### 7.1 `ler_planilha_usuarios(caminho_planilha)`
-
-Só aceita `.xlsx`. Colunas obrigatórias: `Login`, `Nome Completo`, `E-mail` (por alias). Levanta `FileNotFoundError` se o arquivo não existir e `ValueError` se faltar coluna obrigatória.
-
-### 7.2 `fazer_login` / `trocar_aba_aghux` / `navegar_ate_cadastro_usuario` / `garantir_tela_pesquisa_usuario`
-
-Mesmo padrão do RFC-001: login delegado ao autenticador, Clean State reabre aba no mesmo `BrowserContext` e reautentica preservando `url_aghu`, navegação delegada a `navegar_menu_aghu` com validação local pelo botão **Pesquisar**.
-
-`garantir_tela_pesquisa_usuario` tenta, nesta ordem: (1) reaproveitar a janela atual se o campo de pesquisa ainda estiver visível (1500ms); (2) renavegar pelo menu; (3) Clean State completo + renavegação. Usado antes de cada usuário do lote, não só no início.
-
-### 7.3 `importar_usuario(janela_sistema, usuario) → ResultadoImportacao`
-
-Implementa a árvore de decisão descrita na Seção 3. É a função central do módulo.
-
-### 7.4 `processar_usuarios(...)`
-
-Laço principal. Cada usuário tem até 2 tentativas: na primeira falha técnica, aciona `trocar_aba_aghux` + `navegar_ate_cadastro_usuario` e tenta de novo; na segunda falha, marca `erro` com a exceção na mensagem.
-
-### 7.5 `executar_importacao_usuarios(usuarios, usuario_rede, senha, *, url_aghu, mostrar_browser, mostrar_console, diretorio_logs, gerar_csv_log) → list[ResultadoImportacao]`
-
-Função de orquestração central, chamada tanto pela execução unitária quanto pela de lote na UI. Valida credenciais/URL, roda a validação síncrona do lote, abre Playwright/Chromium (`headless=not mostrar_browser`, `slow_mo=500` quando visível), autentica, navega, processa e sempre gera o CSV auditável em `logs/` (a menos que `gerar_csv_log=False`).
-
-### 7.6 `executar_importacao_lote(usuario_rede, senha, caminho_planilha, caminho_relatorio, ...) → (resultados, caminho_relatorio)`
-
-Lê a planilha com `ler_planilha_usuarios`, chama `executar_importacao_usuarios` e depois `salvar_relatorio_resultados` para gravar o XLSX final escolhido pelo operador.
-
-### 7.7 `executar_importacao_individual(usuario_rede, senha, login, nome_completo, email, ...) → ResultadoImportacao` — **função pública não usada pela UI atual**
-
-Existe no núcleo e é coberta pelos testes unitários, mas **não é mais chamada pela UI** desde a release de 03/07/2026: `_executar_individual_thread` passou a montar a lista de `UsuarioImportacao` (até 5 linhas dinâmicas) e chamar `executar_importacao_usuarios` diretamente, para poder reaproveitar a mesma lógica de resumo de múltiplos resultados usada no lote. `executar_importacao_individual` continua pública e funcional (é um atalho de conveniência para um único usuário), mas hoje só é exercitada pelos testes, não por nenhum chamador em produção.
-
-### 7.8 `salvar_relatorio_resultados(resultados, caminho_saida) → Path`
-
-Só aceita `.xlsx` (adiciona a extensão se faltar). Formata a planilha com cabeçalho fixo, congelamento de painel e autofiltro, larguras de coluna proporcionais ao conteúdo (limite 70 caracteres).
-
----
-
-## 8. Contratos com Chamadores
-
-| Chamador | Uso do núcleo |
-|---|---|
-| `ui_criar_usuario_aghu.py` | Importa `UsuarioImportacao`, todos os `STATUS_*`, `executar_importacao_usuarios` e `executar_importacao_lote`. Não importa `executar_importacao_individual` nem `ler_planilha_usuarios`/`salvar_relatorio_resultados` diretamente (usa a versão empacotada em `executar_importacao_lote`) |
-| `test_unit_criar_usuario_aghu.py` | Testa funções puras (`_validar_usuario`, `_normalizar_*`, `_valor_em_branco`, `_resultado`) e `ler_planilha_usuarios`/`salvar_relatorio_resultados` isoladamente |
-| `test_regression_criar_usuario_aghu.py` | Cobertura de regressão do fluxo completo |
-
-Não há mensagens de exceção contratuais entre núcleo e UI (diferente do RFC-001, que tem `ValueError("Impressora não existe")` como contrato com o Almoxarifado). A UI trata qualquer exceção do núcleo de forma genérica, exibindo `f"Erro: {exc}"` em vermelho.
-
----
-
-## 9. `ui_criar_usuario_aghu.py` — Interface Gráfica
-
-### 9.1 Estrutura geral
-
-Classe `AghuImportUserApp(ctk.CTk)`, com duas seções principais controladas por um `CTkSegmentedButton`:
-
-| Tipo | Rótulo | Campos |
+| Item | Origem | Responsabilidade |
 |---|---|---|
-| Unitária | `TIPO_INDIVIDUAL` | Lista dinâmica de 1 a `MAX_USUARIOS_MANUAIS` (5) linhas de Login/Nome/E-mail, com botão "+ Adicionar usuário" e botão de remover por linha |
-| Lote | `TIPO_LOTE` | Planilha `.xlsx` de entrada + planilha `.xlsx` de relatório de saída, ambas com seletor de arquivo |
+| `autenticador.py` (RFC-005) | Interna | Prover `AGHU_URL`, `AGHU_URL_HOMOLOGACAO`, executar `autenticar_aghu_page` e validar via `exigir_login_valido` |
+| `menu.py` (RFC-004) | Interna | Executar `navegar_menu_aghu` para percorrer o caminho `Outros Módulos → Configuração → Acesso → Usuario` |
+| `playwright` | Terceiros | Automação de navegador Chromium em modo síncrono |
+| `customtkinter` | Terceiros | Framework moderno para interface gráfica responsiva |
+| `pandas` / `openpyxl` | Terceiros | Leitura de planilhas de lote e exportação de relatórios `.xlsx` e logs `.csv` |
 
-### 9.2 Ambiente
+---
+
+## 6. Constantes e Seletores de Módulo
+
+### 6.1 Constantes de Regra de Negócio e Sistema
+
+| Constante | Valor | Uso / Descrição |
+|---|---|---|
+| `BASE_DIR` | `Path(__file__).resolve().parent` | Diretório base dos scripts |
+| `CAMINHO_MENU_CADASTRO_USUARIO` | `("Outros Módulos", "Configuração", "Acesso", "Usuario")` | Caminho de menu no AGHUX |
+| `COLUNAS_OBRIGATORIAS_PLANILHA` | `("Login", "Nome Completo", "E-mail")` | Nomes canônicos das colunas obrigatórias |
+| `ALIASES_COLUNAS_PLANILHA` | `dict[str, tuple[str, ...]]` | Mapeamento de aliases aceitos por coluna na planilha |
+| `PADRAO_EMAIL_MINIMO` | `re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")` | Regex de formato básico de e-mail |
+| `PADRAO_LOGIN_VALIDO` | `re.compile(r"^[A-Za-z0-9._-]+$")` | Regex de caracteres válidos no login corporativo |
+| `TEMPO_MAXIMO_CONSULTA_USUARIO_MS` | `130000` (130 s) | Timeout máximo para consultas no AGHUX |
+| `TEMPO_MAXIMO_GRAVACAO_USUARIO_MS` | `10000` (10 s) | Timeout máximo para confirmação de gravação |
+| `TEMPO_DETECCAO_WIDGET_CARREGAMENTO_MS` | `2000` (2 s) | Janela de detecção do widget "Aguarde..." |
+| `TEMPO_ESTABILIDADE_RESULTADO_MS` | `250` ms | Tempo de confirmação visual para resultado de tabela |
+| `MAX_USUARIOS_MANUAIS` | `5` | Limite máximo de linhas na interface gráfica unitária |
+
+### 6.2 Seletores CSS / DOM do AGHUX
+
+| Constante Seletor | Valor CSS | Descrição no DOM |
+|---|---|---|
+| `SELECTOR_PESQUISA_LOGIN` | `'[id="nomeOuLogin:nomeOuLogin:inputId"]'` | Campo de texto de pesquisa por login na tela principal |
+| `SELECTOR_IMPORTACAO_LOGIN` | `'[id="nomeOuLoginNaoCadastrado:nomeOuLoginNaoCadastrado:inputId"]'` | Campo de pesquisa de login na modal do Identity Manager |
+| `SELECTOR_CADASTRO_NOME` | `'input[name="nome:nome:inputId"]'` | Campo de preenchimento de Nome Completo no formulário |
+| `SELECTOR_CADASTRO_EMAIL` | `'input[name="email:email:inputId"]'` | Campo de preenchimento de E-mail no formulário |
+| `SELECTOR_TABELA_USUARIOS` | `'[id="tabelaUsuarios:resultList_data"] > tr'` | Linhas da tabela de resultados de usuários cadastrados |
+| `SELECTOR_TABELA_IDENTITY` | `'[id="tabelaUsuariosIdentityManager:resultList_data"] > tr'` | Linhas da tabela de resultados no Identity Manager |
+| `TEXTO_NENHUM_REGISTRO` | `"Nenhum registro encontrado!"` | Texto indicador de ausência de registros na tabela JSF |
+
+---
+
+## 7. Modelo de Dados e Status de Resultado
+
+### 7.1 Dataclass `UsuarioImportacao`
 
 ```python
-URLS_AMBIENTE_AGHU = {
-    AMBIENTE_PRODUCAO: AGHU_URL,
-    AMBIENTE_HOMOLOGACAO: AGHU_URL_HOMOLOGACAO,
-}
+@dataclass(frozen=True)
+class UsuarioImportacao:
+    login: str
+    nome_completo: str
+    email: str
 ```
 
-`AMBIENTE_HOMOLOGACAO` é o valor padrão do seletor (`self.var_ambiente = tk.StringVar(value=AMBIENTE_HOMOLOGACAO)`), em linha com o item 5 do Guia AGHU ("Homologação é o padrão operacional seguro das UIs AGHU"). Ao trocar para Produção, `_on_ambiente_changed` exibe um `messagebox.showwarning` modal e mantém um painel de alerta fixo visível enquanto Produção estiver selecionado.
+> **Atenção:** Não existem campos de CPF, Matrícula, Perfil ou Vínculo nesta estrutura.
 
-### 9.3 Regra anti-processo invisível
+### 7.2 Dataclass `ResultadoImportacao`
 
-Igual ao padrão do RFC-003: `_validar_opcoes_visibilidade` impede que **Exibir Navegador** e **Exibir Terminal** fiquem desligados ao mesmo tempo, reativando a última opção alterada e avisando com `messagebox.showwarning`.
+```python
+@dataclass(frozen=True)
+class ResultadoImportacao:
+    login: str
+    nome_completo: str
+    email: str
+    status: StatusImportacao
+    detalhes: str
+```
 
-### 9.4 Lista dinâmica de usuários (execução unitária)
+### 7.3 Valores de `StatusImportacao`
 
-`adicionar_linha_usuario`/`remover_linha_usuario` mantêm `self.linhas_usuarios_individual` como lista de dicts (`frame`, `login`, `nome_completo`, `email`, `remover`). Ao remover uma linha do meio, as linhas restantes são reindexadas via `grid_configure(row=...)`. O limite de 5 é reforçado tanto ao adicionar (`adicionar_linha_usuario` ignora silenciosamente além do limite, apenas atualizando o texto de aviso) quanto na UI (botão desabilitado).
+```python
+StatusImportacao = Literal[
+    "importado",
+    "ja_importado",
+    "nao_encontrado",
+    "erro",
+    "ignorado",
+    "conferir_manualmente",
+]
+```
 
-### 9.5 Execução em thread
-
-Tanto `iniciar_execucao_individual` quanto `iniciar_execucao_lote` validam o formulário na thread principal e disparam uma `threading.Thread(daemon=True)` que chama, respectivamente, `executar_importacao_usuarios` ou `executar_importacao_lote`. O retorno é levado de volta à thread principal via `self.after(0, self._finalizar_execucao, mensagem, cor)`.
-
-### 9.6 Resumo e cor do resultado
-
-`_resumir_resultados` conta cada `StatusImportacao` com `Counter` e monta uma frase única; `_cor_resultado` decide a cor do label de status:
-
-| Condição | Cor |
+| Status | Significado Operacional |
 |---|---|
-| Algum `erro` | Vermelho |
-| Nenhum erro, mas algum `ignorado` ou `conferir_manualmente` | Laranja |
-| Só `importado`/`ja_importado`/`nao_encontrado` | Verde |
-
-Note que `nao_encontrado` (usuário que não existe nem no Identity Manager) conta como "verde" — não é tratado como erro operacional, só como um resultado esperado de negócio.
-
-### 9.7 Relatório
-
-A UI sempre grava o CSV auditável do núcleo em `LOGS_DIR` (`BASE_DIR / "logs"`, dentro de `sistemas/aghu/`) e, no caso de lote, também grava o XLSX final escolhido pelo operador via `executar_importacao_lote`. Na execução unitária não há XLSX de saída — só o CSV interno e a mensagem de status na tela.
+| `importado` | Usuário localizado no Identity Manager, cadastrado e ativado com sucesso no AGHUX |
+| `ja_importado` | Usuário já constava cadastrado previamente no AGHUX ou o sistema retornou alerta de duplicidade |
+| `nao_encontrado` | Usuário não foi localizado na base do Identity Manager / LDAP corporativo |
+| `erro` | Ocorreu erro de gravação retornado pelo AGHUX ou falha técnica não recuperável |
+| `ignorado` | Linha rejeitada no fail-fast pré-execução (campos obrigatórios ausentes ou formatos inválidos) |
+| `conferir_manualmente` | A consulta ou gravação expirou ou não retornou estado conclusivo no DOM |
 
 ---
 
-## 10. Limitações Conhecidas
+## 8. API Pública do Núcleo (`criar_usuario_aghu.py`)
 
-| Limitação | Impacto |
-|---|---|
-| `_validar_usuario` não pega nome com espaço indevido no fluxo real (Seção 6.2) | Nomes com espaço duplo ou lateral passam normalizados silenciosamente, mesmo a regra existindo e sendo testada isoladamente |
-| Pesquisa no Identity Manager (`_linha_tabela_por_texto`) não ancora o login à célula, apenas usa `has_text` sobre a linha inteira | Diferente da pesquisa na tabela principal do AGHUX (`_linha_tabela_por_login`, que ancora `^\s*login\s*$` numa coluna específica), a pesquisa no Identity Manager pode casar com uma linha cujo texto contenha o login como substring, não como valor exato de coluna |
-| `_marcar_usuario_ativo` localiza o checkbox de "ativo" pelo primeiro `.ui-chkbox-icon` visível na janela do sistema (`.first`), sem escopo restrito ao campo | Se o formulário de importação ganhar outro checkbox antes do de "ativo", a automação marcaria o elemento errado |
-| `executar_importacao_individual` não é mais chamada pela UI (Seção 7.7) | Função pública mantida e testada, mas órfã de uso em produção; qualquer mudança nela não é validada pelo fluxo real da UI |
-| `TEMPO_MAXIMO_CONSULTA_USUARIO_MS = 130000` (130s) | Timeout alto sem justificativa documentada no código; útil se o AGHUX ficar lento, mas mascara problemas de rede por até 2min e meio por linha |
-| Sem delegação a outro módulo quando usuário não existe no Identity Manager | Ao contrário do par Maestro/Almoxarifado (RFC-001/002), aqui `nao_encontrado` é terminal — não há tentativa de busca alternativa |
-| Leitura de planilha duplica lógica de aliases de coluna presente em `concessor_aghu.py` (módulo de concessão de perfis) | Mudança nos nomes de coluna aceitos precisa ser replicada manualmente nos dois arquivos, se a intenção for manter consistência entre os dois fluxos de usuário |
+### 8.1 `ler_planilha_usuarios(caminho_planilha: str) -> list[UsuarioImportacao]`
+
+Lê um arquivo `.xlsx` de lote, verifica a presença das colunas obrigatórias (`Login`, `Nome Completo`, `E-mail`) aceitando variações via `ALIASES_COLUNAS_PLANILHA`, e retorna uma lista de instâncias `UsuarioImportacao`. Lança `FileNotFoundError` se o arquivo não existir ou `ValueError` caso a extensão ou colunas sejam inválidas.
+
+### 8.2 `fazer_login(page: Page, usuario_rede: str, senha: str, *, url_aghu: str = AGHU_URL) -> ResultadoLogin`
+
+Wrapper de login local que chama `autenticar_aghu_page` do `autenticador.py` e valida a sessão com `exigir_login_valido`.
+
+### 8.3 `trocar_aba_aghux(context: BrowserContext, page_atual: Page, usuario_rede: str, senha: str, *, url_aghu: str = AGHU_URL) -> Page`
+
+Implementa o mecanismo de Clean State do módulo: fecha a página atual, cria uma nova página limpa no contexto, navega para `url_aghu` e executa a reautenticação.
+
+### 8.4 `navegar_ate_cadastro_usuario(context: BrowserContext, page_atual: Page, usuario_rede: str, senha: str, *, url_aghu: str = AGHU_URL) -> tuple[Page, FrameLocator]`
+
+Utiliza `navegar_menu_aghu` (`menu.py`) para acessar `CAMINHO_MENU_CADASTRO_USUARIO`. Valida a presença de `SELECTOR_PESQUISA_LOGIN` e do botão "Pesquisar". Realiza até 2 tentativas acionando Clean State em caso de falha inicial.
+
+### 8.5 `garantir_tela_pesquisa_usuario(context: BrowserContext, page_atual: Page, janela_atual: FrameLocator, usuario_rede: str, senha: str, *, url_aghu: str = AGHU_URL) -> tuple[Page, FrameLocator]`
+
+Garante idempotência no estado da tela entre processamentos de linhas: se a tela de pesquisa estiver visível, mantém a execução; caso contrário, renavega via menu ou aciona Clean State.
+
+### 8.6 `importar_usuario(janela_sistema: FrameLocator, usuario: UsuarioImportacao) -> ResultadoImportacao`
+
+Executa a sequência completa de automação no DOM para uma conta:
+1. Pesquisa no AGHUX pelo login.
+2. Se já existir, retorna `ja_importado`.
+3. Se não existir, abre a modal de importação.
+4. Pesquisa no Identity Manager.
+5. Se não encontrar, retorna `nao_encontrado`.
+6. Se encontrar, clica em "Adicionar", preenche os campos do formulário, ativa a conta e clica em "Gravar".
+7. Retorna o `ResultadoImportacao` conforme a mensagem capturada no DOM.
+
+### 8.7 `processar_usuarios(context, page_inicial, janela_sistema_inicial, usuarios, usuario_rede, senha, *, url_aghu=AGHU_URL, ...) -> list[ResultadoImportacao]`
+
+Laço principal de processamento de uma lista de `UsuarioImportacao`. Para cada item, executa a importação com até 2 tentativas contra falhas técnicas (usando Clean State na primeira falha).
+
+### 8.8 `executar_importacao_usuarios(usuarios, usuario_rede, senha, *, url_aghu=AGHU_URL, mostrar_browser=True, mostrar_console=True, diretorio_logs=None, gerar_csv_log=True) -> list[ResultadoImportacao]`
+
+Ponto de entrada principal para orquestração:
+1. Executa `_validar_lote_usuarios` (fail-fast pré-browser).
+2. Se houver usuários válidos, inicializa o Playwright/Chromium.
+3. Autentica no AGHUX, navega até o módulo, processa os registros válidos e combina os resultados com os ignorados respeitando a ordem original.
+4. Exporta logs em CSV e retorna a lista consolidada.
+
+### 8.9 `executar_importacao_lote(...) -> tuple[list[ResultadoImportacao], Path]`
+
+Orquestra a leitura da planilha `.xlsx`, dispara `executar_importacao_usuarios` e salva o relatório final de saída `.xlsx` formatado via `salvar_relatorio_resultados`.
+
+### 8.10 `executar_importacao_individual(...) -> ResultadoImportacao`
+
+Wrapper para processamento de um único usuário via `executar_importacao_usuarios`.
 
 ---
 
-## 11. Estado Atual da RFC
+## 9. Funções Auxiliares e Regras Internas
 
-Esta RFC documenta `criar_usuario_aghu.py` e `ui_criar_usuario_aghu.py` como estão na release de 23/07/2026 (validação de lote centralizada e síncrona antes do Playwright) e 03/07/2026 (lista dinâmica de usuários na execução unitária da UI), fechando a lacuna apontada no checklist do `Guia_AGHU.md`: toda função pública do par núcleo/UI está listada nas Seções 7 e 9, e as inconsistências reais encontradas durante o levantamento (Seções 6.2, 7.7 e 10) ficam registradas para decisão futura, em vez de silenciosamente mantidas.
+### 9.1 Saneamento e Normalização
+
+- `_normalizar_login(valor)`: Aplica `.strip().upper()`. O login é convertido para maiúsculas e valida os caracteres `^[A-Za-z0-9._-]+$`.
+- `_normalizar_nome_completo(valor)`: Colapsa múltiplos espaços em branco internos e remove espaços nas extremidades.
+- `_validar_usuario(usuario)`: Retorna a lista de erros de validação da linha (campos em branco, caracteres inválidos em login, formato mínimo de e-mail ou espaços embutidos indevidos).
+
+### 9.2 Manipulação do DOM e Widgets JSF
+
+- `_primeiro_visivel(janela_sistema, seletores, timeout_ms)`: Tenta localizar o primeiro seletor visível dentre uma lista.
+- `_aguardar_ciclo_carregamento_consulta(janela_sistema)`: Monitora os spinners/widgets de "Aguarde..." do AGHUX para garantir estabilidade antes de ler tabelas.
+- `_aguardar_mensagem_gravacao(janela_sistema, timeout_ms)`: Monitora `#messagesInDialog` e captura mensagens de sucesso ("Usuário incluído com sucesso"), duplicidade ("Já existe um usuário com este") ou erro.
+
+---
+
+## 10. Interface Gráfica Desktop (`ui_criar_usuario_aghu.py`)
+
+### 10.1 Visão Geral e Tecnologia
+
+A interface foi implementada utilizando a biblioteca `customtkinter` (classe `AghuImportUserApp` herdando de `ctk.CTk`), oferecendo um visual moderno em modo escuro/claro com componentes responsivos:
+- **Campos de Acesso:** Usuário de rede, Senha e Seletor de Ambiente (`Produção` e `Homologação`).
+- **Painel de Alerta de Ambiente:** Exibe aviso visual destacado em **Âmbar/Amarelo** (`#FFF4CE` / `#3A2D00`) quando o ambiente de **Produção** estiver selecionado.
+- **Seletor de Tipo de Execução:** `CTkSegmentedButton` alternando entre `Unitária` e `Lote`.
+- **Modo Unitário:** Grade dinâmica editável permitindo incluir de 1 até 5 linhas de usuários (`MAX_USUARIOS_MANUAIS = 5`).
+- **Modo Lote:** Seletores de arquivos de entrada `.xlsx` e caminho do relatório final.
+- **Opções de Visibilidade (Regra de Mútua Obrigatoriedade):** Checkboxes "Exibir Navegador (Modo Visual)" e "Exibir Terminal de processos (logs)". Se o operador tentar desmarcar ambos, a aplicação exibe um `messagebox.showwarning` e força a permanência de ao menos uma opção ativa para evitar processos invisíveis em segundo plano.
+
+### 10.2 Tabela de Métodos da Classe `AghuImportUserApp`
+
+| Método da UI | Tipo | Finalidade e Comportamento |
+|---|---|---|
+| `__init__` | Construtor | Inicializa a janela principal (`820x760`), variáveis de controle, layout em grid e renderiza todas as seções |
+| `_criar_campos_acesso` | Privado | Constrói os campos de credencial, seletor de ambiente e o quadro de alerta de Produção |
+| `_on_ambiente_changed` | Evento | Dispara pop-up de aviso quando o ambiente é alterado para "Produção" |
+| `_atualizar_alerta_ambiente` | Privado | Exibe ou oculta o painel amarelo de alerta de Produção conforme o valor do combobox |
+| `_criar_opcoes_execucao` | Privado | Constrói os checkboxes de visibilidade de Browser e Console |
+| `_validar_opcoes_visibilidade` | Privado | Enforça a regra de mútua obrigatoriedade (impede desativar Browser e Console simultaneamente) |
+| `_criar_seletor_tipo_execucao` | Privado | Constrói o `CTkSegmentedButton` para alternar entre Execução Unitária e Lote |
+| `_atualizar_tipo_execucao` | Privado | Alterna a visibilidade dos frames `frame_individual` e `frame_lote` |
+| `_criar_campos_individual` | Privado | Constrói a grade de cadastro manual com cabeçalhos ("Login", "Nome completo", "E-mail") |
+| `adicionar_linha_usuario` | Público | Adiciona uma nova linha de campos na grade manual (respeitando o limite de 5) |
+| `remover_linha_usuario` | Público | Destrói a linha selecionada e reordena os índices das linhas remanescentes |
+| `coletar_usuarios_individuais` | Público | Extrai os dados digitados na grade e retorna `list[UsuarioImportacao]` |
+| `_atualizar_estado_lista_usuarios` | Privado | Atualiza a viabilidade dos botões "+ Adicionar usuário" e ícones de lixeira conforme o limite e estado de execução |
+| `_criar_campos_lote` | Privado | Constrói os campos de seleção de planilha `.xlsx` e relatório de saída |
+| `selecionar_planilha_lote` | Evento | Abre caixa de diálogo `askopenfilename` para selecionar a planilha Excel |
+| `selecionar_relatorio_lote` | Evento | Abre caixa de diálogo `asksaveasfilename` para definir o destino do relatório |
+| `_credenciais_e_url` | Privado | Coleta e valida se usuário de rede, senha e URL de ambiente foram preenchidos |
+| `_bloquear_execucao` | Privado | Desabilita todos os controles e entradas da interface durante a execução da thread |
+| `_liberar_execucao` | Privado | Reabilita os controles da interface após o término da execução |
+| `_mostrar_status` | Privado | Atualiza o texto e a cor da label de status no rodape da aplicação |
+| `iniciar_execucao` | Handler | Ponto de entrada que direciona para execução unitária ou em lote |
+| `iniciar_execucao_individual` | Handler | Valida credenciais e linhas manuais e dispara a `_executar_individual_thread` |
+| `_executar_individual_thread` | Worker | Executa `executar_importacao_usuarios` em segundo plano (`threading.Thread`) |
+| `iniciar_execucao_lote` | Handler | Valida arquivos `.xlsx` e dispara a `_executar_lote_thread` |
+| `_executar_lote_thread` | Worker | Executa `executar_importacao_lote` em segundo plano (`threading.Thread`) |
+| `_finalizar_execucao` | Privado | Callback thread-safe acionado via `self.after` para restaurar a UI e exibir o resultado final |
+| `_resumir_resultados` | Utilitário | Gera string resumida com contadores de status para exibição no rodapé e pop-up |
+
+---
+
+## 11. Recuperação de Falhas Técnicas
+
+O módulo emprega uma estratégia em camadas para resiliência contra instabilidades de rede e do AGHUX:
+
+1. **Retries com Clean State:** No processamento de cada usuário (`processar_usuarios`), a primeira falha técnica de DOM/timeout dispara `trocar_aba_aghux`. A aba antiga com estado corrompido é encerrada, uma nova aba é instanciada no contexto, reautenticada via `autenticar_aghu_page` e a navegação até a tela de usuários é refeita antes da segunda tentativa.
+2. **Isolamento por Linha:** Uma falha definitiva em determinado usuário não interrompe o lote. O erro é anotado em seu `ResultadoImportacao` e o motor prossegue para os demais registros.
+3. **Idempotência de Navegação:** `garantir_tela_pesquisa_usuario` verifica a prontidão dos seletores de busca antes de interagir, evitando retrabalho de navegação quando o formulário já estiver pronto.
+
+---
+
+## 12. Relatórios de Auditoria e Logs
+
+Ao concluir a execução, o sistema produz dois tipos de registros auditáveis:
+
+### 12.1 Relatório em Planilha Excel (`.xlsx`)
+
+Gerado por `salvar_relatorio_resultados` / `executar_importacao_lote`:
+- **Formatação:** Congelamento da primeira linha (`freeze_panes = "A2"`), ativação de filtros automáticos (`auto_filter`) e ajuste automático da largura de colunas.
+- **Colunas:** `Login`, `Nome Completo`, `E-mail`, `Status`, `Detalhes`.
+
+### 12.2 Log de Auditoria em CSV (`_gerar_csv_logs`)
+
+Salvo no diretório `logs/log_resultado_{YYYYMMDD_HHMMSS}.csv`:
+- Contém o cabeçalho de auditoria de primeira linha: `Atualizado por: <usuario_rede>`.
+- Codificação UTF-8 com BOM (`utf-8-sig`) e separador ponto e vírgula (`;`).
+
+---
+
+## 13. Contratos entre RFCs
+
+### 13.1 Contrato com RFC-005 (`autenticador.py`)
+
+- `criar_usuario_aghu.py` importa `AGHU_URL`, `AGHU_URL_HOMOLOGACAO`, `autenticar_aghu_page` e `exigir_login_valido`.
+- A validação de credenciais, tratamento de sessão ativa e exceções de login pertencem exclusivamente ao `autenticador.py`.
+
+### 13.2 Contrato com RFC-004 (`menu.py`)
+
+- `criar_usuario_aghu.py` declara a constante local `CAMINHO_MENU_CADASTRO_USUARIO = ("Outros Módulos", "Configuração", "Acesso", "Usuario")`.
+- A travessia da árvore de menus é realizada chamando `navegar_menu_aghu(page=page, caminho=CAMINHO_MENU_CADASTRO_USUARIO)`.
+
+---
+
+## 14. Considerações Operacionais e Boas Práticas
+
+1. **Credenciais Corporativas:** A senha do operador nunca é gravada em logs ou arquivos de relatório.
+2. **Ambiente de Execução:** O operador deve atentar para a seleção de ambiente na UI. O alerta na cor âmbar na interface previne inserções acidentais em Produção.
+3. **Saneamento Pré-Playwright:** O fail-fast economiza tempo e recursos ao impedir a abertura do navegador para planilhas contendo erros grosseiros de digitação ou campos obrigatórios ausentes.
+4. **Respeito às Regras da UI:** A trava de mútua obrigatoriedade garante que a automação não rode em modo "fantasma" sem qualquer visibilidade de erros.
+
+---
+
+## 15. Estado Atual da RFC
+
+Esta RFC reflete com fidelidade o código-fonte atual dos arquivos `criar_usuario_aghu.py` e `ui_criar_usuario_aghu.py`. Todas as inconsistências da versão anterior (modelo de 7 campos, CPF, status em inglês, seletores fictícios e Tkinter nativo) foram totalmente eliminadas e substituídas pela especificação técnica real.

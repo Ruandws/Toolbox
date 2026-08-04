@@ -10,8 +10,6 @@
 - **Depende de:** `menu.py` (RFC-004)
 - **Chamado por:** — (ponto de entrada próprio, sem chamador externo mapeado)
 
-> Esta RFC foi escrita retroativamente para sanar débito identificado no checklist do `Guia_AGHU.md`: o módulo estava em produção sem RFC correspondente.
-
 ---
 
 ## 1. Resumo
@@ -24,7 +22,22 @@ Diferente de `PrinterAGHU.py` (RFC-001), este módulo não tem um "Robô Especia
 
 ---
 
-## 2. Motivação
+## 2. Mudanças incorporadas nesta revisão
+
+Esta revisão documenta a escrita retroativa e as revisões funcionais da RFC para refletir o estado atual do código:
+
+| Área | Situação atual |
+|---|---|
+| Autenticação | Centralizada em `autenticador.py` (RFC-005), usando `autenticar_aghu_page` e `exigir_login_valido` |
+| Navegação | Uso de `navegar_menu_aghu` de `menu.py` (RFC-004) com o caminho `CAMINHO_MENU_CADASTRO_UNI_CIRURGICA` |
+| Resiliência | Recuperação em 3 níveis antes de cada linha (`garantir_tela_pesquisa_profissional_unidade`) |
+| Desempenho | Cache por execução de profissional ausente (`profissionais_nao_encontrados`), evitando reconsultar o mesmo nome inválido nas demais unidades |
+| Pré-validação | Validação local (`validar_entrada`) de todos os registros antes de interagir com o AGHUX (registros inválidos viram `ignorado` sem tocar a rede) |
+| Relatórios | Modo lote gera relatório `.xlsx` formatado e CSV de auditoria em `./logs` |
+
+---
+
+## 3. Motivação
 
 O cadastro manual de profissional por unidade é repetitivo e sujeito a erro humano (unidade errada, duplicidade de vínculo, nome de profissional digitado de forma diferente do cadastro no AGHUX). O robô centraliza essa rotina, com:
 
@@ -35,9 +48,9 @@ O cadastro manual de profissional por unidade é repetitivo e sujeito a erro hum
 
 ---
 
-## 3. Arquitetura e Fluxo de Dados
+## 4. Arquitetura e Fluxo de Dados
 
-### 3.1 Núcleo
+### 4.1 Núcleo
 
 ```text
 [ui_profissionais_unidade_cirurgica.py]
@@ -69,7 +82,7 @@ O cadastro manual de profissional por unidade é repetitivo e sujeito a erro hum
                             │     │      → Status: Funcionario_nao_encontrado (sem nova tentativa)
                             │     └─ [Caso contrário]
                             │            ├─ garantir_tela_pesquisa_profissional_unidade(...)
-                            │            │      (auto-recuperação em 3 níveis, ver §11)
+                            │            │      (auto-recuperação em 3 níveis, ver §12)
                             │            └─ ProfissionalUnidadeCirurgicaFlow.processar(entrada)
                             │                   ├─ pesquisar() → estado do vínculo
                             │                   ├─ [vínculo ativo]    → Mantido
@@ -83,7 +96,7 @@ O cadastro manual de profissional por unidade é repetitivo e sujeito a erro hum
                             └─ Gera CSV auditável em ./logs (ou diretorio_logs)
 ```
 
-### 3.2 UI (adaptador)
+### 4.2 UI (adaptador)
 
 ```text
 [Operador]
@@ -107,9 +120,9 @@ O cadastro manual de profissional por unidade é repetitivo e sujeito a erro hum
 
 ---
 
-## 4. Dependências
+## 5. Dependências
 
-### 4.1 `autenticador.py`
+### 5.1 `autenticador.py`
 
 O núcleo importa:
 
@@ -125,7 +138,7 @@ from autenticador import AGHU_URL, AGHU_URL_HOMOLOGACAO
 
 Mesmo contrato das demais RFCs: nenhum seletor de login, mensagem de credencial inválida ou regra de sessão ativa é duplicado aqui.
 
-### 4.2 `menu.py`
+### 5.2 `menu.py`
 
 O núcleo importa:
 
@@ -143,7 +156,7 @@ CAMINHO_MENU_CADASTRO_UNI_CIRURGICA = (
 )
 ```
 
-### 4.3 UI → Núcleo
+### 5.3 UI → Núcleo
 
 A UI importa diretamente do núcleo:
 
@@ -167,7 +180,7 @@ from profissionais_unidade_cirurgica_aghu import (
 
 A UI não cria browser/context antes do núcleo estar pronto para recebê-los; ela é a única dona do ciclo de vida do Playwright, entregando `context` e `page` já autenticáveis (não autenticados) para as funções públicas do núcleo, no mesmo padrão do par RFC-001/RFC-003.
 
-### 4.4 Importação tardia (evita ciclo)
+### 5.4 Importação tardia (evita ciclo)
 
 `profissionais_unidade_cirurgica_aghu.py` é executável diretamente (`python profissionais_unidade_cirurgica_aghu.py`). Como a UI importa do núcleo, `main()` importa a UI **dentro da função**, e não no topo do arquivo, para evitar import circular:
 
@@ -179,17 +192,17 @@ def main() -> None:
 
 ---
 
-## 5. Constantes de Módulo (Núcleo)
+## 6. Constantes de Módulo (Núcleo)
 
 | Constante | Valor / Descrição |
 |---|---|
 | `BASE_DIR` | `Path(__file__).resolve().parent` |
 | `LOGS_DIR` | `BASE_DIR / "logs"` |
-| `CAMINHO_MENU_CADASTRO_UNI_CIRURGICA` | Caminho de menu, ver §4.2 |
+| `CAMINHO_MENU_CADASTRO_UNI_CIRURGICA` | Caminho de menu, ver §5.2 |
 | `UNIDADES_FUNCIONAIS` | 5 unidades válidas: `CENTRO OBSTETRICO - PRE-PARTO`, `CENTRO CIRURGICO AMBULATORIAL`, `CENTRO DE ENDOSCOPIA`, `CENTRO DE HEMODINAMICA`, `CENTRO CIRURGICO CENTRAL` |
 | `FUNCAO_MEDICO_RESIDENTE` | `"Médico residente"` |
 | `FUNCOES_PROFISSIONAL` | `(FUNCAO_MEDICO_RESIDENTE,)` — **única função suportada atualmente** |
-| `ALIASES_COLUNAS` | Mapa de nomes aceitos por coluna da planilha (ver §7) |
+| `ALIASES_COLUNAS` | Mapa de nomes aceitos por coluna da planilha (ver §8) |
 | `CAMPOS_OBRIGATORIOS_PLANILHA` | `("profissional", "unidade_funcional")` — `funcao` é opcional |
 | `TEMPO_MAXIMO_CONSULTA_MS` | `90000` — timeout de espera do resultado da pesquisa |
 | `TEMPO_DETECCAO_WIDGET_CARREGAMENTO_MS` | `2000` — tempo para detectar início do ciclo de loading JSF |
@@ -210,7 +223,7 @@ Principais seletores (todos por atributo, sem depender de texto de tela):
 
 ---
 
-## 6. Modelo de Dados
+## 7. Modelo de Dados
 
 ```python
 @dataclass(frozen=True)
@@ -228,25 +241,27 @@ class ResultadoCadastroProfissional:
     detalhes: str
 ```
 
-`StatusCadastro` é um `Literal` com os seis status descritos no §10.
+`StatusCadastro` é um `Literal` com os seis status descritos no §11.
 
 ---
 
-## 7. Normalização e Leitura de Planilha (Lote)
+## 8. Normalização e Leitura de Planilha (Lote)
 
-### 7.1 Normalização
+### 8.1 Normalização
 
-| Função | Descrição |
-|---|---|
-| `_remover_acentos` / `normalizar_texto` | `NFKD` + remoção de combining chars + `casefold()` + colapso de espaços — usada em toda comparação texto-a-texto |
-| `_sem_codigo_unidade` | Remove prefixo `"NN - "` de código de unidade, se presente |
-| `unidade_confere`, `funcao_confere`, `profissional_confere` | Comparações normalizadas, tolerantes a acento/caixa/espaço |
-| `normalizar_unidade_funcional` | Casa o valor recebido contra `UNIDADES_FUNCIONAIS` e devolve a forma canônica; se não casar com nenhuma, devolve o texto original (a validação subsequente rejeita) |
-| `normalizar_funcao` | Idem para `FUNCOES_PROFISSIONAL`; texto vazio vira `FUNCAO_MEDICO_RESIDENTE` |
-| `normalizar_entrada` | Aplica as normalizações acima em um `CadastroProfissionalUnidadeEntrada` completo |
-| `validar_entrada` | Retorna lista de erros: profissional em branco, unidade em branco/inválida, função em branco/inválida |
+| Função | Assinatura | Descrição |
+|---|---|---|
+| `_remover_acentos` / `normalizar_texto` | `(texto: str) → str` | `NFKD` + remoção de combining chars + `casefold()` + colapso de espaços — usada em toda comparação texto-a-texto |
+| `_sem_codigo_unidade` | `(texto: str) → str` | Remove prefixo `"NN - "` de código de unidade, se presente |
+| `unidade_confere` | `(u1: str, u2: str) → bool` | Compara duas unidades funcionais ignorando acentos, caixa e código numérico |
+| `funcao_confere` | `(f1: str, f2: str) → bool` | Compara duas funções de profissional ignorando acentos e caixa |
+| `profissional_confere` | `(p1: str, p2: str) → bool` | Compara dois nomes de profissional ignorando acentos e caixa |
+| `normalizar_unidade_funcional` | `(unidade: str) → str` | Casa o valor recebido contra `UNIDADES_FUNCIONAIS` e devolve a forma canônica; se não casar com nenhuma, devolve o texto original (a validação subsequente rejeita) |
+| `normalizar_funcao` | `(funcao: str) → str` | Idem para `FUNCOES_PROFISSIONAL`; texto vazio vira `FUNCAO_MEDICO_RESIDENTE` |
+| `normalizar_entrada` | `(entrada: CadastroProfissionalUnidadeEntrada) → CadastroProfissionalUnidadeEntrada` | Aplica as normalizações acima em um `CadastroProfissionalUnidadeEntrada` completo |
+| `validar_entrada` | `(entrada: CadastroProfissionalUnidadeEntrada) → list[str]` | Retorna lista de erros: profissional em branco, unidade em branco/inválida, função em branco/inválida |
 
-### 7.2 `ler_planilha_cadastros(caminho_planilha)`
+### 8.2 `ler_planilha_cadastros(caminho_planilha)`
 
 Aceita **somente `.xlsx`** (diferente de `PrinterAGHU.ler_planilha`, que também aceita `.xlsm` e `.csv`). Lê com `dtype=str` e `fillna("")`, remove espaços dos nomes de coluna, e resolve colunas por alias:
 
@@ -260,40 +275,42 @@ Linhas totalmente em branco são ignoradas silenciosamente. Coluna `funcao` ause
 
 ---
 
-## 8. Helpers Genéricos de Interação com AGHUX
+## 9. Helpers Genéricos de Interação com AGHUX
 
 Funções de nível de módulo, reutilizáveis por qualquer fluxo dentro deste arquivo (não são específicas de "profissional"):
 
-| Função | Papel |
-|---|---|
-| `primeiro_visivel(janela, seletores, timeout_ms)` | Tenta cada seletor da tupla em ordem, retorna o primeiro visível |
-| `clicar_botao(janela, nome, timeout_ms)` | Clique por `get_by_role("button", name=nome)` |
-| `widget_carregamento` / `existe_carregamento_visivel` | Localizam o indicador JSF `"Carregando" + "Aguarde..."` |
-| `aguardar_ciclo_carregamento(janela, timeout_ms, deteccao_ms)` | Espera o indicador aparecer (até `deteccao_ms`) e depois sumir (até `timeout_ms`); se nunca aparecer, assume que não houve ciclo de AJAX e retorna imediatamente |
-| `pode_confirmar_resultado(estado_desde, consulta_concluida, estabilidade_resultado_ms)` | Debounce: só confirma um estado de tela se ele persistiu por `estabilidade_resultado_ms` **e** o ciclo de carregamento já concluiu — evita ler DOM em atualização parcial |
-| `linha_vazia_visivel(linhas)` | Detecta linha `"Nenhum registro encontrado!"` / classe `ui-datatable-empty-message` |
-| `preencher_input(locator, valor, timeout_ms)` | Clica, limpa (`fill("")`) e preenche — padrão robusto para inputs JSF |
-| `selecionar_autocomplete(janela, seletor_input, valor, texto_esperado, seletor_painel_sem_registro, timeout_ms)` | Autocomplete genérico com cadeia de candidatos (linha destacada → célula por texto → primeira linha → `Enter` como último recurso). Se `seletor_painel_sem_registro` for informado, monitora ativamente o painel `"Nenhum Registro"` e lança `AutocompleteSemRegistroError` antes de esgotar o timeout |
-| `selecionar_unidade_funcional(janela, unidade, timeout_ms)` | Tenta abrir dropdown de container (`SELECTOR_UNIDADE_FUNCIONAL_CONTAINER`) e selecionar por texto exato; se o dropdown não abrir ou não achar candidato, cai para `selecionar_autocomplete` (digitação) como fallback |
-| `selecionar_selectonemenu(janela, texto, panel_selector, timeout_ms)` | Clica no `.ui-selectonemenu-trigger` **(primeiro da tela — não escopado a um campo específico)** e seleciona item por texto exato, opcionalmente restrito a `panel_selector` |
-| `clicar_voltar_se_visivel(janela, timeout_ms)` | Clica em **Voltar** se visível, aguarda ciclo de loading; retorna `bool` de sucesso |
-| `fechar_dialog_mensagem_se_visivel(janela, timeout_ms)` | Fecha todos os dialogs de mensagem abertos |
-| `mensagens_sistema(janela)` | Extrai textos visíveis de `SELECTOR_MENSAGENS` |
-| `aguardar_mensagem_gravacao(janela, timeout_ms)` | Ver contrato no §12 |
+| Função | Assinatura | Papel |
+|---|---|---|
+| `primeiro_visivel` | `(janela, seletores, timeout_ms=3000)` | Tenta cada seletor da tupla em ordem, retorna o primeiro visível |
+| `clicar_botao` | `(janela, nome, timeout_ms=5000)` | Clique por `get_by_role("button", name=nome)` |
+| `widget_carregamento` / `existe_carregamento_visivel` | `(janela) → Locator / bool` | Localizam o indicador JSF `"Carregando" + "Aguarde..."` |
+| `aguardar_ciclo_carregamento` | `(janela, timeout_ms=15000, deteccao_ms=2000) → bool` | Espera o indicador aparecer (até `deteccao_ms`) e depois sumir (até `timeout_ms`); se nunca aparecer, assume que não houve ciclo de AJAX e retorna imediatamente |
+| `pode_confirmar_resultado` | `(estado_desde, consulta_concluida, estabilidade_resultado_ms=250) → bool` | Debounce: só confirma um estado de tela se ele persistiu por `estabilidade_resultado_ms` **e** o ciclo de carregamento já concluiu — evita ler DOM em atualização parcial |
+| `linha_vazia_visivel` | `(linhas) → bool` | Detecta linha `"Nenhum registro encontrado!"` / classe `ui-datatable-empty-message` |
+| `preencher_input` | `(locator, valor, timeout_ms=5000)` | Clica, limpa (`fill("")`) e preenche — padrão robusto para inputs JSF |
+| `selecionar_autocomplete` | `(janela, seletor_input, valor, texto_esperado, seletor_painel_sem_registro=None, timeout_ms=10000)` | Autocomplete genérico com cadeia de candidatos (linha destacada → célula por texto → primeira linha → `Enter` como último recurso). Se `seletor_painel_sem_registro` for informado, monitora ativamente o painel `"Nenhum Registro"` e lança `AutocompleteSemRegistroError` antes de esgotar o timeout |
+| `selecionar_unidade_funcional` | `(janela, unidade, timeout_ms=10000)` | Tenta abrir dropdown de container (`SELECTOR_UNIDADE_FUNCIONAL_CONTAINER`) e selecionar por texto exato; se o dropdown não abrir ou não achar candidato, cai para `selecionar_autocomplete` (digitação) como fallback |
+| `selecionar_selectonemenu` | `(janela, texto, panel_selector=None, timeout_ms=5000)` | Clica no `.ui-selectonemenu-trigger` **(primeiro da tela — não escopado a um campo específico)** e seleciona item por texto exato, opcionalmente restrito a `panel_selector` |
+| `clicar_voltar_se_visivel` | `(janela, timeout_ms=3000) → bool` | Clica em **Voltar** se visível, aguarda ciclo de loading; retorna `bool` de sucesso |
+| `fechar_dialog_mensagem_se_visivel` | `(janela, timeout_ms=2000) → bool` | Fecha todos os dialogs de mensagem abertos |
+| `mensagens_sistema` | `(janela) → list[str]` | Extrai textos visíveis de `SELECTOR_MENSAGENS` |
+| `aguardar_mensagem_gravacao` | `(janela, timeout_ms=15000) → tuple[str, str]` | Ver contrato no §14 |
 
-> `selecionar_selectonemenu` usa `.first` sem escopo — assume que só há um `selectonemenu` ativo na tela no momento da chamada (verdadeiro para o formulário atual, que só tem o campo Função). Uma segunda tela com múltiplos `selectonemenu` simultâneos quebraria essa função; ver Limitações (§17).
+> `selecionar_selectonemenu` usa `.first` sem escopo — assume que só há um `selectonemenu` ativo na tela no momento da chamada (verdadeiro para o formulário atual, que só tem o campo Função). Uma segunda tela com múltiplos `selectonemenu` simultâneos quebraria essa função; ver Limitações (§18).
 
 ---
 
-## 9. `ProfissionalUnidadeCirurgicaFlow` — Núcleo do Fluxo
+## 10. Regras de Processamento
+
+### 10.1 `ProfissionalUnidadeCirurgicaFlow` — Núcleo do Fluxo
 
 Classe que encapsula pesquisa, decisão e gravação para um `FrameLocator` (`janela_sistema`) já posicionado na tela **Profissionais da Unidade Cirúrgica**.
 
-### 9.1 `validar_tela_pesquisa()`
+#### 10.1.1 `validar_tela_pesquisa()`
 
 Aguarda `SELECTOR_PESQUISA_NOME` e o botão **Pesquisar** ficarem visíveis. É a validação de tela final exigida pelo guia (item 2), usada tanto após navegação quanto para checar se a tela ainda está íntegra antes de processar a próxima linha.
 
-### 9.2 `pesquisar(entrada) → (estado, linha)`
+#### 10.1.2 `pesquisar(entrada) → (estado, linha)`
 
 1. `validar_tela_pesquisa()`.
 2. `_limpar_pesquisa()`: clica no botão limpar, aguarda ciclo de loading, reconfirma o campo de nome visível.
@@ -301,7 +318,7 @@ Aguarda `SELECTOR_PESQUISA_NOME` e o botão **Pesquisar** ficarem visíveis. É 
 4. `aguardar_ciclo_carregamento`.
 5. `_aguardar_resultado_pesquisa(entrada, consulta_concluida=...)`.
 
-### 9.3 `_aguardar_resultado_pesquisa` — máquina de estados da pesquisa
+#### 10.1.3 `_aguardar_resultado_pesquisa` — máquina de estados da pesquisa
 
 Faz polling até `TEMPO_MAXIMO_CONSULTA_MS` (90s):
 
@@ -310,7 +327,7 @@ Faz polling até `TEMPO_MAXIMO_CONSULTA_MS` (90s):
 3. Esse estado só é confirmado (retornado) depois de `pode_confirmar_resultado` indicar estabilidade — evita decidir com base em uma tabela ainda em atualização pelo AJAX.
 4. Sem confirmação dentro do timeout, retorna `("indefinido", None)`.
 
-### 9.4 `_estado_vinculo` — mapeamento de colunas da tabela
+#### 10.1.4 `_estado_vinculo` — mapeamento de colunas da tabela
 
 | Índice da célula | Campo |
 |---|---|
@@ -321,7 +338,7 @@ Faz polling até `TEMPO_MAXIMO_CONSULTA_MS` (90s):
 
 Comparação usa `unidade_confere` / `funcao_confere` / `profissional_confere` (normalizados). Situação `"Ativo"` (normalizado) decide `vinculo_existente` vs. `vinculo_inativo`.
 
-### 9.5 `processar(entrada) → ResultadoCadastroProfissional`
+#### 10.1.5 `processar(entrada) → ResultadoCadastroProfissional`
 
 ```text
 pesquisar(entrada) → estado
@@ -340,13 +357,13 @@ pesquisar(entrada) → estado
         "erro"       → Erro
 ```
 
-### 9.6 `_preencher_formulario`
+#### 10.1.6 `_preencher_formulario`
 
 1. `selecionar_autocomplete` no campo Profissional, com `seletor_painel_sem_registro=SELECTOR_PROFISSIONAL_SUGGESTION_PANEL` — é aqui que `AutocompleteSemRegistroError` pode ser lançada.
 2. `selecionar_unidade_funcional`.
 3. `selecionar_selectonemenu` para Função, restrito a `SELECTOR_FUNCAO_PANEL`.
 
-### 9.7 `_gravar` e `aguardar_mensagem_gravacao`
+#### 10.1.7 `_gravar` e `aguardar_mensagem_gravacao`
 
 Clica **Gravar**, aguarda ciclo de loading, e então `aguardar_mensagem_gravacao` faz polling (até 15s) das mensagens do dialog:
 
@@ -356,37 +373,37 @@ Clica **Gravar**, aguarda ciclo de loading, e então `aguardar_mensagem_gravacao
 | contém `"campo obrigatorio"`, `"invalido"`, `"erro"` ou `"ja existe"` | `("erro", mensagem)` |
 | nenhuma mensagem reconhecida dentro do timeout | `("indefinido", "A gravacao nao retornou mensagem dentro do tempo limite.")` |
 
-### 9.8 `_cancelar_formulario` e `_retornar_para_pesquisa`
+#### 10.1.8 `_cancelar_formulario` e `_retornar_para_pesquisa`
 
 - `_cancelar_formulario`: tenta clicar **Cancelar**; se falhar por qualquer motivo, cai para `clicar_voltar_se_visivel`.
-- `_retornar_para_pesquisa`: fecha dialog de mensagem se aberto e tenta até 3 vezes `validar_tela_pesquisa()`; se falhar, tenta `clicar_voltar_se_visivel()` e repete. Se não houver botão **Voltar** disponível, desiste silenciosamente — a linha seguinte do lote é quem detecta e corrige o estado via `garantir_tela_pesquisa_profissional_unidade` (§11).
+- `_retornar_para_pesquisa`: fecha dialog de mensagem se aberto e tenta até 3 vezes `validar_tela_pesquisa()`; se falhar, tenta `clicar_voltar_se_visivel()` e repete. Se não houver botão **Voltar** disponível, desiste silenciosamente — a linha seguinte do lote é quem detecta e corrige o estado via `garantir_tela_pesquisa_profissional_unidade` (§12.3).
 
 ---
 
-## 10. Estados de Resultado (`StatusCadastro`)
+## 11. Estados de Resultado (`StatusCadastro`)
 
 | Status | Quando ocorre |
 |---|---|
 | `criado` | Vínculo novo gravado com sucesso |
 | `mantido` | Vínculo ativo já existia para profissional + unidade + função |
-| `funcionario_nao_encontrado` | Autocomplete de Profissional retornou "Nenhum Registro"; ou o profissional já foi confirmado ausente nesta mesma execução (ver §11.3) |
+| `funcionario_nao_encontrado` | Autocomplete de Profissional retornou "Nenhum Registro"; ou o profissional já foi confirmado ausente nesta mesma execução (ver §12.4) |
 | `conferir_manual` | Vínculo existe mas está inativo; pesquisa/gravação retornou estado indefinido (timeout); estado de pesquisa inesperado |
 | `erro` | AGHUX retornou mensagem de erro na gravação (campo obrigatório/inválido/erro/já existe); ou falha técnica esgotou as 2 tentativas |
 | `ignorado` | Linha reprovada na pré-validação local (`validar_entrada`) — **nunca chega a tocar o AGHUX** |
 
 ---
 
-## 11. Login, Navegação e Recuperação de Estado
+## 12. Login, Navegação e Recuperação de Estado
 
-### 11.1 `fazer_login` / `trocar_aba_aghux` (Clean State)
+### 12.1 `fazer_login` / `trocar_aba_aghux` (Clean State)
 
 Mesmo padrão de RFC-001/002: `fazer_login` é wrapper de `autenticar_aghu_page` + `exigir_login_valido`. `trocar_aba_aghux` fecha a aba atual (ignorando erro), abre nova `Page` no mesmo `BrowserContext`, acessa `url_aghu` e reautentica.
 
-### 11.2 `navegar_ate_cadastro_profissional_unidade` — navegação inicial
+### 12.2 `navegar_ate_cadastro_profissional_unidade` — navegação inicial
 
 Até 2 tentativas: `navegar_menu_aghu(caminho=CAMINHO_MENU_CADASTRO_UNI_CIRURGICA)` seguido de `validar_tela_pesquisa()`. Na 1ª falha, aciona `trocar_aba_aghux` e tenta de novo; na 2ª falha, propaga a exceção.
 
-### 11.3 `garantir_tela_pesquisa_profissional_unidade` — auto-recuperação em 3 níveis (por linha)
+### 12.3 `garantir_tela_pesquisa_profissional_unidade` — auto-recuperação em 3 níveis (por linha)
 
 Diferença chave em relação ao padrão do Maestro de impressoras: aqui a recuperação é chamada **antes de cada linha do lote**, não só na navegação inicial, com escalonamento de custo:
 
@@ -401,7 +418,7 @@ Diferença chave em relação ao padrão do Maestro de impressoras: aqui a recup
 
 Esse escalonamento evita pagar o custo de um Clean State completo quando o problema é apenas a tela ter voltado ao estado de pesquisa "desalinhado" (por exemplo, após um `_retornar_para_pesquisa` que não conseguiu confirmar 100%).
 
-### 11.4 `processar_cadastros` — laço principal e otimização de profissional ausente
+### 12.4 `processar_cadastros` — laço principal e otimização de profissional ausente
 
 Recebe `resultados_prevalidacao` opcional (se `None`, calcula pré-validação de todas as linhas via `validar_entrada`). O tamanho da lista de pré-validação deve bater com o total de cadastros, senão `ValueError`.
 
@@ -415,9 +432,9 @@ O item 2 é a otimização introduzida em 23/07/2026 (commit `fad690b`): no modo
 
 ---
 
-## 12. Pontos de Entrada Públicos de Execução
+## 13. Pontos de Entrada Públicos de Execução
 
-### 12.1 `executar_cadastros_profissionais(cadastros, usuario_rede, senha, *, context, page, url_aghu, mostrar_console, diretorio_logs, gerar_csv_log)`
+### 13.1 `executar_cadastros_profissionais(cadastros, usuario_rede, senha, *, context, page, url_aghu, mostrar_console, diretorio_logs, gerar_csv_log)`
 
 Valida usuário/senha e `url_aghu`, normaliza todas as entradas e executa dentro de `controle_saida_terminal(mostrar_console)`. Internamente:
 
@@ -427,29 +444,48 @@ Valida usuário/senha e `url_aghu`, normaliza todas as entradas e executa dentro
 
 `context` e `page` são obrigatórios (sem valor padrão) — o chamador (a UI) é sempre o dono do ciclo de vida do Playwright; a função nunca cria nem fecha browser/context/page.
 
-### 12.2 `executar_cadastro_lote(usuario_rede, senha, caminho_planilha, caminho_relatorio, *, context, page, url_aghu, mostrar_console, diretorio_logs) → (resultados, relatorio: Path)`
+### 13.2 `executar_cadastro_lote(usuario_rede, senha, caminho_planilha, caminho_relatorio, *, context, page, url_aghu, mostrar_console, diretorio_logs) → (resultados, relatorio: Path)`
 
 Lê a planilha (`ler_planilha_cadastros`), delega a `executar_cadastros_profissionais` e grava o relatório XLSX via `salvar_relatorio_resultados`. **Gera dois artefatos**: o XLSX pedido pelo operador (produzido diretamente pelo núcleo, via `openpyxl`) e o CSV de auditoria em `./logs` (sempre, pois `gerar_csv_log` não é repassado como `False`). Isso é uma divergência intencional do padrão RFC-001, onde o CSV é o único artefato do núcleo e a UI é quem converte para XLSX depois.
 
-### 12.3 `executar_cadastro_individual(usuario_rede, senha, cadastro, *, context, page, url_aghu, ...) → ResultadoCadastroProfissional`
+### 13.3 `executar_cadastro_individual(usuario_rede, senha, cadastro, *, context, page, url_aghu, ...) → ResultadoCadastroProfissional`
 
-Wrapper de `executar_cadastros_profissionais` para uma única entrada. **Não é usado pela UI atual** — o modo "Unitária" da UI chama `executar_cadastros_profissionais` diretamente com a lista já expandida (profissional × unidade). Função pública mantida sem chamador interno no momento; ver Limitações (§17).
+Wrapper de `executar_cadastros_profissionais` para uma única entrada. **Não é usado pela UI atual** — o modo "Unitária" da UI chama `executar_cadastros_profissionais` diretamente com a lista já expandida (profissional × unidade). Função pública mantida sem chamador interno no momento; ver Limitações (§18).
 
 ---
 
-## 13. Relatórios
+## 14. Relatórios
 
-### 13.1 `salvar_relatorio_resultados(resultados, caminho_saida) → Path`
+### 14.1 `salvar_relatorio_resultados(resultados, caminho_saida) → Path`
 
 Gera XLSX (`openpyxl`), aba `"Resultado"`, colunas `Profissional, Unidade Funcional, Funcao, Status, Detalhes`. Acrescenta `.xlsx` se a extensão faltar; `ValueError` se houver outra extensão. `freeze_panes="A2"`, autofiltro no range dos dados, largura de coluna = maior conteúdo + 2 (limite 90).
 
-### 13.2 `gerar_csv_logs(resultados, usuario_rede, diretorio_logs) → str`
+### 14.2 `gerar_csv_logs(resultados, usuario_rede, diretorio_logs) → str`
 
 CSV em `logs/log_profissionais_unidade_cirurgica_<AAAAMMDD_HHMMSS>.csv`, primeira linha `Atualizado por: <usuario>`, dados em modo append (`sep=";"`, `utf-8-sig`) — mesmo padrão de auditoria de RFC-001.
 
 ---
 
-## 14. Contratos Internos
+## 15. Contratos entre RFCs
+
+### 15.1 Contrato com RFC-004 (`menu.py`)
+
+| Item | Origem | Papel |
+|---|---|---|
+| `navegar_menu_aghu` | `menu.py` | Executa a travessia de menus do AGHUX recebendo o caminho `CAMINHO_MENU_CADASTRO_UNI_CIRURGICA` |
+| `CAMINHO_MENU_CADASTRO_UNI_CIRURGICA` | Núcleo | Tuple `("Cirurgias / PDT", "Cadastros", "Profissionais da Unidade Cirúrgica")` repassada ao `menu.py` |
+
+### 15.2 Contrato com RFC-005 (`autenticador.py`)
+
+| Função / Constante | Origem | Interpretação no Núcleo / UI |
+|---|---|---|
+| `AGHU_URL` / `AGHU_URL_HOMOLOGACAO` | `autenticador.py` | URLs padrão dos ambientes de Produção e Homologação |
+| `autenticar_aghu_page` | `autenticador.py` | Autentica a página Playwright sem criar/fechar browser ou context |
+| `exigir_login_valido` | `autenticador.py` | Valida se o resultado da autenticação foi `sucesso` ou `sessao_ativa`, lançando exceção caso contrário |
+
+---
+
+## 16. Contratos Internos (Sinais Núcleo ↔ UI)
 
 | Sinal | Origem | Interpretação |
 |---|---|---|
@@ -461,9 +497,9 @@ Diferente de RFC-001/002, este módulo **não expõe exceções de negócio entr
 
 ---
 
-## 15. Interface Gráfica (`ui_profissionais_unidade_cirurgica.py`)
+## 17. Interface Gráfica (`ui_profissionais_unidade_cirurgica.py`)
 
-### 15.1 Constantes e Ambiente
+### 17.1 Constantes e Ambiente
 
 | Constante | Valor |
 |---|---|
@@ -473,7 +509,7 @@ Diferente de RFC-001/002, este módulo **não expõe exceções de negócio entr
 
 O ambiente padrão da UI é **Homologação** (`self.var_ambiente = tk.StringVar(value=AMBIENTE_HOMOLOGACAO)`), diferente de `ui_alignprinterAGHU.py` (RFC-003), cujo padrão é Produção com alerta. Este módulo já nasce alinhado à recomendação do guia (item 5: *"Homologação é o padrão operacional seguro das UIs AGHU, salvo exceção documentada"*) — não é necessário exceção aqui. O alerta de Produção (`frame_alerta_producao` + `messagebox.showwarning` ao trocar para Produção) segue o mesmo padrão visual de RFC-003.
 
-### 15.2 Modo Unitária
+### 17.2 Modo Unitária
 
 - Até 5 linhas dinâmicas de nome de profissional (`+ Adicionar usuário` / remover, mínimo 1).
 - Checkboxes de Unidade Funcional (uma ou mais), aplicadas a **todos** os profissionais informados.
@@ -481,11 +517,11 @@ O ambiente padrão da UI é **Homologação** (`self.var_ambiente = tk.StringVar
 - Cada cadastro gerado passa por `validar_entrada` **na thread principal, antes de iniciar a automação** — erro de validação aparece como mensagem vermelha sem sequer abrir o navegador.
 - Mensagem especial: se apenas um profissional foi informado e **todos** os resultados vierem `funcionario_nao_encontrado`, a UI substitui o resumo genérico por uma mensagem direta: `Execução encerrada: profissional "<nome>" não encontrado no AGHUX. Verifique o nome informado.`
 
-### 15.3 Modo Lote
+### 17.3 Modo Lote
 
 Seleciona planilha `.xlsx` de entrada e sugere automaticamente um caminho de relatório (`relatorio_profissionais_unidade_cirurgica_<timestamp>.xlsx` no mesmo diretório da entrada). Chama `executar_cadastro_lote`.
 
-### 15.4 Execução Playwright pela UI
+### 17.4 Execução Playwright pela UI
 
 `_executar_com_playwright(mostrar_browser, acao)` cria Playwright/Chromium/Context/Page e os fecha em `finally`:
 
@@ -498,11 +534,11 @@ O `slow_mo` é condicional (só aplicado com navegador visível) — diferença 
 
 A execução roda em thread daemon; o retorno para a UI usa `self.after(0, ...)`, respeitando a exigência do Tkinter de só atualizar widgets a partir da thread principal.
 
-### 15.5 Regra Anti-Zombie
+### 17.5 Regra Anti-Zombie
 
 Idêntica à de RFC-003: não permite desmarcar **Exibir Navegador** e **Exibir Terminal** simultaneamente; reativa a última opção alterada e mostra aviso.
 
-### 15.6 Resumo de Resultados
+### 17.6 Resumo de Resultados
 
 `_resumir_resultados` usa `Counter` sobre os status e monta uma linha com total, criados, mantidos, funcionários não encontrados, conferir manualmente, ignorados e erros. Cor do status final:
 
@@ -513,9 +549,9 @@ Idêntica à de RFC-003: não permite desmarcar **Exibir Navegador** e **Exibir 
 
 ---
 
-## 16. API Pública do Módulo
+## 18. API Pública do Módulo
 
-### 16.1 Núcleo (`profissionais_unidade_cirurgica_aghu.py`)
+### 18.1 Núcleo (`profissionais_unidade_cirurgica_aghu.py`)
 
 | Função/Classe | Responsabilidade |
 |---|---|
@@ -538,7 +574,7 @@ Idêntica à de RFC-003: não permite desmarcar **Exibir Navegador** e **Exibir 
 
 Funções com prefixo `_` (`_limpar_pesquisa`, `_aguardar_resultado_pesquisa`, `_estado_vinculo`, `_preencher_formulario`, `_gravar`, `_cancelar_formulario`, `_retornar_para_pesquisa`, `_valor_em_branco`, `_remover_acentos`, `_sem_codigo_unidade`, `_normalizar_cabecalho`, `_mapear_colunas_planilha`, `_coluna_por_alias`, `_valor_coluna`, `_linha_relatorio`, `_executar_cadastros_profissionais_com_saida_configurada`) são privadas e não devem ser importadas por outros módulos.
 
-### 16.2 UI (`ui_profissionais_unidade_cirurgica.py`)
+### 18.2 UI (`ui_profissionais_unidade_cirurgica.py`)
 
 | Função/Classe | Responsabilidade |
 |---|---|
@@ -549,7 +585,7 @@ Funções com prefixo `_` (`_limpar_pesquisa`, `_aguardar_resultado_pesquisa`, `
 
 ---
 
-## 17. Considerações Operacionais
+## 19. Considerações Operacionais
 
 1. O núcleo não cria o browser principal; a UI cria `Browser`, `BrowserContext` e `Page`, no mesmo padrão de RFC-001/003.
 2. O parâmetro `url_aghu` deve ser propagado por todo retry, Clean State e renavegação, para não trocar de ambiente durante a execução.
@@ -562,7 +598,7 @@ Funções com prefixo `_` (`_limpar_pesquisa`, `_aguardar_resultado_pesquisa`, `
 
 ---
 
-## 18. Limitações Conhecidas
+## 20. Limitações Conhecidas
 
 | Limitação | Impacto |
 |---|---|
@@ -576,7 +612,7 @@ Funções com prefixo `_` (`_limpar_pesquisa`, `_aguardar_resultado_pesquisa`, `
 
 ---
 
-## 19. Estado Atual da RFC
+## 21. Estado Atual da RFC
 
 Esta RFC documenta, de forma retroativa, o código em produção de `profissionais_unidade_cirurgica_aghu.py` e `ui_profissionais_unidade_cirurgica.py` conforme a release de 23/07/2026 (commit `fad690b`), incluindo:
 
@@ -586,4 +622,4 @@ Esta RFC documenta, de forma retroativa, o código em produção de `profissiona
 - Seis estados de resultado (`criado`, `mantido`, `funcionario_nao_encontrado`, `conferir_manual`, `erro`, `ignorado`).
 - Geração dupla de relatório no modo lote (XLSX + CSV de auditoria).
 - Interface gráfica com modos Unitária/Lote, ambiente padrão Homologação e execução Playwright com `slow_mo` condicional.
-- Limitações conhecidas listadas no §18, para revisão futura.
+- Limitações conhecidas listadas no §20, para revisão futura.

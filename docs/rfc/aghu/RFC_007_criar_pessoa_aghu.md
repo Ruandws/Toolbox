@@ -3,11 +3,25 @@
 - **Status:** Estável
 - **Autor:** Ruan
 - **Data:** 2026-07
-- **Atualizado em:** 2026-07-27
+- **Atualizado em:** 2026-08-04
 - **Arquivos:** `criar_pessoa_aghu.py` (núcleo), `ui_criar_pessoa_aghu.py` (interface)
 - **Depende de:** `autenticador.py` (RFC-005)
 - **Depende de:** `menu.py` (RFC-004)
 - **Chamado por:** operador via `ui_criar_pessoa_aghu.py`
+
+---
+
+## Mudanças incorporadas nesta revisão
+
+| Data | Mudança | Justificativa |
+|---|---|---|
+| 2026-08-04 | Expansão de `__all__` em `criar_pessoa_aghu.py` para incluir todas as constantes de status publicadas. | Conformidade com §11.1 e regra de exportação da API pública do módulo. |
+| 2026-08-04 | Correção do default do atributo `orgao_emissor` em `CadastroPessoaEntrada` (§5.2). | O valor padrão real é `ORGAO_EMISSOR_PADRAO` ("SSP - Secretaria de Segurança Pública"), e não `""`. |
+| 2026-08-04 | Documentação de `_atualizar_visual_sexo` na seção "Limitações Conhecidas". | Identificação de método morto na UI `ui_criar_pessoa_aghu.py`. |
+| 2026-08-04 | Inclusão da coluna "Assinatura" em todas as tabelas de mapeamento de funções. | Padronização dos tipos e assinaturas dos métodos expostos e utilitários. |
+| 2026-08-04 | Adição da seção "Contratos entre RFCs" com subseções para RFC-004 e RFC-005. | Formalização do contrato de dependências transversais do módulo. |
+| 2026-08-04 | Adição da seção "Considerações Operacionais". | Orientação operacional sobre execução de lotes, timeouts e tolerância a falhas. |
+| 2026-08-04 | Remoção das seções duplicadas 14 e 15 e reorganização do encerramento do documento. | Eliminação de redundâncias após o fechamento da RFC ("Estado Atual da RFC"). |
 
 ---
 
@@ -17,10 +31,10 @@
 
 O módulo aceita dois modos de entrada equivalentes:
 
-| Modo | Entrada | Função pública |
-|---|---|---|
-| Lote | Planilha `.xlsx` | `executar_cadastro_lote` |
-| Unitário/Manual | Lista de `CadastroPessoaEntrada` em memória | `executar_cadastro_pessoas` / `executar_cadastro_individual` |
+| Modo | Entrada | Função pública | Assinatura |
+|---|---|---|---|
+| Lote | Planilha `.xlsx` | `executar_cadastro_lote` | `(usuario_rede: str, senha: str, caminho_planilha: str \| Path, caminho_relatorio: str \| Path, ...) -> tuple[list[ResultadoCadastroPessoa], Path]` |
+| Unitário/Manual | Lista de `CadastroPessoaEntrada` em memória | `executar_cadastro_pessoas` / `executar_cadastro_individual` | `(cadastros: list[CadastroPessoaEntrada], usuario_rede: str, senha: str, ...) -> list[ResultadoCadastroPessoa]` / `(usuario_rede: str, senha: str, cadastro: CadastroPessoaEntrada, ...) -> ResultadoCadastroPessoa` |
 
 `ui_criar_pessoa_aghu.py` é a camada `customtkinter` que coleta credenciais, ambiente, até 5 pessoas digitadas manualmente ou uma planilha de lote, executa o núcleo em uma thread e devolve um resumo por severidade.
 
@@ -147,7 +161,7 @@ Campos obrigatórios atuais: `nome_pessoa`, `nome_mae`, `data_nascimento`, `natu
 
 ### 5.2 `CadastroPessoaEntrada` / `ResultadoCadastroPessoa`
 
-`CadastroPessoaEntrada` é o dataclass de entrada (todos os campos como `str`, default `""`). `ResultadoCadastroPessoa` é a saída por linha: `cpf`, `nome_pessoa`, `status`, `detalhes`, `pessoa` (resumo textual do `FluxoResultado` interno).
+`CadastroPessoaEntrada` é o dataclass de entrada (todos os campos como `str`, com default `""`, exceto `orgao_emissor` que possui default `ORGAO_EMISSOR_PADRAO` = `"SSP - Secretaria de Segurança Pública"`). `ResultadoCadastroPessoa` é a saída por linha: `cpf`, `nome_pessoa`, `status`, `detalhes`, `pessoa` (resumo textual do `FluxoResultado` interno).
 
 ### 5.3 `StatusCadastro`
 
@@ -167,15 +181,15 @@ Este é o contrato mais importante do módulo: ao contrário da família de impr
 
 Todas as funções abaixo são independentes de Playwright e cobertas por `test_unit_criar_pessoa_aghu.py`.
 
-| Função | Regra |
-|---|---|
-| `apenas_digitos` | Remove tudo que não é dígito (usado em CPF, CEP, DDD) |
-| `normalizar_data_nascimento` | Aceita `datetime`/`date`, ou texto em 6 formatos (`%d/%m/%Y`, `%d-%m-%Y`, `%Y-%m-%d`, `%Y/%m/%d`, `%d/%m/%y`, `%d-%m-%y`); como último recurso, tenta interpretar dígitos puros (`ddmmaaaa`, completando com `0` à esquerda se vier com 7 dígitos) |
-| `_data_nascimento_valida` | Confirma que a data existe de fato (protege contra `31/02/2020`, por exemplo) comparando o round-trip `strptime`→`strftime` |
-| `normalizar_nacionalidade` | Qualquer variação começando com "bra" (sem acento, case-insensitive) vira `"Brasileiro"` |
-| `normalizar_naturalidade` | Aplica um dicionário de aliases (`ALIASES_NATURALIDADE_AGHU`) — hoje cobre apenas variações de "Brasília/DF"; outros textos passam sem alteração |
-| `cpf_confere` | Compara dois CPFs por sufixo de dígitos (`endswith`), não por igualdade exata — tolera diferenças de máscara |
-| `validar_entrada` | Verifica campos obrigatórios em branco, CPF com 11 dígitos e data válida; retorna lista de mensagens (não lança exceção) |
+| Função | Assinatura | Regra |
+|---|---|---|
+| `apenas_digitos` | `(valor: object) -> str` | Remove tudo que não é dígito (usado em CPF, CEP, DDD) |
+| `normalizar_data_nascimento` | `(valor: object) -> str` | Aceita `datetime`/`date`, ou texto em 6 formatos (`%d/%m/%Y`, `%d-%m-%Y`, `%Y-%m-%d`, `%Y/%m/%d`, `%d/%m/%y`, `%d-%m-%y`); como último recurso, tenta interpretar dígitos puros (`ddmmaaaa`, completando com `0` à esquerda se vier com 7 dígitos) |
+| `_data_nascimento_valida` | `(valor: str) -> bool` | Confirma que a data existe de fato (protege contra `31/02/2020`, por exemplo) comparando o round-trip `strptime`→`strftime` |
+| `normalizar_nacionalidade` | `(valor: object) -> str` | Qualquer variação começando com "bra" (sem acento, case-insensitive) vira `"Brasileiro"` |
+| `normalizar_naturalidade` | `(valor: object) -> str` | Aplica um dicionário de aliases (`ALIASES_NATURALIDADE_AGHU`) — hoje cobre apenas variações de "Brasília/DF"; outros textos passam sem alteração |
+| `cpf_confere` | `(valor_atual: object, cpf_esperado: str) -> bool` | Compara dois CPFs por sufixo de dígitos (`endswith`), não por igualdade exata — tolera diferenças de máscara |
+| `validar_entrada` | `(entrada: CadastroPessoaEntrada) -> list[str]` | Verifica campos obrigatórios em branco, CPF com 11 dígitos e data válida; retorna lista de mensagens (não lança exceção) |
 
 `normalizar_entrada` é chamada em todo ponto de entrada de dados (leitura de planilha, coleta da UI, resultado de erro) e é **idempotente** — pode ser chamada mais de uma vez sobre o mesmo dado sem efeito colateral.
 
@@ -198,17 +212,17 @@ A pré-validação acontece **antes** de abrir o Playwright, tanto em `executar_
 
 ### 8.1 Utilitários genéricos (reaproveitáveis fora de Pessoa)
 
-| Função | Papel |
-|---|---|
-| `primeiro_visivel` | Tenta uma lista de seletores em ordem e retorna o primeiro visível |
-| `clicar_botao` | Clica em botão por `role`/`name`, com espera de visibilidade |
-| `widget_carregamento` / `existe_carregamento_visivel` | Detecta o overlay `Carregando... Aguarde...` do AGHUX |
-| `aguardar_ciclo_carregamento` | Espera o overlay aparecer (até `deteccao_ms`) e depois sumir (até `timeout_ms`); se o overlay nunca aparecer, assume que o ciclo já terminou |
-| `preencher_input` | Clica, limpa (`fill("")`) e preenche um campo de texto simples |
-| `selecionar_autocomplete` | Digita com `press_sequentially(delay=150)` e clica na primeira opção visível dentre 4 candidatos de seletor, com fallback para `Enter` |
-| `selecionar_selectonemenu` | Abre um `div.ui-selectonemenu-trigger` pelo índice e seleciona o item por texto exato |
-| `mensagens_sistema` | Lê os textos visíveis de `#messagesInDialog` (info/erro/warning) |
-| `aguardar_mensagem_gravacao` | Faz polling de `mensagens_sistema` até casar com uma mensagem de sucesso, de erro de negócio, ou com os textos genéricos `"campo obrigatorio"` / `"invalido"` / `"erro"` |
+| Função | Assinatura | Papel |
+|---|---|---|
+| `primeiro_visivel` | `(janela_sistema: FrameLocator, seletores: tuple[str, ...], timeout_ms: int = 5000) -> Locator` | Tenta uma lista de seletores em ordem e retorna o primeiro visível |
+| `clicar_botao` | `(janela_sistema: FrameLocator, nome: str, timeout_ms: int = 10000) -> None` | Clica em botão por `role`/`name`, com espera de visibilidade |
+| `widget_carregamento` / `existe_carregamento_visivel` | `(janela_sistema: FrameLocator) -> Locator / bool` | Detecta o overlay `Carregando... Aguarde...` do AGHUX |
+| `aguardar_ciclo_carregamento` | `(janela_sistema: FrameLocator, *, timeout_ms: int = TEMPO_MAXIMO_CONSULTA_MS, deteccao_ms: int = TEMPO_DETECCAO_WIDGET_CARREGAMENTO_MS) -> bool` | Espera o overlay aparecer (até `deteccao_ms`) e depois sumir (até `timeout_ms`); se o overlay nunca aparecer, assume que o ciclo já terminou |
+| `preencher_input` | `(locator: Locator, valor: str, timeout_ms: int = 5000) -> None` | Clica, limpa (`fill("")`) e preenche um campo de texto simples |
+| `selecionar_autocomplete` | `(janela_sistema: FrameLocator, seletor_input: str, valor: str, *, texto_esperado: str \| None = None, timeout_ms: int = 7000) -> None` | Digita com `press_sequentially(delay=150)` e clica na primeira opção visível dentre 4 candidatos de seletor, com fallback para `Enter` |
+| `selecionar_selectonemenu` | `(janela_sistema: FrameLocator, texto: str, *, indice_trigger: int = 0, panel_selector: str \| None = None, timeout_ms: int = 7000) -> None` | Abre um `div.ui-selectonemenu-trigger` pelo índice e seleciona o item por texto exato |
+| `mensagens_sistema` | `(janela_sistema: FrameLocator) -> list[str]` | Lê os textos visíveis de `#messagesInDialog` (info/erro/warning) |
+| `aguardar_mensagem_gravacao` | `(janela_sistema: FrameLocator, *, sucessos: tuple[str, ...], erros_negocio: tuple[str, ...] = (), timeout_ms: int = 15000) -> tuple[str, str]` | Faz polling de `mensagens_sistema` até casar com uma mensagem de sucesso, de erro de negócio, ou com os textos genéricos `"campo obrigatorio"` / `"invalido"` / `"erro"` |
 
 ### 8.2 Máquina de estados de pesquisa: `_aguardar_resultado_pesquisa`
 
@@ -225,16 +239,16 @@ Essa janela de estabilidade é o motivo do status `conferir_manual` existir: em 
 
 Encapsula toda a interação da tela de Pessoa, recebendo o `FrameLocator` no construtor (mesmo padrão de "janela do sistema" usado nos módulos de impressora).
 
-| Método | Responsabilidade |
-|---|---|
-| `validar_tela_pesquisa` | Confirma campo de CPF e botão **Pesquisar** visíveis — é o critério de "tela carregada" usado por todo o resto do fluxo |
-| `pesquisar_por_cpf` | Preenche CPF, clica Pesquisar, aguarda ciclo de carregamento e delega à máquina de estados |
-| `processar` | Orquestra pesquisa → decisão (mantido/criar/conferir) → preenchimento → gravação → retorno à pesquisa |
-| `_preencher_formulario` | Preenche/seleciona todos os campos do schema; campos opcionais só são tocados se vierem preenchidos na entrada |
-| `_gravar_pessoa` | Clica **Gravar** e aguarda mensagem de sucesso ou erro |
-| `_retornar_para_pesquisa` | Até 3 tentativas de clicar **Voltar** até a tela de pesquisa reaparecer |
-| `_normalizar_sexo` | Mapeia `m*`/`f*` (case-insensitive) para `Masculino`/`Feminino`; qualquer outro valor vira `Ignorado` |
-| `fechar_painel_sucesso_se_visivel` | Fecha o diálogo de confirmação pós-gravação, se existir; usado só pelo Maestro após `STATUS_CRIADO` |
+| Método | Assinatura | Responsabilidade |
+|---|---|---|
+| `validar_tela_pesquisa` | `() -> None` | Confirms campo de CPF e botão **Pesquisar** visíveis — é o critério de "tela carregada" usado por todo o resto do fluxo |
+| `pesquisar_por_cpf` | `(cpf: str) -> tuple[str, Locator \| None]` | Preenche CPF, clica Pesquisar, aguarda ciclo de carregamento e delega à máquina de estados |
+| `processar` | `(entrada: CadastroPessoaEntrada) -> FluxoResultado` | Orquestra pesquisa → decisão (mantido/criar/conferir) → preenchimento → gravação → retorno à pesquisa |
+| `_preencher_formulario` | `(entrada: CadastroPessoaEntrada) -> None` | Preenche/seleciona todos os campos do schema; campos opcionais só são tocados se vierem preenchidos na entrada |
+| `_gravar_pessoa` | `() -> tuple[str, str]` | Clica **Gravar** e aguarda mensagem de sucesso ou erro |
+| `_retornar_para_pesquisa` | `() -> None` | Até 3 tentativas de clicar **Voltar** até a tela de pesquisa reaparecer |
+| `_normalizar_sexo` | `(valor: str) -> str` | Mapeia `m*`/`f*` (case-insensitive) para `Masculino`/`Feminino`; qualquer outro valor vira `Ignorado` |
+| `fechar_painel_sucesso_se_visivel` | `() -> None` | Fecha o diálogo de confirmação pós-gravação, se existir; usado só pelo Maestro após `STATUS_CRIADO` |
 
 #### 8.3.1 Seletores de campo (`SELECTOR_*`)
 
@@ -275,17 +289,17 @@ Não há lista de `erros_negocio` própria — qualquer mensagem contendo `"camp
 
 Não existe Robô Especialista separado; as funções abaixo cumprem o mesmo papel que o Maestro de impressoras, mas operando sozinhas.
 
-| Função | Responsabilidade |
-|---|---|
-| `fazer_login` | Wrapper de `autenticar_aghu_page` + `exigir_login_valido` |
-| `trocar_aba_aghux` | Clean State: fecha a aba atual, abre nova aba no mesmo `BrowserContext`, acessa `url_aghu` e refaz login |
-| `navegar_ate_cadastro_pessoa` | Navega via `navegar_menu_aghu`; 1 retry com Clean State completo em caso de falha |
-| `garantir_tela_pesquisa_pessoa` | Antes de processar uma linha, confirma que a tela atual já é a de pesquisa; se não for, tenta renavegar pelo menu e, falhando, aciona Clean State completo |
-| `processar_cadastro` | Roda `PessoaFlow.processar` para uma entrada e converte `FluxoResultado` em `ResultadoCadastroPessoa` |
-| `processar_cadastros` | Loop principal: pula linhas pré-invalidadas, chama `garantir_tela_pesquisa_pessoa` + `processar_cadastro` por linha, com até 2 tentativas e Clean State entre elas |
-| `executar_cadastro_pessoas` | Ponto de entrada em memória: valida credenciais/URL, abre Playwright, delega a `processar_cadastros`, grava CSV de auditoria |
-| `executar_cadastro_lote` | Lê planilha → `executar_cadastro_pessoas` → salva relatório `.xlsx` |
-| `executar_cadastro_individual` | Atalho de `executar_cadastro_pessoas` para uma única entrada, retornando o primeiro resultado |
+| Função | Assinatura | Responsabilidade |
+|---|---|---|
+| `fazer_login` | `(page: Page, usuario_str: str, senha_str: str, *, timeout_ms: int = 15000) -> ResultadoLogin` | Wrapper de `autenticar_aghu_page` + `exigir_login_valido` |
+| `trocar_aba_aghux` | `(context: BrowserContext, url_aghu: str, usuario_rede: str, senha: str, ...) -> tuple[Page, FrameLocator]` | Clean State: fecha a aba atual, abre nova aba no mesmo `BrowserContext`, acessa `url_aghu` e refaz login |
+| `navegar_ate_cadastro_pessoa` | `(page: Page, context: BrowserContext, url_aghu: str, usuario_rede: str, senha: str) -> tuple[Page, FrameLocator]` | Navega via `navegar_menu_aghu`; 1 retry com Clean State completo em caso de falha |
+| `garantir_tela_pesquisa_pessoa` | `(page: Page, context: BrowserContext, url_aghu: str, usuario_rede: str, senha: str, ...) -> tuple[Page, FrameLocator]` | Antes de processar uma linha, confirma que a tela atual já é a de pesquisa; se não for, tenta renavegar pelo menu e, falhando, aciona Clean State completo |
+| `processar_cadastro` | `(janela_sistema: FrameLocator, entrada: CadastroPessoaEntrada) -> ResultadoCadastroPessoa` | Roda `PessoaFlow.processar` para uma entrada e converte `FluxoResultado` em `ResultadoCadastroPessoa` |
+| `processar_cadastros` | `(page: Page, context: BrowserContext, cadastros: list[CadastroPessoaEntrada], ...) -> list[ResultadoCadastroPessoa]` | Loop principal: pula linhas pré-invalidadas, chama `garantir_tela_pesquisa_pessoa` + `processar_cadastro` por linha, com até 2 tentativas e Clean State entre elas |
+| `executar_cadastro_pessoas` | `(cadastros: list[CadastroPessoaEntrada], usuario_rede: str, senha: str, ...) -> list[ResultadoCadastroPessoa]` | Ponto de entrada em memória: valida credenciais/URL, abre Playwright, delega a `processar_cadastros`, grava CSV de auditoria |
+| `executar_cadastro_lote` | `(usuario_rede: str, senha: str, caminho_planilha: str \| Path, ...) -> tuple[list[ResultadoCadastroPessoa], Path]` | Lê planilha → `executar_cadastro_pessoas` → salva relatório `.xlsx` |
+| `executar_cadastro_individual` | `(usuario_rede: str, senha: str, cadastro: CadastroPessoaEntrada, ...) -> ResultadoCadastroPessoa` | Atalho de `executar_cadastro_pessoas` para uma única entrada, retornando o primeiro resultado |
 
 ### 9.1 Recuperação de estado (Clean State)
 
@@ -305,10 +319,10 @@ Diferença relevante em relação a RFC-001: aqui o retry é **por linha dentro 
 
 ### 9.2 Saída e Auditoria
 
-| Saída | Gerada por | Conteúdo |
-|---|---|---|
-| Relatório `.xlsx` | `salvar_relatorio_resultados` (só no modo lote) | Colunas CPF/Nome/Status/Detalhes/Pessoa, cabeçalho congelado e autofiltro |
-| Log `.csv` | `gerar_csv_logs` (toda execução, unitária ou lote) | Primeira linha `Atualizado por: <usuario_rede>`, depois os mesmos dados do relatório, em `logs/log_cadastro_pessoas_<timestamp>.csv` |
+| Saída | Gerada por | Assinatura | Conteúdo |
+|---|---|---|---|
+| Relatório `.xlsx` | `salvar_relatorio_resultados` (só no modo lote) | `(resultados: list[ResultadoCadastroPessoa], caminho_saida: str \| Path) -> Path` | Colunas CPF/Nome/Status/Detalhes/Pessoa, cabeçalho congelado e autofiltro |
+| Log `.csv` | `gerar_csv_logs` (toda execução, unitária ou lote) | `(resultados: list[ResultadoCadastroPessoa], usuario_rede: str, diretorio_logs: str \| Path \| None) -> str` | Primeira linha `Atualizado por: <usuario_rede>`, depois os mesmos dados do relatório, em `logs/log_cadastro_pessoas_<timestamp>.csv` |
 
 ---
 
@@ -356,44 +370,79 @@ Essa regra vale tanto para lote quanto para execução unitária com múltiplas 
 
 ---
 
-## 11. API Pública do Módulo
+## 11. Contratos entre RFCs
 
-### 11.1 `criar_pessoa_aghu.py`
+### 11.1 Contrato com RFC-004 (`menu.py`)
 
-| Função/Classe | Responsabilidade |
-|---|---|
-| `CadastroPessoaEntrada` | Dataclass de entrada de uma pessoa |
-| `ResultadoCadastroPessoa` | Dataclass de resultado por linha |
-| `CAMPOS_PESSOA_UI` | Contrato de campos consumido pela UI |
-| `ORGAO_EMISSOR_PADRAO` | Constante do órgão emissor fixo usado no cadastro |
-| `STATUS_CRIADO`, `STATUS_MANTIDO`, `STATUS_ERRO`, `STATUS_IGNORADO`, `STATUS_CONFERIR_MANUAL` | Constantes de status consumidas pela UI para contagem/cor |
-| `ler_planilha_cadastros(caminho)` | Lê e valida planilha de lote |
-| `salvar_relatorio_resultados(resultados, caminho)` | Gera relatório `.xlsx` formatado |
-| `executar_cadastro_pessoas(cadastros, usuario_rede, senha, ...)` | Executa cadastro para uma lista de entradas em memória |
-| `executar_cadastro_lote(usuario_rede, senha, caminho_planilha, caminho_relatorio, ...)` | Lê planilha, executa e salva relatório |
-| `executar_cadastro_individual(usuario_rede, senha, cadastro, ...)` | Executa uma única entrada e retorna o resultado direto |
+- **Caminho consumido:**
+  ```python
+  CAMINHO_MENU_CADASTRO_PESSOA = (
+      "Outros Módulos",
+      "Colaborador",
+      "Administrar Servidores",
+      "Pessoas",
+  )
+  ```
+- **Assinatura da função externa:** `navegar_menu_aghu(page: Page, caminho: Sequence[str], timeout_menu_ms: int = 5000) -> FrameLocator`
+- **Validação pós-navegação:** Responsabilidade de `criar_pessoa_aghu.py` via `PessoaFlow.validar_tela_pesquisa()`, que aguarda o seletor `SELECTOR_PESQUISA_CPF` (`input[name="cpf:cpf:inputId"]`) e o botão **Pesquisar**.
 
-Funções internas de navegação/gravação (`fazer_login`, `trocar_aba_aghux`, `navegar_ate_cadastro_pessoa`, `garantir_tela_pesquisa_pessoa`, `processar_cadastro`, `processar_cadastros`, `PessoaFlow`) não estão em `__all__`, mas são importadas diretamente pela suíte de testes (`test_unit_criar_pessoa_aghu.py`, `test_regression_criar_pessoa_aghu.py`) via `import criar_pessoa_aghu as aghu`. Não possuem prefixo `_` porque são reaproveitáveis em teste/depuração isolada, mas não fazem parte do contrato estável para outros módulos de produção — apenas as funções listadas em `__all__` (seção acima) devem ser importadas por outros robôs.
+### 11.2 Contrato com RFC-005 (`autenticador.py`)
 
-### 11.2 `ui_criar_pessoa_aghu.py`
+- **Funções importadas:** `AGHU_URL`, `autenticar_aghu_page`, `exigir_login_valido` (núcleo) e `AGHU_URL_HOMOLOGACAO` (UI).
+- **Assinatura da função externa:** `autenticar_aghu_page(page: Page, usuario: str, senha: str, url_login: str = AGHU_URL, ...) -> ResultadoLogin`
+- **Garantia de Sessão:** `fazer_login` em `criar_pessoa_aghu.py` autentica a página e executa `exigir_login_valido` para garantir que exceções de credenciais inválidas ou timeout de login sejam propagadas antes de tentar navegar.
 
-| Item | Responsabilidade |
-|---|---|
-| `AghuCadastroPessoaApp` | Classe principal da janela `customtkinter` |
-| `obter_url_ambiente_aghu(ambiente)` | Resolve o rótulo de ambiente para a URL efetiva |
-| `caminho_relatorio_padrao(base)` | Gera nome de relatório padrão com timestamp |
+---
+
+## 12. Considerações Operacionais
+
+1. **Pré-validação offline de planilhas:** Antes de inicializar a instância do Playwright, todas as linhas são validadas quanto à integridade de CPF (11 dígitos) e data de nascimento. Caso o lote inteiro seja inválido, o processo é abortado sem consumo de recursos do navegador.
+2. **Ambiente padrão:** O ambiente padrão configurado na interface gráfica é **Homologação**. A alternância para **Produção** exige confirmação explícita no diálogo de aviso.
+3. **Resiliência a latência (Máquina de Estados):** O polling de pesquisa de CPF aguarda o ciclo completo do overlay PrimeFaces e exige estabilidade de 250 ms no DOM antes de declarar "Não Encontrado", prevenindo duplo cadastro em AGHUX sob carga.
+4. **Log de Auditoria:** Toda execução gera um arquivo CSV append-only no diretório `logs/` identificado com o usuário de rede e timestamp, garantindo rastreabilidade das operações realizadas.
+
+---
+
+## 13. API Pública do Módulo
+
+### 13.1 `criar_pessoa_aghu.py`
+
+| Função/Classe/Constante | Assinatura | Responsabilidade |
+|---|---|---|
+| `CadastroPessoaEntrada` | Dataclass `(nome_pessoa, nome_mae, sexo, data_nascimento, nacionalidade, naturalidade, rg, orgao_emissor, uf_rg, cpf, ddd, telefone_celular, cep_cadastrado, logradouro_nao_cadastrado, bairro_nao_cadastrado, cep_nao_cadastrado, municipio_nao_cadastrado)` | Dataclass de entrada de uma pessoa |
+| `ResultadoCadastroPessoa` | Dataclass `(cpf, nome_pessoa, status, detalhes, pessoa)` | Dataclass de resultado por linha |
+| `CAMPOS_PESSOA_UI` | `tuple[tuple[str, str, str, str], ...]` | Contrato de campos consumido pela UI |
+| `ORGAO_EMISSOR_PADRAO` | `str` = `"SSP - Secretaria de Segurança Pública"` | Constante do órgão emissor fixo usado no cadastro |
+| `STATUS_CRIADO`, `STATUS_MANTIDO`, `STATUS_ERRO`, `STATUS_IGNORADO`, `STATUS_CONFERIR_MANUAL` | `str` (`"criado"`, `"mantido"`, `"erro"`, `"ignorado"`, `"conferir_manual"`) | Constantes de status consumidas pela UI e em `__all__` |
+| `ler_planilha_cadastros` | `(caminho_planilha: str \| Path) -> list[CadastroPessoaEntrada]` | Lê e valida planilha de lote |
+| `salvar_relatorio_resultados` | `(resultados: list[ResultadoCadastroPessoa], caminho_saida: str \| Path) -> Path` | Gera relatório `.xlsx` formatado |
+| `executar_cadastro_pessoas` | `(cadastros: list[CadastroPessoaEntrada], usuario_rede: str, senha: str, ...) -> list[ResultadoCadastroPessoa]` | Executa cadastro para uma lista de entradas em memória |
+| `executar_cadastro_lote` | `(usuario_rede: str, senha: str, caminho_planilha: str \| Path, caminho_relatorio: str \| Path, ...) -> tuple[list[ResultadoCadastroPessoa], Path]` | Lê planilha, executa e salva relatório |
+| `executar_cadastro_individual` | `(usuario_rede: str, senha: str, cadastro: CadastroPessoaEntrada, ...) -> ResultadoCadastroPessoa` | Executa uma única entrada e retorna o resultado direto |
+
+Todas as 11 entidades acima estão exportadas no `__all__` do módulo `criar_pessoa_aghu.py`.
+
+Funções internas de navegação/gravação (`fazer_login`, `trocar_aba_aghux`, `navegar_ate_cadastro_pessoa`, `garantir_tela_pesquisa_pessoa`, `processar_cadastro`, `processar_cadastros`, `PessoaFlow`) não estão em `__all__`, mas são importadas diretamente pela suíte de testes (`test_unit_criar_pessoa_aghu.py`, `test_regression_criar_pessoa_aghu.py`) via `import criar_pessoa_aghu as aghu`. Não possuem prefixo `_` porque são reaproveitáveis em teste/depuração isolada, mas não fazem parte do contrato estável para outros módulos de produção — apenas as entidades em `__all__` devem ser importadas por outros robôs.
+
+### 13.2 `ui_criar_pessoa_aghu.py`
+
+| Item | Assinatura | Responsabilidade |
+|---|---|---|
+| `AghuCadastroPessoaApp` | `ctk.CTk` class | Classe principal da janela `customtkinter` |
+| `obter_url_ambiente_aghu` | `(ambiente: str) -> str` | Resolve o rótulo de ambiente para a URL efetiva |
+| `caminho_relatorio_padrao` | `(base: str = "") -> str` | Gera nome de relatório padrão com timestamp |
 
 A UI não expõe API para outros módulos; é ponto de entrada de execução (`if __name__ == "__main__"`).
 
 ---
 
-## 12. Limitações Conhecidas
+## 14. Limitações Conhecidas
 
 | Limitação | Impacto |
 |---|---|
 | `aguardar_mensagem_gravacao` compara `"campo obrigatorio"` / `"invalido"` sem remoção de acento, mas só faz `casefold()` | Se o AGHUX exibir a mensagem acentuada (`"Campo obrigatório"`, `"CEP inválido"`), o texto normalizado (`"campo obrigatório"`) não contém a substring sem acento (`"campo obrigatorio"`) e a checagem genérica de erro pode não disparar, deixando o status cair em `conferir_manual` por timeout em vez de `erro` imediato |
 | Janela de estabilidade de 250 ms (`TEMPO_ESTABILIDADE_RESULTADO_MS`) na pesquisa por CPF | Em AGHUX sob alta latência, um resultado intermediário pode, em teoria, permanecer estável por 250 ms sem ser o resultado final; não há relato de ocorrência em produção até o momento |
-| Ramo de formulário individual "legado" (`_usar_formulario_individual_legado`, checando `entries_individual`/`var_sexo`) | Esses atributos nunca são definidos em `__init__` na versão atual da UI — o ramo é código morto/vestigial, mantido por compatibilidade histórica, mas inalcançável e sem cobertura de teste |
+| Código morto na UI (`_usar_formulario_individual_legado` e `_atualizar_visual_sexo`) | Em `ui_criar_pessoa_aghu.py`, o ramo legado `_usar_formulario_individual_legado` checa atributos nunca definidos em `__init__`, e o método `_atualizar_visual_sexo(self, sexo: str)` faz referência a `self.__dict__.get("segment_sexo")` que não é populado na versão atual — ambos representam código morto vestigial mantido por compatibilidade histórica |
 | `normalizar_naturalidade` só resolve variações de "Brasília/DF" | Outras cidades com grafia divergente da esperada pelo autocomplete do AGHUX passam sem correção e podem falhar na seleção do autocomplete |
 | `_data_nascimento_valida` aceita apenas datas de 8 dígitos após limpeza | Entradas ambíguas de 6 dígitos (ex.: `010190`) não são interpretadas; apenas o caso de 7 dígitos recebe `0` à esquerda |
 | Cadastro depende de `id`/`name` gerados pelo JSF do AGHUX (`cpf:cpf:inputId`, `nomePessoa:nomePessoa:inputId`, etc.) | Mudança de versão do AGHUX que renomeie esses componentes quebra os seletores sem fallback textual |
@@ -401,6 +450,6 @@ A UI não expõe API para outros módulos; é ponto de entrada de execução (`i
 
 ---
 
-## 13. Estado Atual da RFC
+## 15. Estado Atual da RFC
 
 Esta RFC documenta o contrato atual de `criar_pessoa_aghu.py` e `ui_criar_pessoa_aghu.py`: cadastro de pessoa sem robô especialista separado, cinco status de resultado (`criado`, `mantido`, `erro`, `ignorado`, `conferir_manual`), pré-validação antes de abrir o Playwright, máquina de estados de pesquisa com janela de estabilidade, Clean State por linha preservando `url_aghu`, e UI com modos Unitário (até 5 pessoas) e Lote, ambos com resumo e cor de status por severidade. Fecha o débito de conformidade com `Guia_AGHU.md` (seção 7) para este módulo.
