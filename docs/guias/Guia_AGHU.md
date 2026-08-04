@@ -1,7 +1,7 @@
 # Guia AGHU/AGHUX — Práticas Essenciais
 
 - **Tipo:** guia transversal, não substitui as RFCs de módulo.
-- **Base normativa:** RFC-001 a RFC-005 em `docs/rfc/aghu`.
+- **Base normativa:** RFC-001 a RFC-009 em `docs/rfc/aghu`.
 - **Uso:** referenciar este guia em novas RFCs e documentar exceções na RFC do módulo.
 
 Se houver conflito entre este guia e uma RFC específica, a RFC do módulo prevalece.
@@ -110,3 +110,7 @@ Este guia está alinhado às RFCs atuais:
 - RFC-003: UI, seleção de ambiente, alerta de Produção e repasse de `url_aghu`.
 - RFC-004: navegação genérica de menu e retorno do último iframe.
 - RFC-005: autenticação centralizada, URLs públicas e `ResultadoLogin`.
+- RFC-006: concessão de perfis de acesso a usuários no AGHUX (`concessor_aghu`).
+- RFC-007: cadastro de Pessoa no AGHUX (`criar_pessoa_aghu` / `ui_criar_pessoa_aghu`).
+- RFC-008: cadastro/importação de Usuário no AGHUX (`criar_usuario_aghu` + `ui_criar_usuario_aghu`).
+- RFC-009: cadastro de Profissionais da Unidade Cirúrgica, sem robô especialista separado, seis status de resultado, pré-validação de lote antes do Playwright e recuperação de estado em 3 níveis por linha.
