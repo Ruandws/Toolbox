@@ -1552,104 +1552,6 @@ def _conceder_perfis_na_tela(
     return resultados
 
 
-def _checagem_final_perfis(
-    janela_perfis: FrameLocator,
-    entrada: ConcessaoPerfisEntrada,
-    perfis_automatizados: tuple[str, ...],
-    resultados_perfis: list[ResultadoPerfil],
-    *,
-    tentativas_leitura: int = 2,
-) -> list[ResultadoPerfil]:
-    """Reconfere na tabela os perfis de `perfis_automatizados` apos a gravacao.
-
-    Escopo estrito: so reavalia os perfis passados em `perfis_automatizados`
-    (nunca perfis_bloqueados/perfis_validacao_ura).
-
-    Primeiro faz ate `tentativas_leitura` releituras passivas da tabela
-    (sem nenhuma acao), so para dar chance ao DOM de estabilizar apos o
-    Gravar. Se ainda assim sobrar faltante, faz uma unica rodada de retry
-    ativo (tentar adicionar de novo + um Gravar em lote) antes de desistir.
-    Nao ha loop alem dessa unica rodada extra, para nao travar em um perfil
-    que legitimamente nao pode ser concedido.
-    """
-    perfis_alvo = {_normalizar_perfil(perfil) for perfil in perfis_automatizados}
-
-    if not perfis_alvo:
-        return resultados_perfis
-
-    mapa_perfis_originais = {
-        _normalizar_perfil(perfil): perfil for perfil in perfis_automatizados
-    }
-
-    perfis_presentes: set[str] = set()
-
-    for tentativa in range(tentativas_leitura):
-        perfis_presentes = _perfis_atuais_na_tabela(janela_perfis)
-        faltantes = perfis_alvo - perfis_presentes
-
-        if not faltantes or tentativa == tentativas_leitura - 1:
-            break
-
-        time.sleep(0.5)
-
-    faltantes = perfis_alvo - perfis_presentes
-
-    if not faltantes:
-        return resultados_perfis
-
-    readicionados: list[str] = []
-
-    for perfil_norm in faltantes:
-        perfil_original = mapa_perfis_originais[perfil_norm]
-
-        try:
-            print(
-                f"Checagem final: perfil {perfil_original} ausente para "
-                f"{entrada.login}, tentando novamente..."
-            )
-            _adicionar_perfil(janela_perfis, perfil_original, entrada.protocolo)
-            readicionados.append(perfil_original)
-        except Exception:
-            continue
-
-    estado_gravacao_retry = "erro"
-
-    if readicionados:
-        estado_gravacao_retry, _mensagem_retry = _gravar_perfis(janela_perfis)
-
-    perfis_presentes_final = _perfis_atuais_na_tabela(janela_perfis)
-
-    ajustados: list[ResultadoPerfil] = []
-
-    for resultado in resultados_perfis:
-        perfil_norm = _normalizar_perfil(resultado.perfil)
-
-        if perfil_norm not in faltantes:
-            ajustados.append(resultado)
-            continue
-
-        if perfil_norm in perfis_presentes_final and estado_gravacao_retry == "sucesso":
-            ajustados.append(
-                _resultado_perfil(
-                    entrada,
-                    resultado.perfil,
-                    STATUS_CONCEDIDO,
-                    "Perfil concedido na checagem final apos nova tentativa.",
-                )
-            )
-        else:
-            ajustados.append(
-                _resultado_perfil(
-                    entrada,
-                    resultado.perfil,
-                    STATUS_CONFERIR_MANUAL,
-                    "Perfil nao encontrado na tabela apos checagem final; confirmar manualmente.",
-                )
-            )
-
-    return ajustados
-
-
 def processar_concessao(
     context: BrowserContext,
     page_inicial: Page,
@@ -1723,12 +1625,6 @@ def processar_concessao(
                 janela_perfis,
                 entrada,
                 preparada.perfis_automatizados,
-            )
-            resultados_perfis = _checagem_final_perfis(
-                janela_perfis,
-                entrada,
-                preparada.perfis_automatizados,
-                resultados_perfis,
             )
             resultados.extend(resultados_perfis)
             return _montar_resultado_concessao(entrada, resultados)
