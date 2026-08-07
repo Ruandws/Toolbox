@@ -95,9 +95,6 @@ class FixedDatetime:
         return datetime(2026, 6, 26, 9, 8, 7)
 
 
-CAMINHO_TMP_TESTE = Path("C:/Extrator2/testes/aghu")
-
-
 @pytest.fixture(autouse=True)
 def limpar_threads_fake():
     FakeThread.criadas = []
@@ -137,8 +134,8 @@ def app_fake():
 
 
 @pytest.fixture()
-def caminho_tmp_teste():
-    return CAMINHO_TMP_TESTE
+def caminho_tmp_teste(tmp_path):
+    return tmp_path
 
 
 def preencher_cadastro_individual(app, **sobrescritas):

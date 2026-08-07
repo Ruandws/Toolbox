@@ -148,9 +148,6 @@ class FixedDatetime:
         return datetime(2026, 6, 24, 15, 30, 45)
 
 
-CAMINHO_TMP_TESTE = Path("C:/Extrator2/testes/aghu")
-
-
 def linha_usuario_fake(login="", nome_completo="", email=""):
     return {
         "frame": FakeFrame(),
@@ -204,8 +201,8 @@ def test_obter_url_ambiente_aghu_usa_producao_com_ambiente_desconhecido():
 
 
 @pytest.fixture()
-def caminho_tmp_teste():
-    return CAMINHO_TMP_TESTE
+def caminho_tmp_teste(tmp_path):
+    return tmp_path
 
 
 def test_caminho_relatorio_padrao_usa_cwd_sem_base(monkeypatch, caminho_tmp_teste):
