@@ -1,4 +1,4 @@
-name: Build e Release do Launcher AGHU
+name: Build e Release do Launcher unificado AGHU
 
 on:
   push:
@@ -26,10 +26,10 @@ jobs:
           pip install -r requirements-dev.txt
 
       - name: Ruff
-        run: ruff check sistemas/aghu/Habilitar_impressora_em_computador sistemas/aghu/autenticador.py sistemas/aghu/menu.py launcher/aghu
+        run: ruff check sistemas/aghu launcher/aghu
 
       - name: Testes
-        run: pytest testes/aghu/test_unit_printer_aghu.py testes/aghu/test_regression_printer_aghu.py testes/aghu/test_unit_ui_alignprinterAGHU.py testes/aghu/test_unit_autenticador.py testes/aghu/test_regression_autenticador.py
+        run: pytest testes/aghu
 
       - name: Definir número da versão
         id: versao
@@ -65,7 +65,7 @@ jobs:
 
       - name: Embutir Chromium no build
         shell: pwsh
-        run: Copy-Item -Path "$PWD\pw-browsers" -Destination "launcher\aghu\dist\ImpressoraAGHU\ms-playwright" -Recurse
+        run: Copy-Item -Path "$PWD\pw-browsers" -Destination "launcher\aghu\dist\AGHU\ms-playwright" -Recurse
 
       - name: Compilar instalador (Inno Setup)
         shell: pwsh

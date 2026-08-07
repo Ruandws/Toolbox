@@ -1,6 +1,7 @@
 import ctypes
 import os
 import re
+import sys
 import time
 import unicodedata
 from collections import Counter
@@ -20,7 +21,10 @@ from menu import navegar_menu_aghu
 
 
 BASE_DIR = Path(__file__).resolve().parent
-PROJECT_DIR = BASE_DIR.parents[1]
+# No executável empacotado (PyInstaller) os módulos ficam em _internal/, para
+# onde o spec do launcher copia docs/regras_perfis_aghu.yaml; rodando do
+# repositório, docs/ está dois níveis acima de sistemas/aghu/.
+PROJECT_DIR = BASE_DIR if getattr(sys, "frozen", False) else BASE_DIR.parents[1]
 REGRAS_PADRAO = PROJECT_DIR / "docs" / "regras_perfis_aghu.yaml"
 LOGS_DIR = BASE_DIR / "logs"
 

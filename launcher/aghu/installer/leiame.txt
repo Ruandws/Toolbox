@@ -1,47 +1,136 @@
 ==========================================
- AGHU - Impressora por Computador
+ Extrator2 - AGHU
+ Automacoes do AGHUX para o tecnico de TI
 ==========================================
 
-INSTALAÇÃO
-----------
-1. Baixe o arquivo ImpressoraAGHU-Setup-X.X.X.exe na página de Releases do
-   repositório no GitHub.
-2. Dê duplo clique no instalador baixado.
-3. Se o Windows exibir o aviso azul "O Windows protegeu o seu PC":
-     - Clique em "Mais informações"
-     - Clique em "Executar assim mesmo"
-   Isso acontece porque o instalador não possui assinatura digital paga.
-   É esperado e seguro para uso interno.
-4. Siga o assistente (Avançar > Avançar > Instalar). Não é preciso ser
-   administrador da máquina.
-5. Marque se deseja criar o ícone de área de trabalho.
+Este pacote instala, de uma vez so, as cinco automacoes do AGHUX:
 
-PRIMEIRA ABERTURA
-------------------
+  1. AGHU Impressora ........................ habilita impressora por computador
+  2. AGHU Concessao de Perfis ............... concede perfis/acessos a usuarios
+  3. AGHU Cadastro de Pessoa ................ cadastra pessoas no AGHUX
+  4. AGHU Importacao de Usuario ............. importa/cria usuarios no AGHUX
+  5. AGHU Profissionais da Unidade Cirurgica  cadastra profissionais na unidade
+
+As cinco compartilham a mesma instalacao (Python, Playwright e navegador
+embutidos), por isso ocupam pouco mais espaco do que uma sozinha.
+
+
+INSTALACAO
+----------
+1. Baixe o arquivo AGHU-Setup-X.X.X.exe na pagina de Releases do repositorio
+   no GitHub.
+2. De duplo clique no instalador baixado.
+3. Se o Windows exibir o aviso azul "O Windows protegeu o seu PC":
+     - Clique em "Mais informacoes"
+     - Clique em "Executar assim mesmo"
+   Isso acontece porque o instalador nao possui assinatura digital paga.
+   E esperado e seguro para uso interno.
+4. Siga o assistente (Avancar > Avancar > Instalar). Nao e preciso ser
+   administrador da maquina.
+5. Marque quais icones de area de trabalho deseja criar (um por automacao).
+
+Se voce ja tinha instalado o pacote antigo "Extrator2 - AGHU Impressora"
+(release aghu-v1.x), o instalador o remove automaticamente antes de
+prosseguir. Nao e preciso desinstalar nada a mao.
+
+Todos os atalhos ficam no Menu Iniciar, na pasta "Extrator2".
+
+
+O QUE TODAS AS TELAS TEM EM COMUM
+----------------------------------
+- Usuario de Rede e Senha: as mesmas credenciais do AGHUX.
+- Ambiente: Producao ou Homologacao (atencao ao alerta ao selecionar
+  Producao).
+- "Exibir Navegador (Modo Visual)": acompanhe o navegador preenchendo os
+  campos na tela.
+- "Exibir Terminal de processos (logs)": acompanhe a execucao em texto.
+- Ao final, o resultado aparece na parte inferior da tela.
+
+Exceto a Impressora, todas oferecem dois modos no seletor "Tipo":
+- Unitaria: preencha ate 5 registros direto na tela.
+- Lote: informe uma planilha .xlsx de entrada e o arquivo .xlsx de
+  relatorio a ser gerado.
+
+
+1. AGHU IMPRESSORA
+-------------------
 1. Abra pelo atalho "AGHU Impressora".
-2. Preencha:
-     - Usuário de Rede e Senha: as mesmas credenciais do AGHUX.
-     - Ambiente: Produção ou Homologação (atenção ao alerta ao selecionar
-       Produção).
-3. Selecione a planilha de entrada (.xlsx) com as colunas IPPC,
-   HostPrinter e PrinterClass (aceita variações de nome de coluna, como
+2. Selecione a planilha de entrada (.xlsx) com as colunas IPPC,
+   HostPrinter e PrinterClass (aceita variacoes de nome de coluna, como
    "IP do PC" ou "Fila Impressora").
-4. Selecione a pasta onde o relatório final será salvo.
-5. Marque "Exibir Navegador (Modo Visual)" para acompanhar o navegador
-   preenchendo os campos na tela, ou "Exibir Terminal de processos (logs)"
-   para acompanhar em texto.
-6. Clique em "Iniciar Robô" e aguarde. O resultado aparece na parte
-   inferior da tela e o relatório XLSX é salvo na pasta escolhida.
+3. Selecione a pasta onde o relatorio final sera salvo.
+4. Clique em "Iniciar Robo" e aguarde. O relatorio XLSX e salvo na pasta
+   escolhida.
+
+
+2. AGHU CONCESSAO DE PERFIS
+----------------------------
+1. Abra pelo atalho "AGHU Concessao de Perfis".
+2. Em "ACESSO PADRAO", escolha Escopo e Categoria: eles valem para todos os
+   usuarios listados abaixo.
+3. Modo Unitaria: use "+ Adicionar usuario" para incluir ate 5 usuarios,
+   informando Login e Protocolo. Marque "Acesso proprio" quando o usuario
+   precisar de escopo/categoria diferentes do padrao.
+   Modo Lote: selecione a planilha .xlsx e o arquivo de relatorio.
+4. Clique em "Executar concessao".
+
+Status possiveis no relatorio: Concedido, Ja existente, Usuario nao
+encontrado, Conferir manualmente, Ignorado e Erro.
+
+
+3. AGHU CADASTRO DE PESSOA
+---------------------------
+1. Abra pelo atalho "AGHU Cadastro de Pessoa".
+2. Modo Unitaria: use "+ Adicionar pessoa" para incluir ate 5 pessoas e
+   preencha os campos de cadastro (nome, documento, sexo, data de
+   nascimento etc.).
+   Modo Lote: selecione a planilha .xlsx e o arquivo de relatorio.
+3. Clique em "Executar cadastro".
+
+Status possiveis no relatorio: Criado, Mantido, Conferir manualmente,
+Ignorado e Erro.
+
+
+4. AGHU IMPORTACAO DE USUARIO
+------------------------------
+1. Abra pelo atalho "AGHU Importacao de Usuario".
+2. Modo Unitaria: use "+ Adicionar usuario" para incluir ate 5 usuarios,
+   informando Login, Nome completo e E-mail.
+   Modo Lote: selecione a planilha .xlsx e o arquivo de relatorio.
+3. Clique em "Executar importacao".
+
+Status possiveis no relatorio: Importado, Ja importado, Nao encontrado,
+Conferir manualmente, Ignorado e Erro.
+
+
+5. AGHU PROFISSIONAIS DA UNIDADE CIRURGICA
+-------------------------------------------
+1. Abra pelo atalho "AGHU Profissionais da Unidade Cirurgica".
+2. Em "ACESSOS", escolha a unidade funcional e a funcao: valem para todos
+   os usuarios listados abaixo.
+3. Modo Unitaria: use "+ Adicionar usuario" e informe o nome do
+   profissional exatamente como consta no AGHUX (ate 5).
+   Modo Lote: selecione a planilha .xlsx e o arquivo de relatorio.
+4. Clique em "Executar cadastro".
+
+Status possiveis no relatorio: Criado, Mantido, Funcionario nao encontrado,
+Conferir manualmente, Ignorado e Erro.
+
 
 SE ALGO DER ERRADO
 -------------------
-- Erro de login: confira usuário de rede e senha.
-- Linha com status "Erro" ou "Conferir manualmente" no relatório: revisar
-  o computador/impressora indicados na planilha.
-- Antivírus da instituição bloqueando o programa: acione o suporte de TI
+- Erro de login: confira usuario de rede e senha, e se o Ambiente escolhido
+  (Producao/Homologacao) e o correto.
+- Linha com status "Erro" ou "Conferir manualmente" no relatorio: revise o
+  registro indicado na planilha e refaca so ele.
+- Nenhuma tela abre / o programa fecha sozinho: marque "Exibir Terminal de
+  processos (logs)" para ver a mensagem de erro.
+- Antivirus da instituicao bloqueando o programa: acione o suporte de TI
   para liberar a pasta instalada (normalmente em
-  %LocalAppData%\Programs\Extrator2\ImpressoraAGHU).
+  %LocalAppData%\Programs\Extrator2\AGHU).
+
 
 DESINSTALAR
 -----------
-Menu Iniciar > pasta "Extrator2" > "Desinstalar AGHU Impressora".
+Menu Iniciar > pasta "Extrator2" > "Desinstalar AGHU".
+Isso remove as cinco automacoes de uma vez.

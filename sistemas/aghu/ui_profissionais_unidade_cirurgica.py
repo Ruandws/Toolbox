@@ -1,3 +1,4 @@
+import sys
 import threading
 from collections import Counter
 from datetime import datetime
@@ -6,6 +7,12 @@ import tkinter as tk
 from tkinter import filedialog, messagebox
 
 import customtkinter as ctk
+
+if getattr(sys, "frozen", False):
+    from _launcher_runtime import bootstrap_playwright_browsers_path
+
+    bootstrap_playwright_browsers_path()
+
 from playwright.sync_api import sync_playwright
 
 from autenticador import AGHU_URL, AGHU_URL_HOMOLOGACAO

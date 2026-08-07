@@ -1,4 +1,4 @@
-"""Configuração compartilhada do launcher AGHU (spec do PyInstaller).
+"""Configuração compartilhada do launcher unificado AGHU (spec do PyInstaller).
 
 Empacotamento isolado do launcher servicos_ti (launcher/_spec_common.py):
 produto, instalador e workflow de release próprios. Este módulo não
@@ -7,9 +7,22 @@ existem no namespace do arquivo .spec executado diretamente pelo
 PyInstaller — um módulo importado normalmente não os recebe. Por isso, aqui
 ficam apenas os dados/kwargs comuns; as chamadas Analysis()/EXE()/COLLECT()
 continuam no .spec, mas usando a configuração montada aqui.
+
+Todas as automações AGHU vivem num único COLLECT ("AGHU") e portanto
+compartilham um só `_internal` e uma só cópia do Chromium embutido.
+`app_dir` é o diretório do `ui_*.py` de cada automação (a maioria fica em
+`sistemas/aghu`; a Impressora vive num subdiretório próprio), `pathex_extra`
+cobre os módulos importados de fora desse diretório e `datas` lista arquivos
+não-Python que precisam viajar junto (pares origem-relativa-à-raiz, destino).
 """
 import os
 from pathlib import Path
+
+DIR_AGHU = Path("sistemas") / "aghu"
+
+# concessor_aghu.carregar_catalogo_regras() lê este YAML já no __init__ da UI:
+# sem ele empacotado, o ConcessorAGHU.exe morre na abertura com FileNotFoundError.
+REGRAS_PERFIS = (Path("docs") / "regras_perfis_aghu.yaml", "docs")
 
 LAUNCHERS = [
     {
@@ -17,8 +30,45 @@ LAUNCHERS = [
         "entry": "ui_alignprinterAGHU.py",
         "icone": "impressora_aghu.ico",
         "descricao": "AGHU Bot - Impressora por Computador",
-        "app_dir": Path("sistemas") / "aghu" / "Habilitar_impressora_em_computador",
-        "pathex_extra": (Path("sistemas") / "aghu",),
+        "app_dir": DIR_AGHU / "Habilitar_impressora_em_computador",
+        "pathex_extra": (DIR_AGHU,),
+        "datas": (),
+    },
+    {
+        "nome": "ConcessorAGHU",
+        "entry": "ui_concessor.py",
+        "icone": "concessor_aghu.ico",
+        "descricao": "AGHU Bot - Concessao de Perfis",
+        "app_dir": DIR_AGHU,
+        "pathex_extra": (),
+        "datas": (REGRAS_PERFIS,),
+    },
+    {
+        "nome": "CriarPessoaAGHU",
+        "entry": "ui_criar_pessoa_aghu.py",
+        "icone": "criar_pessoa_aghu.ico",
+        "descricao": "AGHU Bot - Cadastro de Pessoa",
+        "app_dir": DIR_AGHU,
+        "pathex_extra": (),
+        "datas": (),
+    },
+    {
+        "nome": "CriarUsuarioAGHU",
+        "entry": "ui_criar_usuario_aghu.py",
+        "icone": "criar_usuario_aghu.ico",
+        "descricao": "AGHU Bot - Importacao de Usuario",
+        "app_dir": DIR_AGHU,
+        "pathex_extra": (),
+        "datas": (),
+    },
+    {
+        "nome": "ProfissionaisUnidadeAGHU",
+        "entry": "ui_profissionais_unidade_cirurgica.py",
+        "icone": "profissionais_unidade_cirurgica_aghu.ico",
+        "descricao": "AGHU Bot - Profissionais da Unidade Cirurgica",
+        "app_dir": DIR_AGHU,
+        "pathex_extra": (),
+        "datas": (),
     },
 ]
 
@@ -33,7 +83,7 @@ def _versao_windows() -> str:
 
 
 def analysis_kwargs(raiz: Path, cfg: dict) -> dict:
-    """Kwargs comuns de Analysis() para o launcher AGHU."""
+    """Kwargs comuns de Analysis() para uma automação AGHU."""
     app_dir = raiz / cfg["app_dir"]
     pathex_extra = [str(raiz / extra) for extra in cfg["pathex_extra"]]
 
@@ -41,7 +91,7 @@ def analysis_kwargs(raiz: Path, cfg: dict) -> dict:
         "scripts": [str(app_dir / cfg["entry"])],
         "pathex": [str(app_dir), *pathex_extra],
         "binaries": [],
-        "datas": [],
+        "datas": [(str(raiz / origem), destino) for origem, destino in cfg["datas"]],
         "hiddenimports": [],
         "hookspath": [],
         "hooksconfig": {},
@@ -95,7 +145,7 @@ def gerar_version_info(launcher_dir: Path, cfg: dict) -> str:
 
 
 def exe_kwargs(launcher_dir: Path, cfg: dict) -> dict:
-    """Kwargs comuns de EXE() para o launcher AGHU."""
+    """Kwargs comuns de EXE() para uma automação AGHU."""
     return {
         "exclude_binaries": True,
         "name": cfg["nome"],
